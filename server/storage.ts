@@ -3,6 +3,7 @@ import { db } from "./db";
 import {
   users,
   locations,
+  vmrsCodes,
   assets,
   vendors,
   parts,
@@ -32,6 +33,8 @@ import {
   type UpsertUser,
   type InsertLocation,
   type Location,
+  type InsertVmrsCode,
+  type VmrsCode,
   type InsertAsset,
   type Asset,
   type InsertVendor,
@@ -83,6 +86,13 @@ export interface IStorage {
   getLocation(id: number): Promise<Location | undefined>;
   createLocation(location: InsertLocation): Promise<Location>;
   updateLocation(id: number, location: Partial<InsertLocation>): Promise<Location | undefined>;
+  
+  // VMRS Codes
+  getVmrsCodes(): Promise<VmrsCode[]>;
+  getVmrsCode(id: number): Promise<VmrsCode | undefined>;
+  createVmrsCode(vmrsCode: InsertVmrsCode): Promise<VmrsCode>;
+  updateVmrsCode(id: number, vmrsCode: Partial<InsertVmrsCode>): Promise<VmrsCode | undefined>;
+  deleteVmrsCode(id: number): Promise<void>;
   
   // Assets
   getAssets(): Promise<Asset[]>;
@@ -267,6 +277,30 @@ export class DatabaseStorage implements IStorage {
   async updateLocation(id: number, location: Partial<InsertLocation>): Promise<Location | undefined> {
     const [updated] = await db.update(locations).set({ ...location, updatedAt: new Date() }).where(eq(locations.id, id)).returning();
     return updated;
+  }
+
+  // VMRS Codes
+  async getVmrsCodes(): Promise<VmrsCode[]> {
+    return db.select().from(vmrsCodes).where(eq(vmrsCodes.isActive, true)).orderBy(vmrsCodes.code);
+  }
+
+  async getVmrsCode(id: number): Promise<VmrsCode | undefined> {
+    const [code] = await db.select().from(vmrsCodes).where(eq(vmrsCodes.id, id));
+    return code;
+  }
+
+  async createVmrsCode(vmrsCode: InsertVmrsCode): Promise<VmrsCode> {
+    const [created] = await db.insert(vmrsCodes).values(vmrsCode).returning();
+    return created;
+  }
+
+  async updateVmrsCode(id: number, vmrsCode: Partial<InsertVmrsCode>): Promise<VmrsCode | undefined> {
+    const [updated] = await db.update(vmrsCodes).set({ ...vmrsCode, updatedAt: new Date() }).where(eq(vmrsCodes.id, id)).returning();
+    return updated;
+  }
+
+  async deleteVmrsCode(id: number): Promise<void> {
+    await db.update(vmrsCodes).set({ isActive: false, updatedAt: new Date() }).where(eq(vmrsCodes.id, id));
   }
 
   // Assets

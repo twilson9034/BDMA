@@ -29,6 +29,26 @@ export type InsertLocation = z.infer<typeof insertLocationSchema>;
 export type Location = typeof locations.$inferSelect;
 
 // ============================================================
+// VMRS CODES (Vehicle Maintenance Reporting Standards)
+// ============================================================
+export const vmrsCodes = pgTable("vmrs_codes", {
+  id: serial("id").primaryKey(),
+  code: text("code").notNull().unique(),
+  title: text("title").notNull(),
+  description: text("description"),
+  systemCode: text("system_code"),
+  assemblyCode: text("assembly_code"),
+  componentCode: text("component_code"),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertVmrsCodeSchema = createInsertSchema(vmrsCodes).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertVmrsCode = z.infer<typeof insertVmrsCodeSchema>;
+export type VmrsCode = typeof vmrsCodes.$inferSelect;
+
+// ============================================================
 // ASSETS
 // ============================================================
 export const assetStatusEnum = ["operational", "in_maintenance", "down", "retired", "pending_inspection"] as const;

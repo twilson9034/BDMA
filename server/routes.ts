@@ -18,6 +18,7 @@ import {
   insertEstimateLineSchema,
   insertTelematicsDataSchema,
   insertFaultCodeSchema,
+  insertVmrsCodeSchema,
 } from "@shared/schema";
 import { z } from "zod";
 import { setupAuth, registerAuthRoutes } from "./replit_integrations/auth";
@@ -126,6 +127,50 @@ export async function registerRoutes(
     const location = await storage.getLocation(parseInt(req.params.id));
     if (!location) return res.status(404).json({ error: "Location not found" });
     res.json(location);
+  });
+
+  // VMRS Codes
+  app.get("/api/vmrs-codes", async (req, res) => {
+    const codes = await storage.getVmrsCodes();
+    res.json(codes);
+  });
+
+  app.get("/api/vmrs-codes/:id", async (req, res) => {
+    const code = await storage.getVmrsCode(parseInt(req.params.id));
+    if (!code) return res.status(404).json({ error: "VMRS code not found" });
+    res.json(code);
+  });
+
+  app.post("/api/vmrs-codes", requireAuth, async (req, res) => {
+    try {
+      const validated = insertVmrsCodeSchema.parse(req.body);
+      const code = await storage.createVmrsCode(validated);
+      res.status(201).json(code);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: "Failed to create VMRS code" });
+    }
+  });
+
+  app.patch("/api/vmrs-codes/:id", requireAuth, async (req, res) => {
+    try {
+      const updated = await storage.updateVmrsCode(parseInt(req.params.id), req.body);
+      if (!updated) return res.status(404).json({ error: "VMRS code not found" });
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update VMRS code" });
+    }
+  });
+
+  app.delete("/api/vmrs-codes/:id", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteVmrsCode(parseInt(req.params.id));
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete VMRS code" });
+    }
   });
 
   // Assets
