@@ -26,6 +26,8 @@ import {
   activityLogs,
   estimates,
   estimateLines,
+  telematicsData,
+  faultCodes,
   type User,
   type UpsertUser,
   type InsertLocation,
@@ -64,6 +66,10 @@ import {
   type Estimate,
   type InsertEstimateLine,
   type EstimateLine,
+  type InsertTelematicsData,
+  type TelematicsData,
+  type InsertFaultCode,
+  type FaultCode,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -106,8 +112,11 @@ export interface IStorage {
   
   // Work Order Lines
   getWorkOrderLines(workOrderId: number): Promise<WorkOrderLine[]>;
+  getWorkOrderLine(id: number): Promise<WorkOrderLine | undefined>;
   createWorkOrderLine(line: InsertWorkOrderLine): Promise<WorkOrderLine>;
   updateWorkOrderLine(id: number, line: Partial<InsertWorkOrderLine>): Promise<WorkOrderLine | undefined>;
+  deleteWorkOrderLine(id: number): Promise<void>;
+  getNextWorkOrderLineNumber(workOrderId: number): Promise<number>;
   
   // PM Schedules
   getPmSchedules(): Promise<PmSchedule[]>;
@@ -155,7 +164,21 @@ export interface IStorage {
   
   // Predictions
   getPredictions(): Promise<Prediction[]>;
+  getPrediction(id: number): Promise<Prediction | undefined>;
   createPrediction(prediction: InsertPrediction): Promise<Prediction>;
+  updatePrediction(id: number, prediction: Partial<InsertPrediction>): Promise<Prediction | undefined>;
+  
+  // Telematics Data
+  getTelematicsData(assetId: number): Promise<TelematicsData[]>;
+  getLatestTelematicsData(assetId: number): Promise<TelematicsData | undefined>;
+  createTelematicsData(data: InsertTelematicsData): Promise<TelematicsData>;
+  
+  // Fault Codes
+  getFaultCodes(assetId?: number): Promise<FaultCode[]>;
+  getActiveFaultCodes(assetId?: number): Promise<FaultCode[]>;
+  getFaultCode(id: number): Promise<FaultCode | undefined>;
+  createFaultCode(code: InsertFaultCode): Promise<FaultCode>;
+  updateFaultCode(id: number, code: Partial<InsertFaultCode>): Promise<FaultCode | undefined>;
 
   // Estimates
   getEstimates(): Promise<Estimate[]>;
@@ -358,6 +381,11 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(workOrderLines).where(eq(workOrderLines.workOrderId, workOrderId)).orderBy(workOrderLines.lineNumber);
   }
 
+  async getWorkOrderLine(id: number): Promise<WorkOrderLine | undefined> {
+    const [line] = await db.select().from(workOrderLines).where(eq(workOrderLines.id, id));
+    return line;
+  }
+
   async createWorkOrderLine(line: InsertWorkOrderLine): Promise<WorkOrderLine> {
     const [created] = await db.insert(workOrderLines).values(line).returning();
     return created;
@@ -366,6 +394,19 @@ export class DatabaseStorage implements IStorage {
   async updateWorkOrderLine(id: number, line: Partial<InsertWorkOrderLine>): Promise<WorkOrderLine | undefined> {
     const [updated] = await db.update(workOrderLines).set({ ...line, updatedAt: new Date() }).where(eq(workOrderLines.id, id)).returning();
     return updated;
+  }
+
+  async deleteWorkOrderLine(id: number): Promise<void> {
+    await db.delete(workOrderLines).where(eq(workOrderLines.id, id));
+  }
+
+  async getNextWorkOrderLineNumber(workOrderId: number): Promise<number> {
+    const lines = await db.select({ lineNumber: workOrderLines.lineNumber })
+      .from(workOrderLines)
+      .where(eq(workOrderLines.workOrderId, workOrderId))
+      .orderBy(desc(workOrderLines.lineNumber))
+      .limit(1);
+    return lines.length > 0 ? lines[0].lineNumber + 1 : 1;
   }
 
   // PM Schedules
@@ -516,9 +557,64 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(predictions).orderBy(desc(predictions.createdAt));
   }
 
+  async getPrediction(id: number): Promise<Prediction | undefined> {
+    const [prediction] = await db.select().from(predictions).where(eq(predictions.id, id));
+    return prediction;
+  }
+
   async createPrediction(prediction: InsertPrediction): Promise<Prediction> {
     const [created] = await db.insert(predictions).values(prediction).returning();
     return created;
+  }
+
+  async updatePrediction(id: number, prediction: Partial<InsertPrediction>): Promise<Prediction | undefined> {
+    const [updated] = await db.update(predictions).set(prediction).where(eq(predictions.id, id)).returning();
+    return updated;
+  }
+
+  // Telematics Data
+  async getTelematicsData(assetId: number): Promise<TelematicsData[]> {
+    return db.select().from(telematicsData).where(eq(telematicsData.assetId, assetId)).orderBy(desc(telematicsData.timestamp)).limit(100);
+  }
+
+  async getLatestTelematicsData(assetId: number): Promise<TelematicsData | undefined> {
+    const [data] = await db.select().from(telematicsData).where(eq(telematicsData.assetId, assetId)).orderBy(desc(telematicsData.timestamp)).limit(1);
+    return data;
+  }
+
+  async createTelematicsData(data: InsertTelematicsData): Promise<TelematicsData> {
+    const [created] = await db.insert(telematicsData).values(data).returning();
+    return created;
+  }
+
+  // Fault Codes
+  async getFaultCodes(assetId?: number): Promise<FaultCode[]> {
+    if (assetId) {
+      return db.select().from(faultCodes).where(eq(faultCodes.assetId, assetId)).orderBy(desc(faultCodes.occurredAt));
+    }
+    return db.select().from(faultCodes).orderBy(desc(faultCodes.occurredAt));
+  }
+
+  async getActiveFaultCodes(assetId?: number): Promise<FaultCode[]> {
+    if (assetId) {
+      return db.select().from(faultCodes).where(and(eq(faultCodes.assetId, assetId), eq(faultCodes.status, "active"))).orderBy(desc(faultCodes.occurredAt));
+    }
+    return db.select().from(faultCodes).where(eq(faultCodes.status, "active")).orderBy(desc(faultCodes.occurredAt));
+  }
+
+  async getFaultCode(id: number): Promise<FaultCode | undefined> {
+    const [code] = await db.select().from(faultCodes).where(eq(faultCodes.id, id));
+    return code;
+  }
+
+  async createFaultCode(code: InsertFaultCode): Promise<FaultCode> {
+    const [created] = await db.insert(faultCodes).values(code).returning();
+    return created;
+  }
+
+  async updateFaultCode(id: number, code: Partial<InsertFaultCode>): Promise<FaultCode | undefined> {
+    const [updated] = await db.update(faultCodes).set(code).where(eq(faultCodes.id, id)).returning();
+    return updated;
   }
 
   // Estimates

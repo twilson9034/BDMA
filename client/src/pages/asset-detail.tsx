@@ -5,7 +5,8 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation, useRoute } from "wouter";
 import { 
   ArrowLeft, Save, Loader2, Edit, Trash2, Truck, 
-  MapPin, Calendar, Settings, FileText, Wrench, X
+  MapPin, Calendar, Settings, FileText, Wrench, X,
+  Gauge, Fuel, Thermometer, Battery, AlertTriangle, Activity, Radio
 } from "lucide-react";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
@@ -35,11 +36,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/PageHeader";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import type { Asset, Location, WorkOrder } from "@shared/schema";
+import type { Asset, Location, WorkOrder, TelematicsData, FaultCode } from "@shared/schema";
 
 const assetFormSchema = z.object({
   name: z.string().min(1, "Name is required"),
@@ -80,7 +82,18 @@ export default function AssetDetail() {
     queryKey: ["/api/work-orders"],
   });
 
+  const { data: latestTelematics } = useQuery<TelematicsData | null>({
+    queryKey: ["/api/assets", assetId, "telematics", "latest"],
+    enabled: !!assetId,
+  });
+
+  const { data: faultCodes } = useQuery<FaultCode[]>({
+    queryKey: ["/api/assets", assetId, "fault-codes"],
+    enabled: !!assetId,
+  });
+
   const assetWorkOrders = workOrders?.filter(wo => wo.assetId === assetId) || [];
+  const activeFaults = faultCodes?.filter(fc => fc.status === "active") || [];
 
   const form = useForm<AssetFormValues>({
     resolver: zodResolver(assetFormSchema),
@@ -631,6 +644,122 @@ export default function AssetDetail() {
                 </div>
               ) : (
                 <p className="text-muted-foreground text-center py-8">No work orders for this asset</p>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="glass-card">
+            <CardHeader className="flex flex-row items-center justify-between gap-2">
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Radio className="h-5 w-5" />
+                Live Telematics
+              </CardTitle>
+              {latestTelematics && (
+                <span className="text-xs text-muted-foreground">
+                  Updated: {new Date(latestTelematics.timestamp).toLocaleString()}
+                </span>
+              )}
+            </CardHeader>
+            <CardContent>
+              {latestTelematics ? (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="p-3 rounded-lg bg-muted/50 text-center">
+                    <Gauge className="h-5 w-5 mx-auto mb-1 text-primary" />
+                    <p className="text-xs text-muted-foreground">Engine Hours</p>
+                    <p className="font-semibold">{latestTelematics.engineHours || "-"}</p>
+                  </div>
+                  <div className="p-3 rounded-lg bg-muted/50 text-center">
+                    <Activity className="h-5 w-5 mx-auto mb-1 text-primary" />
+                    <p className="text-xs text-muted-foreground">Odometer</p>
+                    <p className="font-semibold">{latestTelematics.odometer ? `${parseFloat(latestTelematics.odometer).toLocaleString()} mi` : "-"}</p>
+                  </div>
+                  <div className="p-3 rounded-lg bg-muted/50 text-center">
+                    <Fuel className="h-5 w-5 mx-auto mb-1 text-primary" />
+                    <p className="text-xs text-muted-foreground">Fuel Level</p>
+                    <p className="font-semibold">{latestTelematics.fuelLevel ? `${latestTelematics.fuelLevel}%` : "-"}</p>
+                  </div>
+                  <div className="p-3 rounded-lg bg-muted/50 text-center">
+                    <Thermometer className="h-5 w-5 mx-auto mb-1 text-primary" />
+                    <p className="text-xs text-muted-foreground">Coolant Temp</p>
+                    <p className="font-semibold">{latestTelematics.coolantTemp ? `${latestTelematics.coolantTemp}°F` : "-"}</p>
+                  </div>
+                  <div className="p-3 rounded-lg bg-muted/50 text-center">
+                    <Gauge className="h-5 w-5 mx-auto mb-1 text-primary" />
+                    <p className="text-xs text-muted-foreground">Oil Pressure</p>
+                    <p className="font-semibold">{latestTelematics.oilPressure ? `${latestTelematics.oilPressure} PSI` : "-"}</p>
+                  </div>
+                  <div className="p-3 rounded-lg bg-muted/50 text-center">
+                    <Battery className="h-5 w-5 mx-auto mb-1 text-primary" />
+                    <p className="text-xs text-muted-foreground">Battery</p>
+                    <p className="font-semibold">{latestTelematics.batteryVoltage ? `${latestTelematics.batteryVoltage}V` : "-"}</p>
+                  </div>
+                  <div className="p-3 rounded-lg bg-muted/50 text-center">
+                    <Fuel className="h-5 w-5 mx-auto mb-1 text-primary" />
+                    <p className="text-xs text-muted-foreground">DEF Level</p>
+                    <p className="font-semibold">{latestTelematics.defLevel ? `${latestTelematics.defLevel}%` : "-"}</p>
+                  </div>
+                  <div className="p-3 rounded-lg bg-muted/50 text-center">
+                    <MapPin className="h-5 w-5 mx-auto mb-1 text-primary" />
+                    <p className="text-xs text-muted-foreground">Speed</p>
+                    <p className="font-semibold">{latestTelematics.speed ? `${latestTelematics.speed} MPH` : "-"}</p>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-muted-foreground text-center py-8">No telematics data available</p>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="glass-card">
+            <CardHeader className="flex flex-row items-center justify-between gap-2">
+              <CardTitle className="text-lg flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5" />
+                Fault Codes
+              </CardTitle>
+              {activeFaults.length > 0 && (
+                <Badge variant="destructive">{activeFaults.length} Active</Badge>
+              )}
+            </CardHeader>
+            <CardContent>
+              {faultCodes && faultCodes.length > 0 ? (
+                <div className="space-y-2">
+                  {faultCodes.slice(0, 5).map((fault) => (
+                    <div 
+                      key={fault.id} 
+                      className={`p-3 rounded-lg flex items-center justify-between ${
+                        fault.status === "active" ? "bg-destructive/10 border border-destructive/20" : "bg-muted/50"
+                      }`}
+                      data-testid={`fault-${fault.id}`}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-mono font-semibold">{fault.code}</span>
+                          <Badge 
+                            variant={fault.severity === "critical" ? "destructive" : fault.severity === "high" ? "destructive" : "secondary"}
+                            className="text-xs"
+                          >
+                            {fault.severity}
+                          </Badge>
+                          <Badge variant={fault.status === "active" ? "destructive" : "secondary"} className="text-xs">
+                            {fault.status}
+                          </Badge>
+                        </div>
+                        <p className="text-sm text-muted-foreground truncate">{fault.description || "No description"}</p>
+                        {fault.spn && fault.fmi && (
+                          <p className="text-xs text-muted-foreground">SPN: {fault.spn} | FMI: {fault.fmi}</p>
+                        )}
+                      </div>
+                      <span className="text-xs text-muted-foreground whitespace-nowrap ml-2">
+                        {new Date(fault.occurredAt).toLocaleDateString()}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8">
+                  <AlertTriangle className="h-8 w-8 mx-auto mb-2 text-green-500" />
+                  <p className="text-muted-foreground">No fault codes detected</p>
+                </div>
               )}
             </CardContent>
           </Card>

@@ -53,8 +53,9 @@ Key backend patterns:
 6. **DVIRs**: Driver Vehicle Inspection Reports with defect tracking
 7. **Predictions**: AI-generated maintenance predictions
 8. **Estimates**: Maintenance cost estimates tied to assets with line items for inventory parts, zero-stock parts, non-inventory items, and labor. Includes parts fulfillment tracking with needsOrdering flag. Estimate numbers auto-generated as EST-YYYY-####. Status workflow: draft → pending_approval → approved/rejected → converted. Server-side automatic recalculation of parts/labor/grand totals when lines are modified.
-9. **Telematics Data**: Engine diagnostic data including GPS coordinates, odometer, engine hours, fuel level, coolant temp, oil pressure, battery voltage (schema ready, integration pending)
-10. **Fault Codes**: Diagnostic Trouble Codes (DTCs) with severity levels, active/resolved status, linked to telematics data (schema ready)
+9. **Telematics Data**: Engine diagnostic data including GPS coordinates, odometer, engine hours, fuel level, coolant temp, oil pressure, battery voltage, DEF level, speed. Live display on asset detail page. API routes: GET /api/assets/:id/telematics/latest, POST /api/assets/:id/telematics for data ingestion.
+10. **Fault Codes**: Diagnostic Trouble Codes (DTCs) with severity levels (low/medium/high/critical), status workflow (active/pending/cleared/resolved), SPN/FMI codes. Display on asset detail page with visual indicators. API routes: GET /api/assets/:id/fault-codes, POST /api/assets/:id/fault-codes.
+11. **Work Order Lines**: Line items for work orders with auto-generated line numbers, parts selection from inventory (partId, quantity, unitCost), and timer functionality (start/pause/resume/complete). Status workflow: pending → in_progress → paused → completed. Labor hours accumulate across pause/resume cycles. API routes: GET/POST /api/work-orders/:id/lines, PATCH/DELETE /api/work-order-lines/:id, POST /api/work-order-lines/:id/start-timer, POST /api/work-order-lines/:id/pause-timer, POST /api/work-order-lines/:id/stop-timer.
 
 ## External Dependencies
 

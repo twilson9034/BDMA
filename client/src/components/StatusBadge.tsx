@@ -14,6 +14,7 @@ const statusConfig: Record<string, { label: string; className: string }> = {
   pending_inspection: { label: "Pending Inspection", className: "status-pending border" },
   open: { label: "Open", className: "status-pending border" },
   in_progress: { label: "In Progress", className: "status-in-maintenance border" },
+  paused: { label: "Paused", className: "status-pending border" },
   on_hold: { label: "On Hold", className: "bg-muted text-muted-foreground border-muted" },
   completed: { label: "Completed", className: "status-operational border" },
   cancelled: { label: "Cancelled", className: "bg-muted text-muted-foreground border-muted" },

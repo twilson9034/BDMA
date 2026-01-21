@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -6,7 +6,7 @@ import { useLocation, useRoute } from "wouter";
 import { 
   ArrowLeft, Save, Loader2, Edit, Trash2, Clock, 
   Calendar, User, Wrench, AlertTriangle, CheckCircle2,
-  Plus, X
+  Plus, X, Play, Square, Timer, Package
 } from "lucide-react";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
@@ -41,7 +41,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { PriorityBadge } from "@/components/PriorityBadge";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import type { WorkOrder, Asset, WorkOrderLine } from "@shared/schema";
+import type { WorkOrder, Asset, WorkOrderLine, Part } from "@shared/schema";
 
 const workOrderFormSchema = z.object({
   description: z.string().optional(),
@@ -73,6 +73,12 @@ export default function WorkOrderDetail() {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 
   const workOrderId = params?.id ? parseInt(params.id) : null;
+  const [showAddLineDialog, setShowAddLineDialog] = useState(false);
+  const [activeTimers, setActiveTimers] = useState<Record<number, number>>({});
+  const [newLineDescription, setNewLineDescription] = useState("");
+  const [newLinePartId, setNewLinePartId] = useState<string>("");
+  const [newLineQuantity, setNewLineQuantity] = useState("1");
+  const [newLinePartsCost, setNewLinePartsCost] = useState("");
 
   const { data: workOrder, isLoading } = useQuery<WorkOrderWithDetails>({
     queryKey: ["/api/work-orders", workOrderId],
@@ -83,10 +89,31 @@ export default function WorkOrderDetail() {
     queryKey: ["/api/assets"],
   });
 
+  const { data: parts } = useQuery<Part[]>({
+    queryKey: ["/api/parts"],
+  });
+
   const { data: workOrderLines } = useQuery<WorkOrderLine[]>({
     queryKey: ["/api/work-orders", workOrderId, "lines"],
     enabled: !!workOrderId,
   });
+
+  // Update active timers every second for lines that are in_progress
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (workOrderLines) {
+        const newTimers: Record<number, number> = {};
+        workOrderLines.forEach(line => {
+          if (line.status === "in_progress" && line.startTime) {
+            const elapsed = (Date.now() - new Date(line.startTime).getTime()) / 1000;
+            newTimers[line.id] = elapsed;
+          }
+        });
+        setActiveTimers(newTimers);
+      }
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [workOrderLines]);
 
   const form = useForm<WorkOrderFormValues>({
     resolver: zodResolver(workOrderFormSchema),
@@ -152,6 +179,100 @@ export default function WorkOrderDetail() {
       });
     },
   });
+
+  const createLineMutation = useMutation({
+    mutationFn: async (data: { description: string; partId?: number; quantity?: number; unitCost?: string; partsCost?: string }) => {
+      return apiRequest("POST", `/api/work-orders/${workOrderId}/lines`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/work-orders", workOrderId, "lines"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/parts"] });
+      toast({ title: "Line Added", description: "Work order line has been added." });
+      setShowAddLineDialog(false);
+      setNewLineDescription("");
+      setNewLinePartId("");
+      setNewLineQuantity("1");
+      setNewLinePartsCost("");
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to add line.", variant: "destructive" });
+    },
+  });
+
+  const startTimerMutation = useMutation({
+    mutationFn: async (lineId: number) => {
+      return apiRequest("POST", `/api/work-order-lines/${lineId}/start-timer`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/work-orders", workOrderId, "lines"] });
+      toast({ title: "Timer Started", description: "Time tracking has begun for this task." });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to start timer.", variant: "destructive" });
+    },
+  });
+
+  const pauseTimerMutation = useMutation({
+    mutationFn: async (lineId: number) => {
+      return apiRequest("POST", `/api/work-order-lines/${lineId}/pause-timer`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/work-orders", workOrderId, "lines"] });
+      toast({ title: "Timer Paused", description: "Time tracking paused. Resume when ready." });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to pause timer.", variant: "destructive" });
+    },
+  });
+
+  const stopTimerMutation = useMutation({
+    mutationFn: async ({ lineId, complete }: { lineId: number; complete: boolean }) => {
+      return apiRequest("POST", `/api/work-order-lines/${lineId}/stop-timer`, { complete });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/work-orders", workOrderId, "lines"] });
+      toast({ title: "Timer Stopped", description: "Labor time has been recorded." });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to stop timer.", variant: "destructive" });
+    },
+  });
+
+  const deleteLineMutation = useMutation({
+    mutationFn: async (lineId: number) => {
+      return apiRequest("DELETE", `/api/work-order-lines/${lineId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/work-orders", workOrderId, "lines"] });
+      toast({ title: "Line Deleted", description: "Work order line has been removed." });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to delete line.", variant: "destructive" });
+    },
+  });
+
+  const formatElapsedTime = (seconds: number) => {
+    const hrs = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const handleAddLine = () => {
+    if (!newLineDescription.trim()) return;
+    const selectedPart = newLinePartId ? parts?.find(p => p.id.toString() === newLinePartId) : null;
+    const quantity = parseInt(newLineQuantity) || 1;
+    const unitCost = selectedPart?.unitCost || newLinePartsCost || undefined;
+    const totalPartsCost = selectedPart && unitCost ? (parseFloat(unitCost) * quantity).toFixed(2) : newLinePartsCost || undefined;
+    
+    createLineMutation.mutate({
+      description: newLineDescription,
+      partId: selectedPart ? selectedPart.id : undefined,
+      quantity: selectedPart ? quantity : undefined,
+      unitCost: unitCost,
+      partsCost: totalPartsCost,
+    });
+  };
 
   const onSubmit = (data: WorkOrderFormValues) => {
     updateMutation.mutate(data);
@@ -566,9 +687,12 @@ export default function WorkOrderDetail() {
           </Card>
 
           <Card className="glass-card lg:col-span-2">
-            <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle className="text-lg">Work Order Lines</CardTitle>
-              <Button size="sm" data-testid="button-add-line">
+            <CardHeader className="flex flex-row items-center justify-between gap-2">
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Wrench className="h-5 w-5" />
+                Work Order Lines
+              </CardTitle>
+              <Button size="sm" onClick={() => setShowAddLineDialog(true)} data-testid="button-add-line">
                 <Plus className="h-4 w-4 mr-2" />
                 Add Line
               </Button>
@@ -576,22 +700,106 @@ export default function WorkOrderDetail() {
             <CardContent>
               {workOrderLines && workOrderLines.length > 0 ? (
                 <div className="space-y-3">
-                  {workOrderLines.map((line, index) => (
-                    <div key={line.id} className="p-4 rounded-lg bg-muted/50 flex items-center justify-between">
-                      <div>
-                        <p className="font-medium">Line {line.lineNumber}: {line.description}</p>
-                        <div className="flex gap-4 text-sm text-muted-foreground mt-1">
-                          <span>Labor: {line.laborHours || 0}h</span>
-                          <span>Parts: ${line.partsCost || 0}</span>
-                          <span className="capitalize">{line.status}</span>
+                  {workOrderLines.map((line) => (
+                    <div key={line.id} className="p-4 rounded-lg bg-muted/50" data-testid={`line-${line.id}`}>
+                      <div className="flex items-start justify-between gap-4 flex-wrap">
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium">Line {line.lineNumber}: {line.description}</p>
+                          <div className="flex flex-wrap gap-4 text-sm text-muted-foreground mt-1">
+                            <span className="flex items-center gap-1">
+                              <Clock className="h-3 w-3" />
+                              {line.laborHours || 0}h labor
+                            </span>
+                            <span className="flex items-center gap-1">
+                              <Package className="h-3 w-3" />
+                              ${line.partsCost || 0} parts
+                            </span>
+                          </div>
+                          {line.status === "in_progress" && activeTimers[line.id] && (
+                            <div className="flex items-center gap-2 mt-2 text-primary font-mono text-lg">
+                              <Timer className="h-4 w-4 animate-pulse" />
+                              {formatElapsedTime(activeTimers[line.id])}
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <StatusBadge status={line.status} />
+                          {line.status === "pending" && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => startTimerMutation.mutate(line.id)}
+                              disabled={startTimerMutation.isPending}
+                              data-testid={`button-start-timer-${line.id}`}
+                            >
+                              <Play className="h-4 w-4 mr-1" />
+                              Start
+                            </Button>
+                          )}
+                          {line.status === "in_progress" && (
+                            <div className="flex gap-1">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => pauseTimerMutation.mutate(line.id)}
+                                disabled={pauseTimerMutation.isPending}
+                                data-testid={`button-pause-timer-${line.id}`}
+                              >
+                                <Square className="h-4 w-4 mr-1" />
+                                Pause
+                              </Button>
+                              <Button
+                                size="sm"
+                                onClick={() => stopTimerMutation.mutate({ lineId: line.id, complete: true })}
+                                disabled={stopTimerMutation.isPending}
+                                data-testid={`button-complete-line-${line.id}`}
+                              >
+                                <CheckCircle2 className="h-4 w-4 mr-1" />
+                                Done
+                              </Button>
+                            </div>
+                          )}
+                          {line.status === "paused" && (
+                            <div className="flex gap-1">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => startTimerMutation.mutate(line.id)}
+                                disabled={startTimerMutation.isPending}
+                                data-testid={`button-resume-timer-${line.id}`}
+                              >
+                                <Play className="h-4 w-4 mr-1" />
+                                Resume
+                              </Button>
+                              <Button
+                                size="sm"
+                                onClick={() => stopTimerMutation.mutate({ lineId: line.id, complete: true })}
+                                disabled={stopTimerMutation.isPending}
+                                data-testid={`button-complete-paused-${line.id}`}
+                              >
+                                <CheckCircle2 className="h-4 w-4 mr-1" />
+                                Done
+                              </Button>
+                            </div>
+                          )}
+                          {line.status !== "in_progress" && line.status !== "paused" && (
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              onClick={() => deleteLineMutation.mutate(line.id)}
+                              disabled={deleteLineMutation.isPending}
+                              data-testid={`button-delete-line-${line.id}`}
+                            >
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                          )}
                         </div>
                       </div>
-                      <StatusBadge status={line.status} />
                     </div>
                   ))}
                 </div>
               ) : (
-                <p className="text-muted-foreground text-center py-8">No work order lines yet</p>
+                <p className="text-muted-foreground text-center py-8">No work order lines yet. Add a line to track labor and parts.</p>
               )}
             </CardContent>
           </Card>
@@ -619,6 +827,91 @@ export default function WorkOrderDetail() {
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
               ) : null}
               Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showAddLineDialog} onOpenChange={setShowAddLineDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Work Order Line</DialogTitle>
+            <DialogDescription>
+              Add a new task or operation to this work order. You can track time and parts used.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Task Description *</label>
+              <Input
+                placeholder="e.g., Replace oil filter, Check brake pads..."
+                value={newLineDescription}
+                onChange={(e) => setNewLineDescription(e.target.value)}
+                data-testid="input-line-description"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Part (Optional)</label>
+              <Select value={newLinePartId} onValueChange={(value) => {
+                setNewLinePartId(value);
+                const part = parts?.find(p => p.id.toString() === value);
+                if (part?.unitCost) {
+                  setNewLinePartsCost(part.unitCost);
+                }
+              }}>
+                <SelectTrigger data-testid="select-part">
+                  <SelectValue placeholder="Select a part from inventory" />
+                </SelectTrigger>
+                <SelectContent>
+                  {parts?.map(part => (
+                    <SelectItem key={part.id} value={part.id.toString()}>
+                      {part.partNumber} - {part.name} (${part.unitCost || 0}) - Qty: {part.quantityOnHand || 0}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {newLinePartId && (
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Quantity</label>
+                <Input
+                  type="number"
+                  min="1"
+                  placeholder="1"
+                  value={newLineQuantity}
+                  onChange={(e) => setNewLineQuantity(e.target.value)}
+                  data-testid="input-quantity"
+                />
+              </div>
+            )}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Parts Cost ($){newLinePartId ? ' (Auto-calculated)' : ''}</label>
+              <Input
+                type="number"
+                step="0.01"
+                placeholder="0.00"
+                value={newLinePartId ? (parseFloat(newLinePartsCost || "0") * parseInt(newLineQuantity || "1")).toFixed(2) : newLinePartsCost}
+                onChange={(e) => setNewLinePartsCost(e.target.value)}
+                disabled={!!newLinePartId}
+                data-testid="input-parts-cost"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAddLineDialog(false)}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleAddLine}
+              disabled={!newLineDescription.trim() || createLineMutation.isPending}
+              data-testid="button-confirm-add-line"
+            >
+              {createLineMutation.isPending ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Plus className="h-4 w-4 mr-2" />
+              )}
+              Add Line
             </Button>
           </DialogFooter>
         </DialogContent>

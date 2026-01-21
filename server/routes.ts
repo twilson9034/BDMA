@@ -16,6 +16,8 @@ import {
   insertFeedbackSchema,
   insertEstimateSchema,
   insertEstimateLineSchema,
+  insertTelematicsDataSchema,
+  insertFaultCodeSchema,
 } from "@shared/schema";
 import { z } from "zod";
 import { setupAuth, registerAuthRoutes } from "./replit_integrations/auth";
@@ -313,9 +315,13 @@ export async function registerRoutes(
 
   app.post("/api/work-orders/:id/lines", requireAuth, async (req, res) => {
     try {
+      const workOrderId = parseInt(req.params.id);
+      const nextLineNumber = await storage.getNextWorkOrderLineNumber(workOrderId);
+      
       const validated = insertWorkOrderLineSchema.parse({
         ...req.body,
-        workOrderId: parseInt(req.params.id),
+        workOrderId,
+        lineNumber: req.body.lineNumber || nextLineNumber,
       });
       const line = await storage.createWorkOrderLine(validated);
       res.status(201).json(line);
@@ -324,6 +330,86 @@ export async function registerRoutes(
         return res.status(400).json({ error: error.errors });
       }
       res.status(500).json({ error: "Failed to create work order line" });
+    }
+  });
+
+  app.patch("/api/work-order-lines/:id", requireAuth, async (req, res) => {
+    try {
+      const updated = await storage.updateWorkOrderLine(parseInt(req.params.id), req.body);
+      if (!updated) return res.status(404).json({ error: "Work order line not found" });
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update work order line" });
+    }
+  });
+
+  app.delete("/api/work-order-lines/:id", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteWorkOrderLine(parseInt(req.params.id));
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete work order line" });
+    }
+  });
+
+  // Start/Stop timer for work order lines
+  app.post("/api/work-order-lines/:id/start-timer", requireAuth, async (req, res) => {
+    try {
+      const line = await storage.getWorkOrderLine(parseInt(req.params.id));
+      if (!line) return res.status(404).json({ error: "Work order line not found" });
+      
+      const updated = await storage.updateWorkOrderLine(parseInt(req.params.id), {
+        startTime: new Date(),
+        status: "in_progress",
+        technicianId: req.body.technicianId || (req.user as any)?.id,
+      });
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to start timer" });
+    }
+  });
+
+  app.post("/api/work-order-lines/:id/stop-timer", requireAuth, async (req, res) => {
+    try {
+      const line = await storage.getWorkOrderLine(parseInt(req.params.id));
+      if (!line) return res.status(404).json({ error: "Work order line not found" });
+      if (!line.startTime) return res.status(400).json({ error: "Timer not started" });
+      
+      const endTime = new Date();
+      const startTime = new Date(line.startTime);
+      const hoursWorked = (endTime.getTime() - startTime.getTime()) / (1000 * 60 * 60);
+      const existingHours = parseFloat(line.laborHours || "0");
+      
+      const updated = await storage.updateWorkOrderLine(parseInt(req.params.id), {
+        endTime,
+        laborHours: (existingHours + hoursWorked).toFixed(2),
+        status: req.body.complete ? "completed" : "pending",
+      });
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to stop timer" });
+    }
+  });
+
+  app.post("/api/work-order-lines/:id/pause-timer", requireAuth, async (req, res) => {
+    try {
+      const line = await storage.getWorkOrderLine(parseInt(req.params.id));
+      if (!line) return res.status(404).json({ error: "Work order line not found" });
+      if (!line.startTime) return res.status(400).json({ error: "Timer not started" });
+      
+      const pauseTime = new Date();
+      const startTime = new Date(line.startTime);
+      const hoursWorked = (pauseTime.getTime() - startTime.getTime()) / (1000 * 60 * 60);
+      const existingHours = parseFloat(line.laborHours || "0");
+      
+      const updated = await storage.updateWorkOrderLine(parseInt(req.params.id), {
+        startTime: null,
+        laborHours: (existingHours + hoursWorked).toFixed(2),
+        status: "paused",
+      });
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to pause timer" });
     }
   });
 
@@ -565,6 +651,84 @@ export async function registerRoutes(
   app.get("/api/predictions", async (req, res) => {
     const predictions = await storage.getPredictions();
     res.json(predictions);
+  });
+
+  app.patch("/api/predictions/:id", requireAuth, async (req, res) => {
+    try {
+      const updated = await storage.updatePrediction(parseInt(req.params.id), req.body);
+      if (!updated) return res.status(404).json({ error: "Prediction not found" });
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update prediction" });
+    }
+  });
+
+  // Telematics Data
+  app.get("/api/assets/:id/telematics", async (req, res) => {
+    const data = await storage.getTelematicsData(parseInt(req.params.id));
+    res.json(data);
+  });
+
+  app.get("/api/assets/:id/telematics/latest", async (req, res) => {
+    const data = await storage.getLatestTelematicsData(parseInt(req.params.id));
+    res.json(data || null);
+  });
+
+  app.post("/api/assets/:id/telematics", requireAuth, async (req, res) => {
+    try {
+      const validated = insertTelematicsDataSchema.parse({
+        ...req.body,
+        assetId: parseInt(req.params.id),
+      });
+      const data = await storage.createTelematicsData(validated);
+      res.status(201).json(data);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: "Failed to create telematics data" });
+    }
+  });
+
+  // Fault Codes
+  app.get("/api/fault-codes", async (req, res) => {
+    const assetId = req.query.assetId ? parseInt(req.query.assetId as string) : undefined;
+    const faultCodes = await storage.getFaultCodes(assetId);
+    res.json(faultCodes);
+  });
+
+  app.get("/api/fault-codes/active", async (req, res) => {
+    const assetId = req.query.assetId ? parseInt(req.query.assetId as string) : undefined;
+    const faultCodes = await storage.getActiveFaultCodes(assetId);
+    res.json(faultCodes);
+  });
+
+  app.get("/api/assets/:id/fault-codes", async (req, res) => {
+    const faultCodes = await storage.getFaultCodes(parseInt(req.params.id));
+    res.json(faultCodes);
+  });
+
+  app.post("/api/fault-codes", requireAuth, async (req, res) => {
+    try {
+      const validated = insertFaultCodeSchema.parse(req.body);
+      const code = await storage.createFaultCode(validated);
+      res.status(201).json(code);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: "Failed to create fault code" });
+    }
+  });
+
+  app.patch("/api/fault-codes/:id", requireAuth, async (req, res) => {
+    try {
+      const updated = await storage.updateFaultCode(parseInt(req.params.id), req.body);
+      if (!updated) return res.status(404).json({ error: "Fault code not found" });
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update fault code" });
+    }
   });
 
   // Estimates

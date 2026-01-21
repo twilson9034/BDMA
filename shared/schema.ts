@@ -197,7 +197,7 @@ export type WorkOrder = typeof workOrders.$inferSelect;
 // ============================================================
 // WORK ORDER LINES
 // ============================================================
-export const workOrderLineStatusEnum = ["pending", "in_progress", "completed", "cancelled"] as const;
+export const workOrderLineStatusEnum = ["pending", "in_progress", "paused", "completed", "cancelled"] as const;
 
 export const workOrderLines = pgTable("work_order_lines", {
   id: serial("id").primaryKey(),
@@ -606,16 +606,22 @@ export type ReorderAlert = typeof reorderAlerts.$inferSelect;
 // ============================================================
 // AI PREDICTIONS
 // ============================================================
+export const predictionSeverityEnum = ["low", "medium", "high", "critical"] as const;
+
 export const predictions = pgTable("predictions", {
   id: serial("id").primaryKey(),
   assetId: integer("asset_id").notNull().references(() => assets.id),
   predictionType: text("prediction_type").notNull(),
   prediction: text("prediction").notNull(),
   confidence: decimal("confidence", { precision: 5, scale: 4 }),
+  severity: text("severity").default("medium").$type<typeof predictionSeverityEnum[number]>(),
+  reasoning: text("reasoning"),
+  dataPoints: jsonb("data_points").$type<string[]>(),
   recommendedAction: text("recommended_action"),
   estimatedCost: decimal("estimated_cost", { precision: 12, scale: 2 }),
   dueDate: timestamp("due_date"),
   acknowledged: boolean("acknowledged").default(false),
+  dismissedAt: timestamp("dismissed_at"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
