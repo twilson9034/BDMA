@@ -482,18 +482,27 @@ export async function registerRoutes(
     try {
       const line = await storage.getWorkOrderLine(parseInt(req.params.id));
       if (!line) return res.status(404).json({ error: "Work order line not found" });
-      if (!line.startTime) return res.status(400).json({ error: "Timer not started" });
       
-      const endTime = new Date();
-      const startTime = new Date(line.startTime);
-      const hoursWorked = (endTime.getTime() - startTime.getTime()) / (1000 * 60 * 60);
-      const existingHours = parseFloat(line.laborHours || "0");
+      let updateData: any = {};
       
-      const updated = await storage.updateWorkOrderLine(parseInt(req.params.id), {
-        endTime,
-        laborHours: (existingHours + hoursWorked).toFixed(2),
-        status: req.body.complete ? "completed" : "pending",
-      });
+      if (line.startTime) {
+        const endTime = new Date();
+        const startTime = new Date(line.startTime);
+        const hoursWorked = (endTime.getTime() - startTime.getTime()) / (1000 * 60 * 60);
+        const existingHours = parseFloat(line.laborHours || "0");
+        
+        updateData.endTime = endTime;
+        updateData.laborHours = (existingHours + hoursWorked).toFixed(2);
+        updateData.startTime = null;
+      }
+
+      if (req.body.complete) {
+        updateData.status = "completed";
+      } else {
+        updateData.status = "pending";
+      }
+      
+      const updated = await storage.updateWorkOrderLine(parseInt(req.params.id), updateData);
 
       if (updated) {
         // @ts-ignore - explicitly call updateWorkOrderActualCost to ensure totals are updated

@@ -1037,7 +1037,7 @@ export default function WorkOrderDetail() {
                                   disabled={stopTimerMutation.isPending}
                                 >
                                   <CheckCircle2 className="h-3 w-3 mr-1" />
-                                  Complete
+                                  Close Line
                                 </Button>
                               </div>
                             )}
@@ -1060,9 +1060,15 @@ export default function WorkOrderDetail() {
                                   disabled={stopTimerMutation.isPending}
                                 >
                                   <CheckCircle2 className="h-3 w-3 mr-1" />
-                                  Complete
+                                  Close Line
                                 </Button>
                               </div>
+                            )}
+                            {line.status === "completed" && (
+                              <Badge variant="outline" className="text-green-600 border-green-200 bg-green-50 h-8 px-3">
+                                <CheckCircle2 className="h-3 w-3 mr-1" />
+                                Completed
+                              </Badge>
                             )}
 
                             {line.partRequestStatus === 'none' && (
