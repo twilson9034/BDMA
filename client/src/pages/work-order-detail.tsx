@@ -81,6 +81,7 @@ export default function WorkOrderDetail() {
   const [newLineComplaint, setNewLineComplaint] = useState("");
   const [newLineCause, setNewLineCause] = useState("");
   const [newLineCorrection, setNewLineCorrection] = useState("");
+  const [newLineNotes, setNewLineNotes] = useState("");
   const [newLinePartId, setNewLinePartId] = useState<string>("");
   const [newLineQuantity, setNewLineQuantity] = useState("1");
   const [newLinePartsCost, setNewLinePartsCost] = useState("");
@@ -232,6 +233,7 @@ export default function WorkOrderDetail() {
       setNewLineComplaint("");
       setNewLineCause("");
       setNewLineCorrection("");
+      setNewLineNotes("");
       setNewLinePartId("");
       setNewLineQuantity("1");
       setNewLinePartsCost("");
@@ -314,6 +316,7 @@ export default function WorkOrderDetail() {
       complaint: newLineComplaint || undefined,
       cause: newLineCause || undefined,
       correction: newLineCorrection || undefined,
+      notes: newLineNotes || undefined,
       partId: selectedPart ? selectedPart.id : undefined,
       quantity: selectedPart ? quantity : undefined,
       unitCost: unitCost,
