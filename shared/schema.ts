@@ -646,3 +646,144 @@ export const activityLogs = pgTable("activity_logs", {
 export const insertActivityLogSchema = createInsertSchema(activityLogs).omit({ id: true, createdAt: true });
 export type InsertActivityLog = z.infer<typeof insertActivityLogSchema>;
 export type ActivityLog = typeof activityLogs.$inferSelect;
+
+// ============================================================
+// ESTIMATES (Tied to Assets)
+// ============================================================
+export const estimateStatusEnum = ["draft", "pending_approval", "approved", "rejected", "converted"] as const;
+
+export const estimates = pgTable("estimates", {
+  id: serial("id").primaryKey(),
+  estimateNumber: text("estimate_number").notNull().unique(),
+  assetId: integer("asset_id").notNull().references(() => assets.id),
+  title: text("title"),
+  description: text("description"),
+  status: text("status").notNull().default("draft").$type<typeof estimateStatusEnum[number]>(),
+  preparedById: varchar("prepared_by_id"),
+  approvedById: varchar("approved_by_id"),
+  laborTotal: decimal("labor_total", { precision: 12, scale: 2 }).default("0"),
+  partsTotal: decimal("parts_total", { precision: 12, scale: 2 }).default("0"),
+  markupPercent: decimal("markup_percent", { precision: 5, scale: 2 }).default("0"),
+  markupTotal: decimal("markup_total", { precision: 12, scale: 2 }).default("0"),
+  grandTotal: decimal("grand_total", { precision: 12, scale: 2 }).default("0"),
+  notes: text("notes"),
+  validUntil: timestamp("valid_until"),
+  convertedToWorkOrderId: integer("converted_to_work_order_id").references(() => workOrders.id),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_estimates_asset").on(table.assetId),
+  index("idx_estimates_status").on(table.status),
+]);
+
+export const estimatesRelations = relations(estimates, ({ one, many }) => ({
+  asset: one(assets, { fields: [estimates.assetId], references: [assets.id] }),
+  lines: many(estimateLines),
+}));
+
+export const insertEstimateSchema = createInsertSchema(estimates).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertEstimate = z.infer<typeof insertEstimateSchema>;
+export type Estimate = typeof estimates.$inferSelect;
+
+// ============================================================
+// ESTIMATE LINES (Parts, Labor, Non-Inventory Items)
+// ============================================================
+export const estimateLineTypeEnum = ["inventory_part", "zero_stock_part", "non_inventory_item", "labor"] as const;
+
+export const estimateLines = pgTable("estimate_lines", {
+  id: serial("id").primaryKey(),
+  estimateId: integer("estimate_id").notNull().references(() => estimates.id, { onDelete: "cascade" }),
+  lineNumber: integer("line_number").notNull(),
+  lineType: text("line_type").notNull().$type<typeof estimateLineTypeEnum[number]>(),
+  partId: integer("part_id").references(() => parts.id),
+  partNumber: text("part_number"),
+  description: text("description").notNull(),
+  quantity: decimal("quantity", { precision: 12, scale: 2 }).notNull(),
+  unitCost: decimal("unit_cost", { precision: 12, scale: 4 }).notNull(),
+  totalCost: decimal("total_cost", { precision: 12, scale: 2 }).notNull(),
+  quantityOnHand: decimal("quantity_on_hand", { precision: 12, scale: 2 }),
+  needsOrdering: boolean("needs_ordering").default(false),
+  vendorId: integer("vendor_id").references(() => vendors.id),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const estimateLinesRelations = relations(estimateLines, ({ one }) => ({
+  estimate: one(estimates, { fields: [estimateLines.estimateId], references: [estimates.id] }),
+  part: one(parts, { fields: [estimateLines.partId], references: [parts.id] }),
+  vendor: one(vendors, { fields: [estimateLines.vendorId], references: [vendors.id] }),
+}));
+
+export const insertEstimateLineSchema = createInsertSchema(estimateLines).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertEstimateLine = z.infer<typeof insertEstimateLineSchema>;
+export type EstimateLine = typeof estimateLines.$inferSelect;
+
+// ============================================================
+// TELEMATICS DATA (Engine Data, Fault Codes)
+// ============================================================
+export const telematicsData = pgTable("telematics_data", {
+  id: serial("id").primaryKey(),
+  assetId: integer("asset_id").notNull().references(() => assets.id),
+  timestamp: timestamp("timestamp").notNull().defaultNow(),
+  engineHours: decimal("engine_hours", { precision: 12, scale: 2 }),
+  odometer: decimal("odometer", { precision: 12, scale: 2 }),
+  fuelLevel: decimal("fuel_level", { precision: 5, scale: 2 }),
+  coolantTemp: decimal("coolant_temp", { precision: 6, scale: 2 }),
+  oilPressure: decimal("oil_pressure", { precision: 6, scale: 2 }),
+  batteryVoltage: decimal("battery_voltage", { precision: 5, scale: 2 }),
+  defLevel: decimal("def_level", { precision: 5, scale: 2 }),
+  latitude: decimal("latitude", { precision: 10, scale: 7 }),
+  longitude: decimal("longitude", { precision: 10, scale: 7 }),
+  speed: decimal("speed", { precision: 6, scale: 2 }),
+  rawData: jsonb("raw_data").$type<Record<string, any>>(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_telematics_asset").on(table.assetId),
+  index("idx_telematics_timestamp").on(table.timestamp),
+]);
+
+export const telematicsDataRelations = relations(telematicsData, ({ one }) => ({
+  asset: one(assets, { fields: [telematicsData.assetId], references: [assets.id] }),
+}));
+
+export const insertTelematicsDataSchema = createInsertSchema(telematicsData).omit({ id: true, createdAt: true });
+export type InsertTelematicsData = z.infer<typeof insertTelematicsDataSchema>;
+export type TelematicsData = typeof telematicsData.$inferSelect;
+
+// ============================================================
+// FAULT CODES (DTC/Diagnostic Trouble Codes)
+// ============================================================
+export const faultSeverityEnum = ["low", "medium", "high", "critical"] as const;
+export const faultStatusEnum = ["active", "pending", "cleared", "resolved"] as const;
+
+export const faultCodes = pgTable("fault_codes", {
+  id: serial("id").primaryKey(),
+  assetId: integer("asset_id").notNull().references(() => assets.id),
+  code: text("code").notNull(),
+  description: text("description"),
+  severity: text("severity").notNull().default("medium").$type<typeof faultSeverityEnum[number]>(),
+  status: text("status").notNull().default("active").$type<typeof faultStatusEnum[number]>(),
+  source: text("source"),
+  spn: text("spn"),
+  fmi: text("fmi"),
+  occurredAt: timestamp("occurred_at").notNull().defaultNow(),
+  clearedAt: timestamp("cleared_at"),
+  workOrderId: integer("work_order_id").references(() => workOrders.id),
+  notes: text("notes"),
+  rawData: jsonb("raw_data").$type<Record<string, any>>(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_fault_codes_asset").on(table.assetId),
+  index("idx_fault_codes_status").on(table.status),
+  index("idx_fault_codes_severity").on(table.severity),
+]);
+
+export const faultCodesRelations = relations(faultCodes, ({ one }) => ({
+  asset: one(assets, { fields: [faultCodes.assetId], references: [assets.id] }),
+  workOrder: one(workOrders, { fields: [faultCodes.workOrderId], references: [workOrders.id] }),
+}));
+
+export const insertFaultCodeSchema = createInsertSchema(faultCodes).omit({ id: true, createdAt: true });
+export type InsertFaultCode = z.infer<typeof insertFaultCodeSchema>;
+export type FaultCode = typeof faultCodes.$inferSelect;

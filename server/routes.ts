@@ -14,6 +14,8 @@ import {
   insertDvirSchema,
   insertDvirDefectSchema,
   insertFeedbackSchema,
+  insertEstimateSchema,
+  insertEstimateLineSchema,
 } from "@shared/schema";
 import { z } from "zod";
 import { setupAuth, registerAuthRoutes } from "./replit_integrations/auth";
@@ -47,6 +49,42 @@ async function generatePONumber(): Promise<string> {
   const thisYearPOs = pos.filter(p => p.poNumber.startsWith(`PO-${year}`));
   const nextNum = thisYearPOs.length + 1;
   return `PO-${year}-${String(nextNum).padStart(4, "0")}`;
+}
+
+async function generateEstimateNumber(): Promise<string> {
+  const year = new Date().getFullYear();
+  const estimates = await storage.getEstimates();
+  const thisYearEstimates = estimates.filter(e => e.estimateNumber.startsWith(`EST-${year}`));
+  const nextNum = thisYearEstimates.length + 1;
+  return `EST-${year}-${String(nextNum).padStart(4, "0")}`;
+}
+
+async function recalculateEstimateTotals(estimateId: number): Promise<void> {
+  const lines = await storage.getEstimateLines(estimateId);
+  const estimate = await storage.getEstimate(estimateId);
+  let partsTotal = 0;
+  let laborTotal = 0;
+  
+  for (const line of lines) {
+    const cost = parseFloat(line.totalCost || "0");
+    if (line.lineType === "labor") {
+      laborTotal += cost;
+    } else {
+      partsTotal += cost;
+    }
+  }
+  
+  const subtotal = partsTotal + laborTotal;
+  const markupPercent = parseFloat(estimate?.markupPercent || "0");
+  const markupTotal = subtotal * (markupPercent / 100);
+  const grandTotal = subtotal + markupTotal;
+  
+  await storage.updateEstimate(estimateId, {
+    partsTotal: partsTotal.toFixed(2),
+    laborTotal: laborTotal.toFixed(2),
+    markupTotal: markupTotal.toFixed(2),
+    grandTotal: grandTotal.toFixed(2),
+  });
 }
 
 export async function registerRoutes(
@@ -120,6 +158,15 @@ export async function registerRoutes(
       res.json(updated);
     } catch (error) {
       res.status(500).json({ error: "Failed to update asset" });
+    }
+  });
+
+  app.delete("/api/assets/:id", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteAsset(parseInt(req.params.id));
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete asset" });
     }
   });
 
@@ -235,6 +282,15 @@ export async function registerRoutes(
       res.json(updated);
     } catch (error) {
       res.status(500).json({ error: "Failed to update work order" });
+    }
+  });
+
+  app.delete("/api/work-orders/:id", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteWorkOrder(parseInt(req.params.id));
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete work order" });
     }
   });
 
@@ -498,6 +554,138 @@ export async function registerRoutes(
   app.get("/api/predictions", async (req, res) => {
     const predictions = await storage.getPredictions();
     res.json(predictions);
+  });
+
+  // Estimates
+  app.get("/api/estimates", async (req, res) => {
+    const estimates = await storage.getEstimates();
+    res.json(estimates);
+  });
+
+  app.get("/api/estimates/:id", async (req, res) => {
+    const estimate = await storage.getEstimate(parseInt(req.params.id));
+    if (!estimate) return res.status(404).json({ error: "Estimate not found" });
+    res.json(estimate);
+  });
+
+  app.post("/api/estimates", requireAuth, async (req, res) => {
+    try {
+      const createSchema = insertEstimateSchema.omit({ 
+        estimateNumber: true, 
+        partsTotal: true,
+        laborTotal: true,
+        grandTotal: true,
+      });
+      const parsed = createSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid estimate data", details: parsed.error.errors });
+      }
+      const estimateNumber = await generateEstimateNumber();
+      const estimate = await storage.createEstimate({
+        ...parsed.data,
+        estimateNumber,
+        partsTotal: "0",
+        laborTotal: "0",
+        grandTotal: "0",
+      });
+      res.status(201).json(estimate);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create estimate" });
+    }
+  });
+
+  app.patch("/api/estimates/:id", requireAuth, async (req, res) => {
+    try {
+      const updateSchema = insertEstimateSchema.omit({ 
+        estimateNumber: true,
+        partsTotal: true,
+        laborTotal: true,
+        markupTotal: true,
+        grandTotal: true,
+      }).partial();
+      const parsed = updateSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid estimate data", details: parsed.error.errors });
+      }
+      const updated = await storage.updateEstimate(parseInt(req.params.id), parsed.data);
+      if (!updated) return res.status(404).json({ error: "Estimate not found" });
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update estimate" });
+    }
+  });
+
+  app.delete("/api/estimates/:id", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteEstimate(parseInt(req.params.id));
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete estimate" });
+    }
+  });
+
+  // Estimate Lines
+  app.get("/api/estimates/:id/lines", async (req, res) => {
+    const lines = await storage.getEstimateLines(parseInt(req.params.id));
+    res.json(lines);
+  });
+
+  app.post("/api/estimates/:id/lines", requireAuth, async (req, res) => {
+    try {
+      const estimateId = parseInt(req.params.id);
+      const createSchema = insertEstimateLineSchema.omit({ estimateId: true });
+      const parsed = createSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid line data", details: parsed.error.errors });
+      }
+      const line = await storage.createEstimateLine({
+        ...parsed.data,
+        estimateId,
+      });
+      await recalculateEstimateTotals(estimateId);
+      res.status(201).json(line);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create estimate line" });
+    }
+  });
+
+  app.patch("/api/estimate-lines/:id", requireAuth, async (req, res) => {
+    try {
+      const updateSchema = insertEstimateLineSchema.partial();
+      const parsed = updateSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid line data", details: parsed.error.errors });
+      }
+      const updated = await storage.updateEstimateLine(parseInt(req.params.id), parsed.data);
+      if (!updated) return res.status(404).json({ error: "Estimate line not found" });
+      if (updated.estimateId) {
+        await recalculateEstimateTotals(updated.estimateId);
+      }
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update estimate line" });
+    }
+  });
+
+  app.delete("/api/estimate-lines/:id", requireAuth, async (req, res) => {
+    try {
+      const lineId = parseInt(req.params.id);
+      const line = await storage.getEstimateLine(lineId);
+      const estimateId = line?.estimateId;
+      await storage.deleteEstimateLine(lineId);
+      if (estimateId) {
+        await recalculateEstimateTotals(estimateId);
+      }
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete estimate line" });
+    }
+  });
+
+  // Unfulfilled Parts Widget
+  app.get("/api/estimates/unfulfilled-parts", async (req, res) => {
+    const lines = await storage.getUnfulfilledEstimateLines();
+    res.json(lines);
   });
 
   return httpServer;

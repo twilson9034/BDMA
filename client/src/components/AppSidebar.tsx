@@ -14,6 +14,7 @@ import {
   MessageSquare,
   AlertTriangle,
   FileText,
+  Calculator,
   ChevronDown,
 } from "lucide-react";
 import {
@@ -47,6 +48,7 @@ const operationsItems = [
   { title: "PM Schedules", url: "/pm-schedules", icon: Calendar },
   { title: "DVIRs", url: "/dvirs", icon: ClipboardList },
   { title: "Predictions", url: "/predictions", icon: AlertTriangle },
+  { title: "Estimates", url: "/estimates", icon: Calculator },
 ];
 
 const procurementItems = [

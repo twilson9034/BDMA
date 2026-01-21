@@ -14,8 +14,10 @@ import LandingPage from "@/pages/landing";
 import Dashboard from "@/pages/dashboard";
 import WorkOrders from "@/pages/work-orders";
 import WorkOrderNew from "@/pages/work-order-new";
+import WorkOrderDetail from "@/pages/work-order-detail";
 import Assets from "@/pages/assets";
 import AssetNew from "@/pages/asset-new";
+import AssetDetail from "@/pages/asset-detail";
 import Inventory from "@/pages/inventory";
 import PMSchedules from "@/pages/pm-schedules";
 import DVIRs from "@/pages/dvirs";
@@ -27,6 +29,8 @@ import Manuals from "@/pages/manuals";
 import Reports from "@/pages/reports";
 import Feedback from "@/pages/feedback";
 import Settings from "@/pages/settings";
+import Estimates from "@/pages/estimates";
+import EstimateDetail from "@/pages/estimate-detail";
 import NotFound from "@/pages/not-found";
 
 function AuthenticatedRouter() {
@@ -35,8 +39,10 @@ function AuthenticatedRouter() {
       <Route path="/" component={Dashboard} />
       <Route path="/work-orders" component={WorkOrders} />
       <Route path="/work-orders/new" component={WorkOrderNew} />
+      <Route path="/work-orders/:id" component={WorkOrderDetail} />
       <Route path="/assets" component={Assets} />
       <Route path="/assets/new" component={AssetNew} />
+      <Route path="/assets/:id" component={AssetDetail} />
       <Route path="/inventory" component={Inventory} />
       <Route path="/pm-schedules" component={PMSchedules} />
       <Route path="/dvirs" component={DVIRs} />
@@ -47,6 +53,8 @@ function AuthenticatedRouter() {
       <Route path="/manuals" component={Manuals} />
       <Route path="/reports" component={Reports} />
       <Route path="/feedback" component={Feedback} />
+      <Route path="/estimates" component={Estimates} />
+      <Route path="/estimates/:id" component={EstimateDetail} />
       <Route path="/settings" component={Settings} />
       <Route component={NotFound} />
     </Switch>

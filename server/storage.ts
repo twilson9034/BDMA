@@ -24,6 +24,8 @@ import {
   reorderAlerts,
   predictions,
   activityLogs,
+  estimates,
+  estimateLines,
   type User,
   type UpsertUser,
   type InsertLocation,
@@ -58,6 +60,10 @@ import {
   type Prediction,
   type InsertActivityLog,
   type ActivityLog,
+  type InsertEstimate,
+  type Estimate,
+  type InsertEstimateLine,
+  type EstimateLine,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -76,6 +82,7 @@ export interface IStorage {
   getAsset(id: number): Promise<Asset | undefined>;
   createAsset(asset: InsertAsset): Promise<Asset>;
   updateAsset(id: number, asset: Partial<InsertAsset>): Promise<Asset | undefined>;
+  deleteAsset(id: number): Promise<void>;
   
   // Vendors
   getVendors(): Promise<Vendor[]>;
@@ -95,6 +102,7 @@ export interface IStorage {
   getRecentWorkOrders(limit: number): Promise<WorkOrder[]>;
   createWorkOrder(workOrder: InsertWorkOrder): Promise<WorkOrder>;
   updateWorkOrder(id: number, workOrder: Partial<InsertWorkOrder>): Promise<WorkOrder | undefined>;
+  deleteWorkOrder(id: number): Promise<void>;
   
   // Work Order Lines
   getWorkOrderLines(workOrderId: number): Promise<WorkOrderLine[]>;
@@ -148,6 +156,21 @@ export interface IStorage {
   // Predictions
   getPredictions(): Promise<Prediction[]>;
   createPrediction(prediction: InsertPrediction): Promise<Prediction>;
+
+  // Estimates
+  getEstimates(): Promise<Estimate[]>;
+  getEstimate(id: number): Promise<Estimate | undefined>;
+  createEstimate(estimate: InsertEstimate): Promise<Estimate>;
+  updateEstimate(id: number, estimate: Partial<InsertEstimate>): Promise<Estimate | undefined>;
+  deleteEstimate(id: number): Promise<void>;
+  
+  // Estimate Lines
+  getEstimateLines(estimateId: number): Promise<EstimateLine[]>;
+  getEstimateLine(id: number): Promise<EstimateLine | undefined>;
+  createEstimateLine(line: InsertEstimateLine): Promise<EstimateLine>;
+  updateEstimateLine(id: number, line: Partial<InsertEstimateLine>): Promise<EstimateLine | undefined>;
+  deleteEstimateLine(id: number): Promise<void>;
+  getUnfulfilledEstimateLines(): Promise<EstimateLine[]>;
   
   // Activity Logs
   createActivityLog(log: InsertActivityLog): Promise<ActivityLog>;
@@ -228,6 +251,10 @@ export class DatabaseStorage implements IStorage {
   async updateAsset(id: number, asset: Partial<InsertAsset>): Promise<Asset | undefined> {
     const [updated] = await db.update(assets).set({ ...asset, updatedAt: new Date() }).where(eq(assets.id, id)).returning();
     return updated;
+  }
+
+  async deleteAsset(id: number): Promise<void> {
+    await db.delete(assets).where(eq(assets.id, id));
   }
 
   // Vendors
@@ -320,6 +347,10 @@ export class DatabaseStorage implements IStorage {
     }
     
     return updated;
+  }
+
+  async deleteWorkOrder(id: number): Promise<void> {
+    await db.delete(workOrders).where(eq(workOrders.id, id));
   }
 
   // Work Order Lines
@@ -488,6 +519,58 @@ export class DatabaseStorage implements IStorage {
   async createPrediction(prediction: InsertPrediction): Promise<Prediction> {
     const [created] = await db.insert(predictions).values(prediction).returning();
     return created;
+  }
+
+  // Estimates
+  async getEstimates(): Promise<Estimate[]> {
+    return db.select().from(estimates).orderBy(desc(estimates.createdAt));
+  }
+
+  async getEstimate(id: number): Promise<Estimate | undefined> {
+    const [estimate] = await db.select().from(estimates).where(eq(estimates.id, id));
+    return estimate;
+  }
+
+  async createEstimate(estimate: InsertEstimate): Promise<Estimate> {
+    const [created] = await db.insert(estimates).values(estimate).returning();
+    return created;
+  }
+
+  async updateEstimate(id: number, estimate: Partial<InsertEstimate>): Promise<Estimate | undefined> {
+    const [updated] = await db.update(estimates).set({ ...estimate, updatedAt: new Date() }).where(eq(estimates.id, id)).returning();
+    return updated;
+  }
+
+  async deleteEstimate(id: number): Promise<void> {
+    await db.delete(estimates).where(eq(estimates.id, id));
+  }
+
+  // Estimate Lines
+  async getEstimateLines(estimateId: number): Promise<EstimateLine[]> {
+    return db.select().from(estimateLines).where(eq(estimateLines.estimateId, estimateId)).orderBy(estimateLines.lineNumber);
+  }
+
+  async createEstimateLine(line: InsertEstimateLine): Promise<EstimateLine> {
+    const [created] = await db.insert(estimateLines).values(line).returning();
+    return created;
+  }
+
+  async updateEstimateLine(id: number, line: Partial<InsertEstimateLine>): Promise<EstimateLine | undefined> {
+    const [updated] = await db.update(estimateLines).set({ ...line, updatedAt: new Date() }).where(eq(estimateLines.id, id)).returning();
+    return updated;
+  }
+
+  async getEstimateLine(id: number): Promise<EstimateLine | undefined> {
+    const [line] = await db.select().from(estimateLines).where(eq(estimateLines.id, id));
+    return line;
+  }
+
+  async deleteEstimateLine(id: number): Promise<void> {
+    await db.delete(estimateLines).where(eq(estimateLines.id, id));
+  }
+
+  async getUnfulfilledEstimateLines(): Promise<EstimateLine[]> {
+    return db.select().from(estimateLines).where(eq(estimateLines.needsOrdering, true));
   }
 
   // Activity Logs
