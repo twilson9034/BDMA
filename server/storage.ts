@@ -891,6 +891,32 @@ export class DatabaseStorage implements IStorage {
           .where(eq(parts.id, data.partId));
       }
     }
+
+    // Update work order total actual cost
+    await this.updateWorkOrderActualCost(line.workOrderId);
+  }
+
+  async updateWorkOrderActualCost(workOrderId: number): Promise<void> {
+    const transactions = await this.getWorkOrderTransactions(workOrderId);
+    const lines = await db.select().from(workOrderLines).where(eq(workOrderLines.workOrderId, workOrderId));
+    
+    // Total parts cost from transactions
+    const totalPartsCost = transactions.reduce((sum, t) => sum + Number(t.totalCost || 0), 0);
+    
+    // Total labor hours from lines
+    const totalLaborHours = lines.reduce((sum, l) => sum + Number(l.laborHours || 0), 0);
+    
+    // Assuming a default labor rate if not specified (could be expanded to use a setting)
+    const laborRate = 125; 
+    const totalLaborCost = totalLaborHours * laborRate;
+    
+    await db.update(workOrders)
+      .set({ 
+        actualCost: String(totalPartsCost + totalLaborCost),
+        actualHours: String(totalLaborHours),
+        updatedAt: new Date() 
+      })
+      .where(eq(workOrders.id, workOrderId));
   }
 
   async getSimilarAssets(manufacturer: string, model: string, excludeAssetId: number): Promise<Asset[]> {

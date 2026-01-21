@@ -487,6 +487,11 @@ export async function registerRoutes(
         laborHours: (existingHours + hoursWorked).toFixed(2),
         status: req.body.complete ? "completed" : "pending",
       });
+
+      if (updated) {
+        // @ts-ignore - explicitly call updateWorkOrderActualCost to ensure totals are updated
+        await storage.updateWorkOrderActualCost(updated.workOrderId);
+      }
       res.json(updated);
     } catch (error) {
       res.status(500).json({ error: "Failed to stop timer" });
@@ -509,6 +514,11 @@ export async function registerRoutes(
         laborHours: (existingHours + hoursWorked).toFixed(2),
         status: "paused",
       });
+      
+      if (updated) {
+        // @ts-ignore
+        await storage.updateWorkOrderActualCost(updated.workOrderId);
+      }
       res.json(updated);
     } catch (error) {
       res.status(500).json({ error: "Failed to pause timer" });
