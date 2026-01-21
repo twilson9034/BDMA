@@ -29,7 +29,23 @@ export async function analyzeAssetHealth(assetId: number): Promise<AnalysisResul
   const workOrders = await storage.getWorkOrdersByAsset(assetId);
   const recentWorkOrders = workOrders.slice(0, 10);
 
-  const prompt = buildAnalysisPrompt(asset, telematics, activeFaults, recentWorkOrders);
+  let similarAssetsHistory: { assetName: string; workOrders: any[] }[] = [];
+  if (asset.manufacturer && asset.model) {
+    const similarAssets = await storage.getSimilarAssets(asset.manufacturer, asset.model, assetId);
+    for (const similar of similarAssets.slice(0, 5)) {
+      const similarWOs = await storage.getWorkOrdersByAsset(similar.id);
+      if (similarWOs.length > 0) {
+        similarAssetsHistory.push({
+          assetName: similar.name,
+          workOrders: similarWOs.slice(0, 5),
+        });
+      }
+    }
+  }
+
+  const partPatterns = await storage.getFleetPartReplacementPatterns();
+
+  const prompt = buildAnalysisPrompt(asset, telematics, activeFaults, recentWorkOrders, similarAssetsHistory, partPatterns);
 
   try {
     const response = await openai.chat.completions.create({
@@ -37,20 +53,25 @@ export async function analyzeAssetHealth(assetId: number): Promise<AnalysisResul
       messages: [
         {
           role: "system",
-          content: `You are an expert fleet maintenance analyst AI. Analyze vehicle telematics data, fault codes, and maintenance history to predict potential failures and recommend preventive actions. 
+          content: `You are an expert fleet maintenance analyst AI. Analyze vehicle telematics data, fault codes, maintenance history, similar make/model asset patterns, and fleet-wide part replacement trends to predict potential failures and recommend preventive actions. 
+
+KEY ANALYSIS PRIORITIES:
+1. Current asset telemetry and fault codes
+2. Similar make/model patterns - if other vehicles of the same make/model have experienced specific issues, this vehicle may be at risk
+3. Fleet-wide part replacement trends - frequently replaced parts may indicate systemic issues or normal wear items to monitor
 
 Always respond with a valid JSON array of predictions. Each prediction should have:
-- predictionType: string (e.g., "engine_failure", "brake_wear", "battery_replacement", "fluid_service")
+- predictionType: string (e.g., "engine_failure", "brake_wear", "battery_replacement", "fluid_service", "similar_model_pattern", "fleet_trend")
 - prediction: string (clear description of the predicted issue)
 - severity: "low" | "medium" | "high" | "critical"
 - confidence: number between 0 and 1
-- reasoning: string (detailed explanation of why this prediction was made)
+- reasoning: string (detailed explanation of why this prediction was made, including references to similar asset patterns if applicable)
 - dataPoints: array of strings (specific data points that led to this prediction)
 - recommendedAction: string (what maintenance action should be taken)
 - estimatedCost: number (optional, estimated repair cost in USD)
 - daysUntilDue: number (optional, estimated days until maintenance is needed)
 
-Be specific and actionable. If there are no concerning patterns, return an empty array.`
+When similar make/model assets have had specific maintenance issues, increase the severity and confidence of predictions for those same issues on this asset. Be specific and actionable. If there are no concerning patterns, return an empty array.`
         },
         {
           role: "user",
@@ -86,7 +107,9 @@ function buildAnalysisPrompt(
   asset: Asset,
   telematics: TelematicsData | null,
   faultCodes: FaultCode[],
-  workOrders: any[]
+  workOrders: any[],
+  similarAssetsHistory: { assetName: string; workOrders: any[] }[] = [],
+  partPatterns: { partId: number; partNumber: string; partName: string; replacementCount: number }[] = []
 ): string {
   let prompt = `Analyze maintenance needs for:
 
@@ -133,7 +156,27 @@ Current Meter: ${asset.currentMeterReading || "N/A"} ${asset.meterType || ""}
     prompt += `\n`;
   }
 
-  prompt += `Based on this data, identify any maintenance predictions, potential failures, or recommended preventive actions. Return as JSON with a "predictions" array.`;
+  if (similarAssetsHistory.length > 0) {
+    prompt += `SIMILAR MAKE/MODEL ASSETS MAINTENANCE HISTORY:\n`;
+    prompt += `(These are other ${asset.manufacturer} ${asset.model} assets in the fleet)\n`;
+    similarAssetsHistory.forEach(similar => {
+      prompt += `\n${similar.assetName}:\n`;
+      similar.workOrders.forEach((wo: any) => {
+        prompt += `  - ${wo.workOrderNumber}: ${wo.title} (${wo.status})\n`;
+      });
+    });
+    prompt += `\nUse this data to identify patterns - if similar assets have had specific issues, this asset may experience them too.\n\n`;
+  }
+
+  if (partPatterns.length > 0) {
+    prompt += `FLEET-WIDE PART REPLACEMENT TRENDS:\n`;
+    partPatterns.slice(0, 10).forEach(p => {
+      prompt += `- ${p.partNumber} (${p.partName}): replaced ${p.replacementCount} times across fleet\n`;
+    });
+    prompt += `\nConsider if any of these frequently-replaced parts may need attention on this asset.\n\n`;
+  }
+
+  prompt += `Based on this data, identify any maintenance predictions, potential failures, or recommended preventive actions. Consider patterns from similar make/model assets and fleet-wide part replacement trends. Return as JSON with a "predictions" array.`;
 
   return prompt;
 }

@@ -20,6 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import {
   Form,
   FormControl,
@@ -41,7 +42,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { PriorityBadge } from "@/components/PriorityBadge";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import type { WorkOrder, Asset, WorkOrderLine, Part, VmrsCode } from "@shared/schema";
+import type { WorkOrder, Asset, WorkOrderLine, Part, VmrsCode, WorkOrderTransaction } from "@shared/schema";
 
 const workOrderFormSchema = z.object({
   description: z.string().optional(),
@@ -84,6 +85,13 @@ export default function WorkOrderDetail() {
   const [newLinePartId, setNewLinePartId] = useState<string>("");
   const [newLineQuantity, setNewLineQuantity] = useState("1");
   const [newLinePartsCost, setNewLinePartsCost] = useState("");
+  
+  const [showAddItemDialog, setShowAddItemDialog] = useState<number | null>(null);
+  const [addItemType, setAddItemType] = useState<"inventory" | "non-inventory">("inventory");
+  const [addItemPartId, setAddItemPartId] = useState("");
+  const [addItemDescription, setAddItemDescription] = useState("");
+  const [addItemQuantity, setAddItemQuantity] = useState("1");
+  const [addItemUnitCost, setAddItemUnitCost] = useState("");
 
   const handleVmrsCodeSelect = (vmrsCodeId: string) => {
     setSelectedVmrsCodeId(vmrsCodeId);
@@ -230,6 +238,7 @@ export default function WorkOrderDetail() {
       complaint?: string;
       cause?: string;
       correction?: string;
+      notes?: string;
       partId?: number; 
       quantity?: number; 
       unitCost?: string; 
@@ -322,21 +331,53 @@ export default function WorkOrderDetail() {
     },
   });
 
-  const [editedLineNotes, setEditedLineNotes] = useState<Record<number, string>>({});
-  const [autoSaveTimers, setAutoSaveTimers] = useState<Record<number, NodeJS.Timeout>>({});
+  const addItemMutation = useMutation({
+    mutationFn: async ({ lineId, description, quantity, unitCost, partId }: { 
+      lineId: number; 
+      description: string; 
+      quantity: number; 
+      unitCost: number; 
+      partId?: number 
+    }) => {
+      return apiRequest("POST", `/api/work-order-lines/${lineId}/add-item`, { description, quantity, unitCost, partId });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/work-orders", workOrderId, "lines"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/parts"] });
+      toast({ title: "Item Added", description: "Part/item has been added to the line." });
+      setShowAddItemDialog(null);
+      setAddItemType("inventory");
+      setAddItemPartId("");
+      setAddItemDescription("");
+      setAddItemQuantity("1");
+      setAddItemUnitCost("");
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to add item.", variant: "destructive" });
+    },
+  });
 
-  const handleLineNotesChange = (lineId: number, value: string) => {
-    setEditedLineNotes(prev => ({ ...prev, [lineId]: value }));
+  const [editedLineFields, setEditedLineFields] = useState<Record<string, string>>({});
+  const [autoSaveTimers, setAutoSaveTimers] = useState<Record<string, NodeJS.Timeout>>({});
+
+  const handleLineFieldChange = (lineId: number, field: 'notes' | 'complaint' | 'cause' | 'correction', value: string) => {
+    const key = `${lineId}-${field}`;
+    setEditedLineFields(prev => ({ ...prev, [key]: value }));
     
-    if (autoSaveTimers[lineId]) {
-      clearTimeout(autoSaveTimers[lineId]);
+    if (autoSaveTimers[key]) {
+      clearTimeout(autoSaveTimers[key]);
     }
     
     const timer = setTimeout(() => {
-      updateLineMutation.mutate({ lineId, data: { notes: value } });
+      updateLineMutation.mutate({ lineId, data: { [field]: value } });
     }, 1500);
     
-    setAutoSaveTimers(prev => ({ ...prev, [lineId]: timer }));
+    setAutoSaveTimers(prev => ({ ...prev, [key]: timer }));
+  };
+
+  const getLineFieldValue = (lineId: number, field: 'notes' | 'complaint' | 'cause' | 'correction', originalValue: string | null) => {
+    const key = `${lineId}-${field}`;
+    return editedLineFields[key] !== undefined ? editedLineFields[key] : (originalValue || '');
   };
 
   const formatElapsedTime = (seconds: number) => {
@@ -372,6 +413,32 @@ export default function WorkOrderDetail() {
       unitCost: unitCost,
       partsCost: totalPartsCost,
     });
+  };
+
+  const handleAddItem = () => {
+    if (!showAddItemDialog) return;
+    
+    if (addItemType === "inventory") {
+      const selectedPart = parts?.find(p => p.id.toString() === addItemPartId);
+      if (!selectedPart) return;
+      
+      addItemMutation.mutate({
+        lineId: showAddItemDialog,
+        description: `${selectedPart.partNumber} - ${selectedPart.name}`,
+        quantity: parseFloat(addItemQuantity) || 1,
+        unitCost: parseFloat(selectedPart.unitCost || "0"),
+        partId: selectedPart.id,
+      });
+    } else {
+      if (!addItemDescription) return;
+      
+      addItemMutation.mutate({
+        lineId: showAddItemDialog,
+        description: addItemDescription,
+        quantity: parseFloat(addItemQuantity) || 1,
+        unitCost: parseFloat(addItemUnitCost) || 0,
+      });
+    }
   };
 
   const onSubmit = (data: WorkOrderFormValues) => {
@@ -833,22 +900,43 @@ export default function WorkOrderDetail() {
 
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
                           <div className="space-y-1">
-                            <p className="text-[10px] uppercase font-bold text-muted-foreground">Complaint</p>
-                            <p className="p-2 rounded bg-background/50 border border-border/30 min-h-[40px]">
-                              {line.complaint || <span className="text-muted-foreground italic">No complaint recorded</span>}
+                            <p className="text-[10px] uppercase font-bold text-muted-foreground flex items-center gap-2">
+                              Complaint
+                              {updateLineMutation.isPending && <Loader2 className="h-3 w-3 animate-spin" />}
                             </p>
+                            <Textarea
+                              placeholder="Describe the complaint..."
+                              className="min-h-[60px] bg-background/50"
+                              value={getLineFieldValue(line.id, 'complaint', line.complaint)}
+                              onChange={(e) => handleLineFieldChange(line.id, 'complaint', e.target.value)}
+                              data-testid={`input-line-complaint-${line.id}`}
+                            />
                           </div>
                           <div className="space-y-1">
-                            <p className="text-[10px] uppercase font-bold text-muted-foreground">Cause</p>
-                            <p className="p-2 rounded bg-background/50 border border-border/30 min-h-[40px]">
-                              {line.cause || <span className="text-muted-foreground italic">No cause recorded</span>}
+                            <p className="text-[10px] uppercase font-bold text-muted-foreground flex items-center gap-2">
+                              Cause
+                              {updateLineMutation.isPending && <Loader2 className="h-3 w-3 animate-spin" />}
                             </p>
+                            <Textarea
+                              placeholder="Identify the cause..."
+                              className="min-h-[60px] bg-background/50"
+                              value={getLineFieldValue(line.id, 'cause', line.cause)}
+                              onChange={(e) => handleLineFieldChange(line.id, 'cause', e.target.value)}
+                              data-testid={`input-line-cause-${line.id}`}
+                            />
                           </div>
                           <div className="space-y-1">
-                            <p className="text-[10px] uppercase font-bold text-muted-foreground">Correction</p>
-                            <p className="p-2 rounded bg-background/50 border border-border/30 min-h-[40px]">
-                              {line.correction || <span className="text-muted-foreground italic">No correction recorded</span>}
+                            <p className="text-[10px] uppercase font-bold text-muted-foreground flex items-center gap-2">
+                              Correction
+                              {updateLineMutation.isPending && <Loader2 className="h-3 w-3 animate-spin" />}
                             </p>
+                            <Textarea
+                              placeholder="Describe the correction..."
+                              className="min-h-[60px] bg-background/50"
+                              value={getLineFieldValue(line.id, 'correction', line.correction)}
+                              onChange={(e) => handleLineFieldChange(line.id, 'correction', e.target.value)}
+                              data-testid={`input-line-correction-${line.id}`}
+                            />
                           </div>
                         </div>
 
@@ -860,10 +948,40 @@ export default function WorkOrderDetail() {
                           <Textarea
                             placeholder="Add technician notes..."
                             className="min-h-[60px] bg-background/50"
-                            value={editedLineNotes[line.id] !== undefined ? editedLineNotes[line.id] : (line.notes || '')}
-                            onChange={(e) => handleLineNotesChange(line.id, e.target.value)}
+                            value={getLineFieldValue(line.id, 'notes', line.notes)}
+                            onChange={(e) => handleLineFieldChange(line.id, 'notes', e.target.value)}
                             data-testid={`input-line-notes-${line.id}`}
                           />
+                        </div>
+
+                        <div className="space-y-2 pt-2 border-t border-border/30">
+                          <div className="flex items-center justify-between">
+                            <p className="text-[10px] uppercase font-bold text-muted-foreground">Parts Used</p>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 text-xs"
+                              onClick={() => {
+                                setShowAddItemDialog(line.id);
+                                setAddItemType("inventory");
+                                setAddItemPartId("");
+                                setAddItemDescription("");
+                                setAddItemQuantity("1");
+                                setAddItemUnitCost("");
+                              }}
+                              data-testid={`button-add-part-${line.id}`}
+                            >
+                              <Plus className="h-3 w-3 mr-1" />
+                              Add Part/Item
+                            </Button>
+                          </div>
+                          {Number(line.partsCost || 0) > 0 ? (
+                            <div className="text-sm text-muted-foreground bg-background/50 p-2 rounded border border-border/30">
+                              Total parts cost: <span className="font-medium text-foreground">${line.partsCost}</span>
+                            </div>
+                          ) : (
+                            <p className="text-sm text-muted-foreground italic">No parts added yet</p>
+                          )}
                         </div>
 
                         <div className="flex flex-wrap items-center gap-4 pt-2 border-t border-border/30">
@@ -1125,6 +1243,126 @@ export default function WorkOrderDetail() {
                 <Plus className="h-4 w-4 mr-2" />
               )}
               Add Line
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showAddItemDialog !== null} onOpenChange={(open) => !open && setShowAddItemDialog(null)}>
+        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Add Part/Item</DialogTitle>
+            <DialogDescription>
+              Add an inventory part or non-inventory item to this work order line.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-[10px] uppercase font-bold text-muted-foreground">Item Type</label>
+              <Select value={addItemType} onValueChange={(v) => setAddItemType(v as "inventory" | "non-inventory")}>
+                <SelectTrigger data-testid="select-item-type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="inventory">Inventory Part</SelectItem>
+                  <SelectItem value="non-inventory">Non-Inventory Item</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {addItemType === "inventory" ? (
+              <div className="space-y-2">
+                <label className="text-[10px] uppercase font-bold text-muted-foreground">Select Part</label>
+                <Select value={addItemPartId} onValueChange={setAddItemPartId}>
+                  <SelectTrigger data-testid="select-inventory-part">
+                    <SelectValue placeholder="Select a part..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {parts?.map((part) => (
+                      <SelectItem key={part.id} value={part.id.toString()}>
+                        {part.partNumber} - {part.name} (Qty: {part.quantityOnHand || 0}, ${part.unitCost || 0})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {addItemPartId && (() => {
+                  const selectedPart = parts?.find(p => p.id.toString() === addItemPartId);
+                  if (selectedPart && Number(selectedPart.quantityOnHand || 0) === 0) {
+                    return (
+                      <p className="text-xs text-amber-600">
+                        This part is out of stock. You can still add it, but inventory will show as 0.
+                      </p>
+                    );
+                  }
+                  return null;
+                })()}
+              </div>
+            ) : (
+              <>
+                <div className="space-y-2">
+                  <label className="text-[10px] uppercase font-bold text-muted-foreground">Description *</label>
+                  <Input
+                    placeholder="Enter item description..."
+                    value={addItemDescription}
+                    onChange={(e) => setAddItemDescription(e.target.value)}
+                    data-testid="input-item-description"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] uppercase font-bold text-muted-foreground">Unit Cost ($)</label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    placeholder="0.00"
+                    value={addItemUnitCost}
+                    onChange={(e) => setAddItemUnitCost(e.target.value)}
+                    data-testid="input-item-unit-cost"
+                  />
+                </div>
+              </>
+            )}
+
+            <div className="space-y-2">
+              <label className="text-[10px] uppercase font-bold text-muted-foreground">Quantity</label>
+              <Input
+                type="number"
+                min="1"
+                value={addItemQuantity}
+                onChange={(e) => setAddItemQuantity(e.target.value)}
+                data-testid="input-item-quantity"
+              />
+            </div>
+
+            {addItemType === "inventory" && addItemPartId && (() => {
+              const selectedPart = parts?.find(p => p.id.toString() === addItemPartId);
+              if (selectedPart) {
+                const total = (parseFloat(addItemQuantity) || 1) * parseFloat(selectedPart.unitCost || "0");
+                return (
+                  <div className="text-sm text-muted-foreground bg-muted/50 p-2 rounded">
+                    Total: <span className="font-medium text-foreground">${total.toFixed(2)}</span>
+                  </div>
+                );
+              }
+              return null;
+            })()}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAddItemDialog(null)}>Cancel</Button>
+            <Button 
+              onClick={handleAddItem}
+              disabled={
+                addItemMutation.isPending || 
+                (addItemType === "inventory" && !addItemPartId) ||
+                (addItemType === "non-inventory" && !addItemDescription)
+              }
+              data-testid="button-confirm-add-item"
+            >
+              {addItemMutation.isPending ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Plus className="h-4 w-4 mr-2" />
+              )}
+              Add Item
             </Button>
           </DialogFooter>
         </DialogContent>

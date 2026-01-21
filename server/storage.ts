@@ -232,6 +232,10 @@ export interface IStorage {
   getPredictionsByAsset(assetId: number): Promise<Prediction[]>;
   consumePartFromInventory(partId: number, quantity: number, workOrderId: number, lineId: number): Promise<void>;
   getWorkOrderTransactions(workOrderId: number): Promise<WorkOrderTransaction[]>;
+  getLineTransactions(lineId: number): Promise<WorkOrderTransaction[]>;
+  addLineItem(lineId: number, data: { description: string; quantity: number; unitCost: number; partId?: number }): Promise<void>;
+  getSimilarAssets(manufacturer: string, model: string, excludeAssetId: number): Promise<Asset[]>;
+  getFleetPartReplacementPatterns(): Promise<{ partId: number; partNumber: string; partName: string; replacementCount: number; avgMeterReading: number }[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -847,6 +851,78 @@ export class DatabaseStorage implements IStorage {
 
   async getWorkOrderTransactions(workOrderId: number): Promise<WorkOrderTransaction[]> {
     return db.select().from(workOrderTransactions).where(eq(workOrderTransactions.workOrderId, workOrderId)).orderBy(desc(workOrderTransactions.createdAt));
+  }
+
+  async getLineTransactions(lineId: number): Promise<WorkOrderTransaction[]> {
+    return db.select().from(workOrderTransactions).where(eq(workOrderTransactions.workOrderLineId, lineId)).orderBy(desc(workOrderTransactions.createdAt));
+  }
+
+  async addLineItem(lineId: number, data: { description: string; quantity: number; unitCost: number; partId?: number }): Promise<void> {
+    const line = await this.getWorkOrderLine(lineId);
+    if (!line) throw new Error("Line not found");
+
+    const totalCost = data.quantity * data.unitCost;
+
+    await db.insert(workOrderTransactions).values({
+      workOrderId: line.workOrderId,
+      workOrderLineId: lineId,
+      type: "part_consumption",
+      partId: data.partId || null,
+      quantity: String(data.quantity),
+      unitCost: String(data.unitCost),
+      totalCost: String(totalCost),
+      description: data.description,
+    });
+
+    const currentPartsCost = Number(line.partsCost || 0);
+    await db.update(workOrderLines)
+      .set({ 
+        partsCost: String(currentPartsCost + totalCost),
+        updatedAt: new Date() 
+      })
+      .where(eq(workOrderLines.id, lineId));
+
+    if (data.partId) {
+      const part = await this.getPart(data.partId);
+      if (part) {
+        const newQty = Math.max(0, Number(part.quantityOnHand || 0) - data.quantity);
+        await db.update(parts)
+          .set({ quantityOnHand: String(newQty), updatedAt: new Date() })
+          .where(eq(parts.id, data.partId));
+      }
+    }
+  }
+
+  async getSimilarAssets(manufacturer: string, model: string, excludeAssetId: number): Promise<Asset[]> {
+    return db.select().from(assets)
+      .where(and(
+        eq(assets.manufacturer, manufacturer),
+        eq(assets.model, model),
+        sql`${assets.id} != ${excludeAssetId}`
+      ));
+  }
+
+  async getFleetPartReplacementPatterns(): Promise<{ partId: number; partNumber: string; partName: string; replacementCount: number; avgMeterReading: number }[]> {
+    const result = await db.select({
+      partId: workOrderTransactions.partId,
+      partNumber: parts.partNumber,
+      partName: parts.name,
+      replacementCount: sql<number>`count(*)::int`,
+    })
+    .from(workOrderTransactions)
+    .innerJoin(parts, eq(workOrderTransactions.partId, parts.id))
+    .where(eq(workOrderTransactions.type, "part_consumption"))
+    .groupBy(workOrderTransactions.partId, parts.partNumber, parts.name)
+    .orderBy(desc(sql`count(*)`))
+    .limit(20);
+
+    return result.map(r => ({
+      partId: r.partId!,
+      partNumber: r.partNumber,
+      partName: r.partName,
+      replacementCount: r.replacementCount,
+      avgMeterReading: 0,
+    }));
   }
 }
 

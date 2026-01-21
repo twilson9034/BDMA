@@ -427,6 +427,33 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/work-order-lines/:id/transactions", requireAuth, async (req, res) => {
+    try {
+      const transactions = await storage.getLineTransactions(parseInt(req.params.id));
+      res.json(transactions);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get line transactions" });
+    }
+  });
+
+  app.post("/api/work-order-lines/:id/add-item", requireAuth, async (req, res) => {
+    try {
+      const { description, quantity, unitCost, partId } = req.body;
+      if (!description || !quantity || unitCost === undefined) {
+        return res.status(400).json({ error: "description, quantity, and unitCost are required" });
+      }
+      await storage.addLineItem(parseInt(req.params.id), {
+        description,
+        quantity: parseFloat(quantity),
+        unitCost: parseFloat(unitCost),
+        partId: partId ? parseInt(partId) : undefined,
+      });
+      res.status(200).json({ message: "Item added successfully" });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to add item" });
+    }
+  });
+
   // Start/Stop timer for work order lines
   app.post("/api/work-order-lines/:id/start-timer", requireAuth, async (req, res) => {
     try {
