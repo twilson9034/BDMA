@@ -118,6 +118,7 @@ export interface IStorage {
   updateWorkOrderLine(id: number, line: Partial<InsertWorkOrderLine>): Promise<WorkOrderLine | undefined>;
   deleteWorkOrderLine(id: number): Promise<void>;
   getNextWorkOrderLineNumber(workOrderId: number): Promise<number>;
+  requestPartForLine(lineId: number, partId: number, quantity: number): Promise<void>;
   
   // PM Schedules
   getPmSchedules(): Promise<PmSchedule[]>;

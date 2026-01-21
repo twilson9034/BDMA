@@ -343,6 +343,36 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/work-order-lines/:id/request-part", requireAuth, async (req, res) => {
+    try {
+      const { partId, quantity } = req.body;
+      if (!partId || !quantity) {
+        return res.status(400).json({ error: "partId and quantity are required" });
+      }
+      await storage.requestPartForLine(parseInt(req.params.id), parseInt(partId), parseFloat(quantity));
+      res.status(200).json({ message: "Part requested successfully" });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to request part" });
+    }
+  });
+
+  app.post("/api/work-order-lines/:id/post-part", requireAuth, async (req, res) => {
+    try {
+      const line = await storage.getWorkOrderLine(parseInt(req.params.id));
+      if (!line) return res.status(404).json({ error: "Work order line not found" });
+      
+      const { partId, quantity } = req.body;
+      if (!partId || !quantity) {
+        return res.status(400).json({ error: "partId and quantity are required" });
+      }
+      
+      await storage.consumePartFromInventory(parseInt(partId), parseFloat(quantity), line.workOrderId, line.id);
+      res.status(200).json({ message: "Part posted successfully" });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to post part" });
+    }
+  });
+
   app.delete("/api/work-order-lines/:id", requireAuth, async (req, res) => {
     try {
       await storage.deleteWorkOrderLine(parseInt(req.params.id));

@@ -198,6 +198,7 @@ export type WorkOrder = typeof workOrders.$inferSelect;
 // WORK ORDER LINES
 // ============================================================
 export const workOrderLineStatusEnum = ["pending", "in_progress", "paused", "completed", "cancelled"] as const;
+export const partRequestStatusEnum = ["none", "requested", "ordered", "received", "posted"] as const;
 
 export const workOrderLines = pgTable("work_order_lines", {
   id: serial("id").primaryKey(),
@@ -206,6 +207,11 @@ export const workOrderLines = pgTable("work_order_lines", {
   description: text("description").notNull(),
   status: text("status").notNull().default("pending").$type<typeof workOrderLineStatusEnum[number]>(),
   vmrsCode: text("vmrs_code"),
+  vmrsTitle: text("vmrs_title"),
+  complaint: text("complaint"),
+  cause: text("cause"),
+  correction: text("correction"),
+  partRequestStatus: text("part_request_status").notNull().default("none").$type<typeof partRequestStatusEnum[number]>(),
   laborHours: decimal("labor_hours", { precision: 8, scale: 2 }),
   laborCost: decimal("labor_cost", { precision: 12, scale: 2 }),
   partsCost: decimal("parts_cost", { precision: 12, scale: 2 }),
