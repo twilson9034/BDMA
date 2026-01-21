@@ -235,6 +235,7 @@ export default function WorkOrders() {
               <SelectItem value="open">Open</SelectItem>
               <SelectItem value="in_progress">In Progress</SelectItem>
               <SelectItem value="on_hold">On Hold</SelectItem>
+              <SelectItem value="ready_for_review">Ready for Review</SelectItem>
               <SelectItem value="completed">Completed</SelectItem>
               <SelectItem value="cancelled">Cancelled</SelectItem>
             </SelectContent>

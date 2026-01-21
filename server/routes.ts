@@ -62,6 +62,30 @@ async function generateEstimateNumber(): Promise<string> {
   return `EST-${year}-${String(nextNum).padStart(4, "0")}`;
 }
 
+async function checkAndUpdateWorkOrderStatus(workOrderId: number): Promise<void> {
+  const lines = await storage.getWorkOrderLines(workOrderId);
+  if (lines.length === 0) return;
+
+  const allDone = lines.every(line => 
+    line.status === "completed" || line.status === "rescheduled" || line.status === "cancelled"
+  );
+
+  if (allDone) {
+    const wo = await storage.getWorkOrder(workOrderId);
+    if (wo && wo.status !== "completed" && wo.status !== "cancelled") {
+      await storage.updateWorkOrder(workOrderId, { status: "ready_for_review" });
+      
+      // Update asset status to operational if it was in maintenance
+      if (wo.assetId) {
+        const asset = await storage.getAsset(wo.assetId);
+        if (asset && asset.status === "in_maintenance") {
+          await storage.updateAsset(wo.assetId, { status: "operational" });
+        }
+      }
+    }
+  }
+}
+
 async function recalculateEstimateTotals(estimateId: number): Promise<void> {
   const lines = await storage.getEstimateLines(estimateId);
   const estimate = await storage.getEstimate(estimateId);
@@ -389,6 +413,12 @@ export async function registerRoutes(
     try {
       const updated = await storage.updateWorkOrderLine(parseInt(req.params.id), req.body);
       if (!updated) return res.status(404).json({ error: "Work order line not found" });
+      
+      // Check if status changed and trigger work order status check
+      if (req.body.status) {
+        await checkAndUpdateWorkOrderStatus(updated.workOrderId);
+      }
+      
       res.json(updated);
     } catch (error) {
       res.status(500).json({ error: "Failed to update work order line" });
@@ -498,6 +528,7 @@ export async function registerRoutes(
 
       if (req.body.complete) {
         updateData.status = "completed";
+        updateData.completedAt = new Date();
       } else {
         updateData.status = "pending";
       }
@@ -507,6 +538,8 @@ export async function registerRoutes(
       if (updated) {
         // @ts-ignore - explicitly call updateWorkOrderActualCost to ensure totals are updated
         await storage.updateWorkOrderActualCost(updated.workOrderId);
+        // Check if all lines are completed/rescheduled and update work order status
+        await checkAndUpdateWorkOrderStatus(updated.workOrderId);
       }
       res.json(updated);
     } catch (error) {
@@ -538,6 +571,40 @@ export async function registerRoutes(
       res.json(updated);
     } catch (error) {
       res.status(500).json({ error: "Failed to pause timer" });
+    }
+  });
+
+  // Reschedule a work order line
+  app.post("/api/work-order-lines/:id/reschedule", requireAuth, async (req, res) => {
+    try {
+      const line = await storage.getWorkOrderLine(parseInt(req.params.id));
+      if (!line) return res.status(404).json({ error: "Work order line not found" });
+      
+      // If timer is running, stop it first and accumulate hours
+      let updateData: any = {
+        status: "rescheduled",
+        rescheduledTo: req.body.newWorkOrderId || null,
+      };
+      
+      if (line.startTime) {
+        const now = new Date();
+        const startTime = new Date(line.startTime);
+        const hoursWorked = (now.getTime() - startTime.getTime()) / (1000 * 60 * 60);
+        const existingHours = parseFloat(line.laborHours || "0");
+        updateData.laborHours = (existingHours + hoursWorked).toFixed(2);
+        updateData.startTime = null;
+      }
+      
+      const updated = await storage.updateWorkOrderLine(parseInt(req.params.id), updateData);
+      
+      if (updated) {
+        // @ts-ignore
+        await storage.updateWorkOrderActualCost(updated.workOrderId);
+        await checkAndUpdateWorkOrderStatus(updated.workOrderId);
+      }
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to reschedule line" });
     }
   });
 

@@ -6,7 +6,7 @@ import { useLocation, useRoute } from "wouter";
 import { 
   ArrowLeft, Save, Loader2, Edit, Trash2, Clock, 
   Calendar, User, Wrench, AlertTriangle, CheckCircle2,
-  Plus, X, Play, Square, Timer, Package
+  Plus, X, Play, Square, Timer, Package, CalendarClock
 } from "lucide-react";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
@@ -47,7 +47,7 @@ import type { WorkOrder, Asset, WorkOrderLine, Part, VmrsCode, WorkOrderTransact
 const workOrderFormSchema = z.object({
   description: z.string().optional(),
   type: z.enum(["preventive", "corrective", "inspection", "emergency", "project"]),
-  status: z.enum(["open", "in_progress", "on_hold", "completed", "cancelled"]),
+  status: z.enum(["open", "in_progress", "on_hold", "ready_for_review", "completed", "cancelled"]),
   priority: z.enum(["critical", "high", "medium", "low"]),
   dueDate: z.string().optional(),
   estimatedHours: z.string().optional(),
@@ -298,10 +298,27 @@ export default function WorkOrderDetail() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/work-orders", workOrderId, "lines"] });
-      toast({ title: "Timer Stopped", description: "Labor time has been recorded." });
+      queryClient.invalidateQueries({ queryKey: ["/api/work-orders", workOrderId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/assets"] });
+      toast({ title: "Line Closed", description: "Work order line has been completed." });
     },
     onError: () => {
-      toast({ title: "Error", description: "Failed to stop timer.", variant: "destructive" });
+      toast({ title: "Error", description: "Failed to close line.", variant: "destructive" });
+    },
+  });
+
+  const rescheduleLineMutation = useMutation({
+    mutationFn: async (lineId: number) => {
+      return apiRequest("POST", `/api/work-order-lines/${lineId}/reschedule`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/work-orders", workOrderId, "lines"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/work-orders", workOrderId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/assets"] });
+      toast({ title: "Line Rescheduled", description: "Work order line has been rescheduled for a future work order." });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to reschedule line.", variant: "destructive" });
     },
   });
 
@@ -575,6 +592,7 @@ export default function WorkOrderDetail() {
                               <SelectItem value="open">Open</SelectItem>
                               <SelectItem value="in_progress">In Progress</SelectItem>
                               <SelectItem value="on_hold">On Hold</SelectItem>
+                              <SelectItem value="ready_for_review">Ready for Review</SelectItem>
                               <SelectItem value="completed">Completed</SelectItem>
                               <SelectItem value="cancelled">Cancelled</SelectItem>
                             </SelectContent>
@@ -1065,10 +1083,30 @@ export default function WorkOrderDetail() {
                               </div>
                             )}
                             {line.status === "completed" && (
-                              <Badge variant="outline" className="text-green-600 border-green-200 bg-green-50 h-8 px-3">
-                                <CheckCircle2 className="h-3 w-3 mr-1" />
-                                Completed
+                              <div className="flex items-center gap-2">
+                                <Badge variant="outline" className="text-green-600 border-green-200 bg-green-50 h-8 px-3">
+                                  <CheckCircle2 className="h-3 w-3 mr-1" />
+                                  Completed {line.completedAt && `on ${new Date(line.completedAt).toLocaleDateString()}`}
+                                </Badge>
+                              </div>
+                            )}
+                            {line.status === "rescheduled" && (
+                              <Badge variant="outline" className="text-amber-600 border-amber-200 bg-amber-50 h-8 px-3">
+                                <CalendarClock className="h-3 w-3 mr-1" />
+                                Rescheduled
                               </Badge>
+                            )}
+                            {line.status !== "completed" && line.status !== "rescheduled" && line.status !== "cancelled" && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-8 text-amber-600 border-amber-200"
+                                onClick={() => rescheduleLineMutation.mutate(line.id)}
+                                disabled={rescheduleLineMutation.isPending}
+                              >
+                                <CalendarClock className="h-3 w-3 mr-1" />
+                                Reschedule
+                              </Button>
                             )}
 
                             {line.partRequestStatus === 'none' && (

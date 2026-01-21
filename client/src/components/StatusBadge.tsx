@@ -18,6 +18,8 @@ const statusConfig: Record<string, { label: string; className: string }> = {
   on_hold: { label: "On Hold", className: "bg-muted text-muted-foreground border-muted" },
   completed: { label: "Completed", className: "status-operational border" },
   cancelled: { label: "Cancelled", className: "bg-muted text-muted-foreground border-muted" },
+  ready_for_review: { label: "Ready for Review", className: "status-in-maintenance border" },
+  rescheduled: { label: "Rescheduled", className: "status-pending border" },
   pending: { label: "Pending", className: "status-pending border" },
   draft: { label: "Draft", className: "bg-muted text-muted-foreground border-muted" },
   submitted: { label: "Submitted", className: "status-pending border" },

@@ -166,7 +166,7 @@ export type Part = typeof parts.$inferSelect;
 // ============================================================
 // WORK ORDERS
 // ============================================================
-export const workOrderStatusEnum = ["open", "in_progress", "on_hold", "completed", "cancelled"] as const;
+export const workOrderStatusEnum = ["open", "in_progress", "on_hold", "ready_for_review", "completed", "cancelled"] as const;
 export const workOrderTypeEnum = ["corrective", "preventive", "inspection", "emergency"] as const;
 export const workOrderPriorityEnum = ["low", "medium", "high", "critical"] as const;
 
@@ -217,7 +217,7 @@ export type WorkOrder = typeof workOrders.$inferSelect;
 // ============================================================
 // WORK ORDER LINES
 // ============================================================
-export const workOrderLineStatusEnum = ["pending", "in_progress", "paused", "completed", "cancelled"] as const;
+export const workOrderLineStatusEnum = ["pending", "in_progress", "paused", "completed", "rescheduled", "cancelled"] as const;
 export const partRequestStatusEnum = ["none", "requested", "ordered", "received", "posted"] as const;
 
 export const workOrderLines = pgTable("work_order_lines", {
@@ -238,6 +238,8 @@ export const workOrderLines = pgTable("work_order_lines", {
   notes: text("notes"),
   startTime: timestamp("start_time"),
   endTime: timestamp("end_time"),
+  completedAt: timestamp("completed_at"),
+  rescheduledTo: integer("rescheduled_to"),
   technicianId: varchar("technician_id"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
