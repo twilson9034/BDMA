@@ -863,5 +863,224 @@ export async function registerRoutes(
     }
   });
 
+  // ============================================================
+  // PHASE 3: AI Predictions, Scanning, Status Automation
+  // ============================================================
+
+  // AI-Powered Predictive Maintenance
+  app.post("/api/assets/:id/analyze", requireAuth, async (req, res) => {
+    try {
+      const { analyzeAssetHealth, savePredictions } = await import("./services/aiAnalysis");
+      const assetId = parseInt(req.params.id);
+      const predictions = await analyzeAssetHealth(assetId);
+      
+      // Save predictions to database
+      await savePredictions(assetId, predictions);
+      
+      res.json({ predictions, count: predictions.length });
+    } catch (error) {
+      console.error("AI analysis error:", error);
+      res.status(500).json({ error: "Failed to analyze asset" });
+    }
+  });
+
+  // Get predictions for an asset
+  app.get("/api/assets/:id/predictions", async (req, res) => {
+    try {
+      const predictions = await storage.getPredictionsByAsset(parseInt(req.params.id));
+      res.json(predictions);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get predictions" });
+    }
+  });
+
+  // Fleet health score
+  app.get("/api/fleet/health", async (req, res) => {
+    try {
+      const { calculateFleetHealthScore } = await import("./services/aiAnalysis");
+      const health = await calculateFleetHealthScore();
+      res.json(health);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to calculate fleet health" });
+    }
+  });
+
+  // All predictions (for dashboard)
+  app.get("/api/predictions", async (req, res) => {
+    try {
+      const predictions = await storage.getPredictions();
+      res.json(predictions);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get predictions" });
+    }
+  });
+
+  // Acknowledge/dismiss prediction
+  app.patch("/api/predictions/:id/acknowledge", requireAuth, async (req, res) => {
+    try {
+      const updated = await storage.updatePrediction(parseInt(req.params.id), {
+        acknowledged: true,
+      });
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to acknowledge prediction" });
+    }
+  });
+
+  app.patch("/api/predictions/:id/dismiss", requireAuth, async (req, res) => {
+    try {
+      const updated = await storage.updatePrediction(parseInt(req.params.id), {
+        dismissedAt: new Date(),
+      });
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to dismiss prediction" });
+    }
+  });
+
+  // ============================================================
+  // BARCODE/QR SCANNING
+  // ============================================================
+
+  // Scan lookup - find asset, part, or work order by scanned code
+  app.get("/api/scan/:code", async (req, res) => {
+    try {
+      const code = req.params.code.trim();
+      
+      // Try to find as asset number
+      const asset = await storage.getAssetByNumber(code);
+      if (asset) {
+        return res.json({ type: "asset", data: asset });
+      }
+      
+      // Try to find as work order number
+      const workOrder = await storage.getWorkOrderByNumber(code);
+      if (workOrder) {
+        return res.json({ type: "workOrder", data: workOrder });
+      }
+      
+      // Try to find as part barcode
+      const partByBarcode = await storage.getPartByBarcode(code);
+      if (partByBarcode) {
+        return res.json({ type: "part", data: partByBarcode });
+      }
+      
+      // Try to find as part number
+      const partByNumber = await storage.getPartByNumber(code);
+      if (partByNumber) {
+        return res.json({ type: "part", data: partByNumber });
+      }
+      
+      res.status(404).json({ error: "No matching asset, part, or work order found" });
+    } catch (error) {
+      res.status(500).json({ error: "Scan lookup failed" });
+    }
+  });
+
+  // ============================================================
+  // INTELLIGENT ASSET STATUS AUTOMATION
+  // ============================================================
+
+  // Auto-update asset status based on conditions
+  app.post("/api/assets/:id/auto-status", requireAuth, async (req, res) => {
+    try {
+      const assetId = parseInt(req.params.id);
+      const asset = await storage.getAsset(assetId);
+      if (!asset) return res.status(404).json({ error: "Asset not found" });
+      
+      const faultCodes = await storage.getFaultCodes(assetId);
+      const activeFaults = faultCodes.filter(f => f.status === "active");
+      const criticalFaults = activeFaults.filter(f => f.severity === "critical");
+      const highFaults = activeFaults.filter(f => f.severity === "high");
+      
+      const workOrders = await storage.getWorkOrdersByAsset(assetId);
+      const activeWorkOrders = workOrders.filter(wo => 
+        wo.status === "open" || wo.status === "in_progress"
+      );
+      
+      let newStatus = asset.status;
+      let reason = "";
+      
+      // Status logic: critical faults or active work orders affect status
+      if (criticalFaults.length > 0) {
+        newStatus = "down";
+        reason = `Critical fault codes active: ${criticalFaults.map(f => f.code).join(", ")}`;
+      } else if (activeWorkOrders.length > 0) {
+        newStatus = "in_maintenance";
+        reason = `Active work orders: ${activeWorkOrders.map(wo => wo.workOrderNumber).join(", ")}`;
+      } else if (highFaults.length >= 2) {
+        newStatus = "pending_inspection";
+        reason = `Multiple high severity faults require inspection`;
+      } else if (activeFaults.length === 0 && activeWorkOrders.length === 0) {
+        newStatus = "operational";
+        reason = "No active issues";
+      }
+      
+      if (newStatus !== asset.status) {
+        await storage.updateAsset(assetId, { status: newStatus });
+        await storage.createActivityLog({
+          action: "status_change",
+          entityType: "asset",
+          entityId: assetId,
+          description: `Status changed from ${asset.status} to ${newStatus}: ${reason}`,
+        });
+      }
+      
+      res.json({ 
+        previousStatus: asset.status, 
+        newStatus, 
+        changed: newStatus !== asset.status,
+        reason 
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to auto-update status" });
+    }
+  });
+
+  // ============================================================
+  // PARTS FULFILLMENT
+  // ============================================================
+
+  // Get low stock parts
+  app.get("/api/parts/low-stock", async (req, res) => {
+    try {
+      const lowStock = await storage.getLowStockParts();
+      res.json(lowStock);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get low stock parts" });
+    }
+  });
+
+  // Consume parts from work order line (when line is completed)
+  app.post("/api/work-order-lines/:id/consume-parts", requireAuth, async (req, res) => {
+    try {
+      const lineId = parseInt(req.params.id);
+      const line = await storage.getWorkOrderLine(lineId);
+      if (!line) return res.status(404).json({ error: "Line not found" });
+      
+      // Get the part ID and quantity from the line's parts cost context
+      const { partId, quantity } = req.body;
+      if (!partId || !quantity) {
+        return res.status(400).json({ error: "partId and quantity required" });
+      }
+      
+      await storage.consumePartFromInventory(partId, quantity, line.workOrderId, lineId);
+      
+      res.json({ success: true, message: "Parts consumed from inventory" });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to consume parts" });
+    }
+  });
+
+  // Get work order transactions (parts consumption history)
+  app.get("/api/work-orders/:id/transactions", async (req, res) => {
+    try {
+      const transactions = await storage.getWorkOrderTransactions(parseInt(req.params.id));
+      res.json(transactions);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get transactions" });
+    }
+  });
+
   return httpServer;
 }

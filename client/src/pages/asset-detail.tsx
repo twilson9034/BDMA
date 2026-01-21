@@ -6,7 +6,8 @@ import { useLocation, useRoute } from "wouter";
 import { 
   ArrowLeft, Save, Loader2, Edit, Trash2, Truck, 
   MapPin, Calendar, Settings, FileText, Wrench, X,
-  Gauge, Fuel, Thermometer, Battery, AlertTriangle, Activity, Radio
+  Gauge, Fuel, Thermometer, Battery, AlertTriangle, Activity, Radio,
+  Brain, Sparkles, RefreshCw
 } from "lucide-react";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
@@ -41,7 +42,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import type { Asset, Location, WorkOrder, TelematicsData, FaultCode } from "@shared/schema";
+import type { Asset, Location, WorkOrder, TelematicsData, FaultCode, Prediction } from "@shared/schema";
 
 const assetFormSchema = z.object({
   name: z.string().min(1, "Name is required"),
@@ -181,6 +182,31 @@ export default function AssetDetail() {
     },
   });
 
+  const aiAnalysisMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("POST", `/api/assets/${assetId}/analyze`);
+      return response.json();
+    },
+    onSuccess: (data: { predictions: Prediction[]; count: number }) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/predictions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/fleet/health"] });
+      const prediction = data.predictions?.[0];
+      toast({
+        title: "AI Analysis Complete",
+        description: prediction 
+          ? `Generated ${prediction.severity} severity prediction: ${prediction.title}`
+          : `Generated ${data.count} prediction(s)`,
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Analysis Failed",
+        description: "Unable to generate AI prediction. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
   const onSubmit = (data: AssetFormValues) => {
     updateMutation.mutate(data);
   };
@@ -225,6 +251,20 @@ export default function AssetDetail() {
             </Button>
             {!isEditing ? (
               <>
+                <Button 
+                  variant="default" 
+                  onClick={() => aiAnalysisMutation.mutate()} 
+                  disabled={aiAnalysisMutation.isPending}
+                  data-testid="button-ai-analysis"
+                  className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
+                >
+                  {aiAnalysisMutation.isPending ? (
+                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Brain className="h-4 w-4 mr-2" />
+                  )}
+                  AI Analysis
+                </Button>
                 <Button variant="outline" onClick={() => setIsEditing(true)} data-testid="button-edit">
                   <Edit className="h-4 w-4 mr-2" />
                   Edit

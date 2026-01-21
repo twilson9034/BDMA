@@ -51,7 +51,7 @@ Key backend patterns:
 4. **Inventory/Parts**: Parts management with reorder points and vendor associations
 5. **Procurement**: Purchase requisitions and orders with approval workflows
 6. **DVIRs**: Driver Vehicle Inspection Reports with defect tracking
-7. **Predictions**: AI-generated maintenance predictions
+7. **Predictions**: AI-generated maintenance predictions with severity levels (critical/high/medium/low), confidence scores, reasoning, and recommended actions. Triggered via AI Analysis button on asset detail page. API routes: GET /api/predictions, POST /api/assets/:id/analyze, PATCH /api/predictions/:id (acknowledge/dismiss)
 8. **Estimates**: Maintenance cost estimates tied to assets with line items for inventory parts, zero-stock parts, non-inventory items, and labor. Includes parts fulfillment tracking with needsOrdering flag. Estimate numbers auto-generated as EST-YYYY-####. Status workflow: draft → pending_approval → approved/rejected → converted. Server-side automatic recalculation of parts/labor/grand totals when lines are modified.
 9. **Telematics Data**: Engine diagnostic data including GPS coordinates, odometer, engine hours, fuel level, coolant temp, oil pressure, battery voltage, DEF level, speed. Live display on asset detail page. API routes: GET /api/assets/:id/telematics/latest, POST /api/assets/:id/telematics for data ingestion.
 10. **Fault Codes**: Diagnostic Trouble Codes (DTCs) with severity levels (low/medium/high/critical), status workflow (active/pending/cleared/resolved), SPN/FMI codes. Display on asset detail page with visual indicators. API routes: GET /api/assets/:id/fault-codes, POST /api/assets/:id/fault-codes.
@@ -89,3 +89,29 @@ Key backend patterns:
 - **Zod**: Schema validation for API inputs
 - **date-fns**: Date manipulation
 - **class-variance-authority + clsx + tailwind-merge**: Component styling utilities
+
+## Phase 3 Features
+
+### AI-Powered Predictive Maintenance
+- **AI Analysis Service**: Uses OpenAI GPT-4o to analyze telematics data, fault codes, and maintenance history
+- **Prediction Generation**: Creates predictions with severity, confidence, reasoning, and recommended actions
+- **Integration**: AI Analysis button on asset detail page triggers analysis
+- **Fallback Logic**: Analyzes battery voltage, coolant temp, oil pressure, DEF level, fault codes if OpenAI fails
+
+### Barcode/QR Scanning
+- **BarcodeScanner Component**: Header-integrated scanner with manual entry and camera modes
+- **Quick Lookup**: `/api/scan/:code` endpoint finds assets, parts, or work orders by code
+- **Search Priority**: asset number → work order number → part barcode → part number
+
+### Intelligent Asset Status Automation
+- **Auto-Status API**: `/api/assets/:id/auto-status` updates status based on conditions
+- **Status Logic**: critical faults → down, active work orders → in_maintenance, 2+ high faults → pending_inspection
+
+### Parts Fulfillment & Tracking
+- **Inventory Consumption**: `consumePartFromInventory` deducts parts from inventory
+- **Transaction Tracking**: Records parts usage in work order transactions
+- **Low Stock Alerts**: `/api/parts/low-stock` endpoint for reorder notifications
+
+### Dashboard Widgets
+- **FleetHealthWidget**: Displays fleet health score (0-100) based on predictions, faults, and asset status
+- **PredictionsWidget**: Shows active AI predictions with acknowledge/dismiss actions

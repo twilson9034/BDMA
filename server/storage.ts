@@ -70,6 +70,7 @@ import {
   type TelematicsData,
   type InsertFaultCode,
   type FaultCode,
+  type WorkOrderTransaction,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -209,6 +210,17 @@ export interface IStorage {
     partsLowStock: number;
     pmDueThisWeek: number;
   }>;
+  
+  // Additional methods for Phase 3
+  getWorkOrdersByAsset(assetId: number): Promise<WorkOrder[]>;
+  getAssetByNumber(assetNumber: string): Promise<Asset | undefined>;
+  getPartByBarcode(barcode: string): Promise<Part | undefined>;
+  getPartByNumber(partNumber: string): Promise<Part | undefined>;
+  getWorkOrderByNumber(workOrderNumber: string): Promise<WorkOrder | undefined>;
+  getLowStockParts(): Promise<Part[]>;
+  getPredictionsByAsset(assetId: number): Promise<Prediction[]>;
+  consumePartFromInventory(partId: number, quantity: number, workOrderId: number, lineId: number): Promise<void>;
+  getWorkOrderTransactions(workOrderId: number): Promise<WorkOrderTransaction[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -699,6 +711,71 @@ export class DatabaseStorage implements IStorage {
       ).length,
       pmDueThisWeek: 8, // Would calculate from pmAssetInstances
     };
+  }
+
+  // Phase 3 methods
+  async getWorkOrdersByAsset(assetId: number): Promise<WorkOrder[]> {
+    return db.select().from(workOrders).where(eq(workOrders.assetId, assetId)).orderBy(desc(workOrders.createdAt));
+  }
+
+  async getAssetByNumber(assetNumber: string): Promise<Asset | undefined> {
+    const [asset] = await db.select().from(assets).where(eq(assets.assetNumber, assetNumber));
+    return asset;
+  }
+
+  async getPartByBarcode(barcode: string): Promise<Part | undefined> {
+    const [part] = await db.select().from(parts).where(eq(parts.barcode, barcode));
+    return part;
+  }
+
+  async getPartByNumber(partNumber: string): Promise<Part | undefined> {
+    const [part] = await db.select().from(parts).where(eq(parts.partNumber, partNumber));
+    return part;
+  }
+
+  async getWorkOrderByNumber(workOrderNumber: string): Promise<WorkOrder | undefined> {
+    const [wo] = await db.select().from(workOrders).where(eq(workOrders.workOrderNumber, workOrderNumber));
+    return wo;
+  }
+
+  async getLowStockParts(): Promise<Part[]> {
+    const allParts = await db.select().from(parts);
+    return allParts.filter(p => 
+      Number(p.quantityOnHand || 0) <= Number(p.reorderPoint || 0) && p.isActive
+    );
+  }
+
+  async getPredictionsByAsset(assetId: number): Promise<Prediction[]> {
+    return db.select().from(predictions).where(eq(predictions.assetId, assetId)).orderBy(desc(predictions.createdAt));
+  }
+
+  async consumePartFromInventory(partId: number, quantity: number, workOrderId: number, lineId: number): Promise<void> {
+    const part = await this.getPart(partId);
+    if (!part) throw new Error("Part not found");
+    
+    const currentQty = Number(part.quantityOnHand || 0);
+    const newQty = Math.max(0, currentQty - quantity);
+    
+    await db.update(parts).set({ 
+      quantityOnHand: String(newQty),
+      updatedAt: new Date()
+    }).where(eq(parts.id, partId));
+    
+    // Create a transaction record for the consumption
+    await db.insert(workOrderTransactions).values({
+      workOrderId,
+      workOrderLineId: lineId,
+      type: "part_consumption",
+      partId,
+      quantity: String(quantity),
+      unitCost: part.unitCost,
+      totalCost: String(Number(part.unitCost || 0) * quantity),
+      description: `Consumed ${quantity} x ${part.partNumber}`,
+    });
+  }
+
+  async getWorkOrderTransactions(workOrderId: number): Promise<WorkOrderTransaction[]> {
+    return db.select().from(workOrderTransactions).where(eq(workOrderTransactions.workOrderId, workOrderId)).orderBy(desc(workOrderTransactions.createdAt));
   }
 }
 

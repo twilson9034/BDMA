@@ -1,12 +1,15 @@
-import { useQuery } from "@tanstack/react-query";
-import { Brain, AlertTriangle, Wrench, Clock, TrendingUp } from "lucide-react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { Link } from "wouter";
+import { Brain, AlertTriangle, Wrench, Clock, TrendingUp, CheckCircle2, X, Sparkles, Info } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/PageHeader";
 import { EmptyState } from "@/components/EmptyState";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import type { Prediction } from "@shared/schema";
+import { queryClient, apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import type { Prediction, Asset } from "@shared/schema";
 
 interface PredictionWithAsset extends Prediction {
   assetName?: string;
@@ -14,9 +17,42 @@ interface PredictionWithAsset extends Prediction {
 }
 
 export default function Predictions() {
+  const { toast } = useToast();
+  
   const { data: predictions, isLoading } = useQuery<PredictionWithAsset[]>({
     queryKey: ["/api/predictions"],
   });
+
+  const { data: assets } = useQuery<Asset[]>({
+    queryKey: ["/api/assets"],
+  });
+
+  const acknowledgeMutation = useMutation({
+    mutationFn: async (id: number) => {
+      await apiRequest("PATCH", `/api/predictions/${id}/acknowledge`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/predictions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/fleet/health"] });
+      toast({ title: "Prediction acknowledged" });
+    },
+  });
+
+  const dismissMutation = useMutation({
+    mutationFn: async (id: number) => {
+      await apiRequest("PATCH", `/api/predictions/${id}/dismiss`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/predictions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/fleet/health"] });
+      toast({ title: "Prediction dismissed" });
+    },
+  });
+
+  const getAssetInfo = (assetId: number) => {
+    const asset = assets?.find(a => a.id === assetId);
+    return asset ? { name: asset.name, number: asset.assetNumber } : null;
+  };
 
   const mockPredictions: PredictionWithAsset[] = [
     {
@@ -214,13 +250,26 @@ export default function Predictions() {
                           </span>
                         )}
                       </div>
-                      {!prediction.acknowledged && (
+                      {!prediction.acknowledged && !prediction.dismissedAt && (
                         <div className="flex gap-2">
-                          <Button size="sm" variant="outline">
+                          <Button 
+                            size="sm" 
+                            variant="outline"
+                            onClick={() => dismissMutation.mutate(prediction.id)}
+                            disabled={dismissMutation.isPending}
+                            data-testid={`button-dismiss-${prediction.id}`}
+                          >
+                            <X className="h-4 w-4 mr-1" />
                             Dismiss
                           </Button>
-                          <Button size="sm">
-                            Create Work Order
+                          <Button 
+                            size="sm"
+                            onClick={() => acknowledgeMutation.mutate(prediction.id)}
+                            disabled={acknowledgeMutation.isPending}
+                            data-testid={`button-ack-${prediction.id}`}
+                          >
+                            <CheckCircle2 className="h-4 w-4 mr-1" />
+                            Acknowledge
                           </Button>
                         </div>
                       )}

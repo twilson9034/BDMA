@@ -21,6 +21,8 @@ import { PriorityBadge } from "@/components/PriorityBadge";
 import { PageHeader } from "@/components/PageHeader";
 import { PageLoader } from "@/components/LoadingSpinner";
 import { EmptyState } from "@/components/EmptyState";
+import { FleetHealthWidget } from "@/components/FleetHealthWidget";
+import { PredictionsWidget } from "@/components/PredictionsWidget";
 import {
   AreaChart,
   Area,
@@ -400,32 +402,9 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-2">
-            <CardTitle className="text-base font-medium">Low Stock Alerts</CardTitle>
-            <span className="text-sm text-muted-foreground">{displayStats.partsLowStock} items</span>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {[
-                { name: "Oil Filter - 15W40", current: 3, reorderPoint: 10, partNumber: "OIL-15W40-001" },
-                { name: "Brake Pads - Heavy Duty", current: 2, reorderPoint: 8, partNumber: "BRK-HD-002" },
-                { name: "Air Filter - Standard", current: 5, reorderPoint: 15, partNumber: "AIR-STD-003" },
-              ].map((part) => (
-                <div key={part.partNumber} className="flex items-center justify-between p-3 rounded-lg bg-destructive/5 border border-destructive/20">
-                  <div>
-                    <p className="font-medium text-sm">{part.name}</p>
-                    <p className="text-xs text-muted-foreground">{part.partNumber}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-medium text-destructive">{part.current} left</p>
-                    <p className="text-xs text-muted-foreground">Reorder at {part.reorderPoint}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+        <FleetHealthWidget />
+
+        <PredictionsWidget />
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-2">
