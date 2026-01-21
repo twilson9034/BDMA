@@ -1,0 +1,185 @@
+CMMS Application Context for Cursor
+Application Overview
+This is a full-featured Computerized Maintenance Management System (CMMS) built on the Base44 platform using React, TypeScript, Tailwind CSS, and shadcn/ui components. The application manages the complete maintenance lifecycle for organizations with fleets, facilities, and equipment assets.
+
+Core Purpose
+Enable organizations to:
+
+Track and manage all physical assets (vehicles, machinery, facilities)
+Create, assign, and complete work orders and maintenance estimates
+Implement preventive maintenance schedules to reduce downtime
+Manage parts inventory with automated reordering
+Handle complete procurement workflows (requisitions → purchase orders → receiving)
+Generate operational reports and analytics
+Provide AI-driven predictive maintenance insights
+Technical Architecture
+Frontend Stack:
+
+React 18 with functional components and hooks
+TypeScript for type safety
+Tailwind CSS for styling with glassmorphism design system
+shadcn/ui component library
+React Router for navigation
+TanStack Query for data fetching
+Framer Motion for animations
+State Management:
+
+Centralized DataContext provider (components/providers/DataContext) manages all application data
+Provides optimized data fetching with pagination support via fetchXxxPage and fetchXxxTotalCount functions
+Implements intelligent caching and background data loading
+Exposes refetchData(['entityName']) for targeted data rehydration
+Backend (Base44 Platform):
+
+Entity-based data model with built-in CRUD operations
+Row-Level Security (RLS) for multi-tenant data isolation
+Backend functions (Deno) for complex business logic
+Built-in authentication and authorization
+Key Entities & Their Relationships
+Asset Management:
+
+Asset: Core entity for equipment/vehicles with hierarchy support, status tracking, meter readings, custom fields
+Location: Physical locations where assets are assigned
+AssetDocument: File attachments for assets
+Maintenance Operations:
+
+WorkOrder: Corrective/preventive maintenance tasks
+Estimate: Pre-approval cost estimates that can become work orders
+WorkOrderLine: Individual tasks within a WO/Estimate with VMRS codes, timers, parts, checklists
+WorkOrderTransaction: Immutable audit log of all part consumptions, time entries, and status changes
+Preventive Maintenance:
+
+PM: Preventive maintenance schedule definitions (interval-based: days/miles/hours)
+PMAssetInstance: Tracks PM status per asset (due dates, overdue alerts)
+TaskChecklist: Reusable inspection checklist templates
+Inventory & Procurement:
+
+Part: Inventory items with quantities, reorder points, ABC classification
+PartKit: Bundled parts for common maintenance tasks
+PartRequest: Technician requests for parts needed for WO/Estimates
+PurchaseRequisition: Consolidated part requests for approval
+PurchaseOrder: Formal orders sent to vendors
+ReceivingTransaction: Records incoming inventory
+Vendor: Supplier information and performance metrics
+ReorderAlert: Automated low-stock notifications
+Specialized Modules:
+
+Tire, TireAssignment: Complete tire lifecycle tracking
+TirePrediction: AI-driven tire failure predictions
+DVIR, DVIRDefect: Driver Vehicle Inspection Reports
+Manual, ManualSection: Service manual library with AI section extraction
+Conversation, Message: Internal team communication
+System Configuration:
+
+VMRSCode: Vehicle Maintenance Reporting Standards taxonomy
+ConfigurationItem: System dropdown values (reason codes, failure codes)
+CustomField: User-defined fields for entities
+SystemSetting: Feature flags and system-wide preferences
+User: Extended with app_role (admin/manager/technician/parts_clerk/viewer) and assigned_location_ids
+Application Structure
+Pages (Primary Views):
+
+Dashboard: KPI widgets, recent activity, customizable layout
+WorkOrders + WorkOrderDetail: Full WO management with line items, time tracking, parts consumption
+Estimates: Cost estimation workflow
+Assets + AssetDetail: Asset registry and maintenance history
+Inventory: Parts management with barcode support
+Procurement: Requisitions, POs, receiving workflow
+PartRequests: Part request approval and fulfillment
+Vendors: Supplier management
+PMs: Preventive maintenance scheduling
+Manuals: Service manual library with PDF viewer
+Reports: Pre-built and custom reports
+Analytics: Predictive maintenance and KPI dashboards
+Settings: System configuration and bulk data tools
+Messages: Internal team chat
+Component Architecture:
+
+Shared Components (components/shared/): Reusable UI elements (GlobalSearch, DocumentManager, PermissionGuard, VMRSSelector)
+Feature Components: Domain-specific components organized by feature (e.g., components/workorders/, components/inventory/)
+Layout: Glassmorphism sidebar navigation with responsive mobile layout
+Design Patterns & Conventions
+Data Fetching Pattern:
+
+const { 
+  fetchWorkOrdersPage, 
+  fetchWorkOrdersTotalCount,
+  assets, 
+  users, 
+  refetchData 
+} = useData();
+
+// Server-side pagination/filtering
+const result = await fetchWorkOrdersPage(filters, sortField, sortDirection, pageSize, offset);
+Entity CRUD (from Base44 SDK):
+
+import { base44 } from '@/api/base44Client';
+
+// List/filter
+const items = await base44.entities.WorkOrder.list('-created_date', 50);
+const filtered = await base44.entities.Part.filter({ category: 'filters' });
+
+// CRUD
+await base44.entities.WorkOrder.create(data);
+await base44.entities.WorkOrder.update(id, data);
+await base44.entities.WorkOrder.delete(id);
+
+// Real-time subscriptions
+base44.entities.WorkOrder.subscribe((event) => {
+  // Handle create/update/delete events
+});
+Permission Checks:
+
+import { PermissionGuard } from '@/components/shared/PermissionGuard';
+
+<PermissionGuard requiredRoles={['admin', 'manager']}>
+  {/* Protected content */}
+</PermissionGuard>
+Styling Conventions:
+
+CSS variables for theming: --glass-bg, --glass-text, --text-default, --bg-page
+Glass components: .glass-container, .glass-input, .modal
+Utility classes: .btn-primary, .badge-glass
+Theme switching via data-theme="light|dark" attribute
+Critical Business Logic
+Work Order Lifecycle:
+
+Create WO with asset assignment
+Add WorkOrderLines with VMRS codes
+Technicians start timers or log manual time
+Post parts consumption (creates transactions, updates inventory)
+Complete checklists (if attached)
+Change line status to 'completed'
+System auto-updates WO status based on lines
+Manager reviews and closes WO
+If PM-related, updates PMAssetInstance with next due date
+Procurement Flow:
+
+Technician submits PartRequest from WO line
+Parts clerk creates PurchaseRequisition bundling multiple requests
+Manager approves requisition
+System generates PurchaseOrder
+PO sent to vendor
+Receiving process logs ReceivingTransaction
+Inventory quantities auto-update
+Part requests marked as fulfilled
+AI Integration Points:
+
+functions/predictFailures: Analyzes asset history to predict failures
+functions/predictTireFailure: Suggests underlying issues on tire removal
+functions/extractManualSections: AI-powered PDF section detection
+functions/getServiceInfoAssist: Context-aware manual search
+File Organization
+pages/: Top-level route components
+components/: Reusable UI components (organized by feature)
+entities/: JSON schema definitions for data model
+functions/: Backend Deno functions for complex operations
+Layout.js: Application shell with navigation
+globals.css: Theme variables and global styles
+Development Guidelines
+All new pages must be flat in pages/ (no subfolders)
+Components can be nested in subfolders
+Use find_replace tool for code modifications (not write_file)
+Entity files require full JSON schema (use write_file)
+Prefer small, focused components over monolithic files
+Always maintain existing functionality when adding features
+Use parallel tool calls for efficiency
