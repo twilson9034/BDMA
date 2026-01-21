@@ -773,6 +773,42 @@ export class DatabaseStorage implements IStorage {
       totalCost: String(Number(part.unitCost || 0) * quantity),
       description: `Consumed ${quantity} x ${part.partNumber}`,
     });
+
+    // Update line parts cost and status
+    const [line] = await db.select().from(workOrderLines).where(eq(workOrderLines.id, lineId));
+    if (line) {
+      const currentPartsCost = Number(line.partsCost || 0);
+      const addedCost = Number(part.unitCost || 0) * quantity;
+      await db.update(workOrderLines)
+        .set({ 
+          partsCost: String(currentPartsCost + addedCost),
+          partRequestStatus: "posted",
+          updatedAt: new Date() 
+        })
+        .where(eq(workOrderLines.id, lineId));
+    }
+  }
+
+  async requestPartForLine(lineId: number, partId: number, quantity: number): Promise<void> {
+    const line = await this.getWorkOrderLine(lineId);
+    if (!line) throw new Error("Line not found");
+
+    await db.update(workOrderLines)
+      .set({ 
+        partRequestStatus: "requested",
+        updatedAt: new Date() 
+      })
+      .where(eq(workOrderLines.id, lineId));
+
+    // Create a transaction record for the request
+    await db.insert(workOrderTransactions).values({
+      workOrderId: line.workOrderId,
+      workOrderLineId: lineId,
+      type: "note",
+      partId,
+      quantity: String(quantity),
+      description: `Requested part ID ${partId} (Qty: ${quantity}) for line ${lineId}`,
+    });
   }
 
   async getWorkOrderTransactions(workOrderId: number): Promise<WorkOrderTransaction[]> {
