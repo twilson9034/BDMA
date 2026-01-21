@@ -55,7 +55,7 @@ Key backend patterns:
 8. **Estimates**: Maintenance cost estimates tied to assets with line items for inventory parts, zero-stock parts, non-inventory items, and labor. Includes parts fulfillment tracking with needsOrdering flag. Estimate numbers auto-generated as EST-YYYY-####. Status workflow: draft → pending_approval → approved/rejected → converted. Server-side automatic recalculation of parts/labor/grand totals when lines are modified.
 9. **Telematics Data**: Engine diagnostic data including GPS coordinates, odometer, engine hours, fuel level, coolant temp, oil pressure, battery voltage, DEF level, speed. Live display on asset detail page. API routes: GET /api/assets/:id/telematics/latest, POST /api/assets/:id/telematics for data ingestion.
 10. **Fault Codes**: Diagnostic Trouble Codes (DTCs) with severity levels (low/medium/high/critical), status workflow (active/pending/cleared/resolved), SPN/FMI codes. Display on asset detail page with visual indicators. API routes: GET /api/assets/:id/fault-codes, POST /api/assets/:id/fault-codes.
-11. **Work Order Lines**: Line items for work orders with auto-generated line numbers, parts selection from inventory (partId, quantity, unitCost), and timer functionality (start/pause/resume/complete). Status workflow: pending → in_progress → paused → completed. Labor hours accumulate across pause/resume cycles. API routes: GET/POST /api/work-orders/:id/lines, PATCH/DELETE /api/work-order-lines/:id, POST /api/work-order-lines/:id/start-timer, POST /api/work-order-lines/:id/pause-timer, POST /api/work-order-lines/:id/stop-timer.
+11. **Work Order Lines**: Line items for work orders with auto-generated line numbers, parts selection from inventory (partId, quantity, unitCost), and timer functionality (start/pause/resume/complete). Status workflow: pending → in_progress → paused → completed. Labor hours accumulate across pause/resume cycles. Editable Complaint/Cause/Correction fields with 1.5s debounce auto-save. Parts usage section supports both inventory parts (with automatic stock deduction) and non-inventory items. API routes: GET/POST /api/work-orders/:id/lines, PATCH/DELETE /api/work-order-lines/:id, POST /api/work-order-lines/:id/start-timer, POST /api/work-order-lines/:id/pause-timer, POST /api/work-order-lines/:id/stop-timer, POST /api/work-order-lines/:id/add-item, GET /api/work-order-lines/:id/transactions.
 
 ## External Dependencies
 
@@ -97,6 +97,8 @@ Key backend patterns:
 - **Prediction Generation**: Creates predictions with severity, confidence, reasoning, and recommended actions
 - **Integration**: AI Analysis button on asset detail page triggers analysis
 - **Fallback Logic**: Analyzes battery voltage, coolant temp, oil pressure, DEF level, fault codes if OpenAI fails
+- **Similar Asset Analysis**: Queries maintenance history from other assets with same make/model to identify patterns and predict similar issues
+- **Fleet Part Patterns**: Analyzes fleet-wide part replacement trends to identify frequently replaced parts and potential systemic issues
 
 ### Barcode/QR Scanning
 - **BarcodeScanner Component**: Header-integrated scanner with manual entry and camera modes
