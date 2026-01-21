@@ -87,10 +87,7 @@ export default function AssetNew() {
         meterType: data.meterType || null,
         notes: data.notes || null,
       };
-      return apiRequest("/api/assets", {
-        method: "POST",
-        body: JSON.stringify(payload),
-      });
+      return apiRequest("POST", "/api/assets", payload);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/assets"] });

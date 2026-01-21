@@ -77,10 +77,7 @@ export default function WorkOrderNew() {
         notes: data.notes || null,
         status: "open",
       };
-      return apiRequest("/api/work-orders", {
-        method: "POST",
-        body: JSON.stringify(payload),
-      });
+      return apiRequest("POST", "/api/work-orders", payload);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/work-orders"] });
