@@ -302,7 +302,14 @@ export async function registerRoutes(
   app.get("/api/work-orders/:id", async (req, res) => {
     const wo = await storage.getWorkOrder(parseInt(req.params.id));
     if (!wo) return res.status(404).json({ error: "Work order not found" });
-    res.json(wo);
+    
+    // Explicitly update actual cost and hours before returning
+    // @ts-ignore
+    await storage.updateWorkOrderActualCost(wo.id);
+    
+    // Re-fetch to get updated values
+    const updatedWo = await storage.getWorkOrder(wo.id);
+    res.json(updatedWo);
   });
 
   app.post("/api/work-orders", requireAuth, async (req, res) => {

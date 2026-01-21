@@ -804,27 +804,29 @@ export default function WorkOrderDetail() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <p className="text-sm text-muted-foreground">Estimated Hours</p>
-                  <p className="font-medium">{workOrder.estimatedHours || "-"}</p>
+                <div className="p-3 bg-primary/5 rounded-lg border border-primary/10">
+                  <p className="text-xs text-muted-foreground uppercase font-bold tracking-wider">Actual Cost</p>
+                  <p className="text-2xl font-bold text-primary">
+                    ${Number(workOrder.actualCost || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  </p>
                 </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Actual Hours</p>
-                  <p className="font-medium">{workOrder.actualHours || "-"}</p>
+                <div className="p-3 bg-primary/5 rounded-lg border border-primary/10">
+                  <p className="text-xs text-muted-foreground uppercase font-bold tracking-wider">Actual Hours</p>
+                  <p className="text-2xl font-bold text-primary">
+                    {workOrder.actualHours || "0.00"} <span className="text-sm font-normal text-muted-foreground">hrs</span>
+                  </p>
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-4 pt-2">
+                <div>
+                  <p className="text-sm text-muted-foreground">Estimated Hours</p>
+                  <p className="font-medium">{workOrder.estimatedHours || "0.00"}</p>
+                </div>
                 <div>
                   <p className="text-sm text-muted-foreground">Estimated Cost</p>
                   <p className="font-medium">
-                    {workOrder.estimatedCost ? `$${parseFloat(workOrder.estimatedCost).toFixed(2)}` : "-"}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Actual Cost</p>
-                  <p className="font-medium">
-                    {workOrder.actualCost ? `$${parseFloat(workOrder.actualCost).toFixed(2)}` : "-"}
+                    {workOrder.estimatedCost ? `$${parseFloat(workOrder.estimatedCost).toFixed(2)}` : "$0.00"}
                   </p>
                 </div>
               </div>
