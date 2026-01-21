@@ -1218,7 +1218,7 @@ export default function WorkOrderDetail() {
                       </SelectItem>
                     ))
                   ) : (
-                    <SelectItem value="" disabled>No VMRS codes available. Add them in Settings.</SelectItem>
+                    <SelectItem value="none" disabled>No VMRS codes available. Add them in Settings.</SelectItem>
                   )}
                 </SelectContent>
               </Select>
