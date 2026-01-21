@@ -76,9 +76,35 @@ export default function WorkOrderDetail() {
   const [showAddLineDialog, setShowAddLineDialog] = useState(false);
   const [activeTimers, setActiveTimers] = useState<Record<number, number>>({});
   const [newLineDescription, setNewLineDescription] = useState("");
+  const [newLineVmrsCode, setNewLineVmrsCode] = useState("");
+  const [newLineVmrsTitle, setNewLineVmrsTitle] = useState("");
+  const [newLineComplaint, setNewLineComplaint] = useState("");
+  const [newLineCause, setNewLineCause] = useState("");
+  const [newLineCorrection, setNewLineCorrection] = useState("");
   const [newLinePartId, setNewLinePartId] = useState<string>("");
   const [newLineQuantity, setNewLineQuantity] = useState("1");
   const [newLinePartsCost, setNewLinePartsCost] = useState("");
+
+  const requestPartMutation = useMutation({
+    mutationFn: async ({ lineId, partId, quantity }: { lineId: number; partId: number; quantity: number }) => {
+      return apiRequest("POST", `/api/work-order-lines/${lineId}/request-part`, { partId, quantity });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/work-orders", workOrderId, "lines"] });
+      toast({ title: "Part Requested", description: "Request has been sent to parts department." });
+    },
+  });
+
+  const postPartMutation = useMutation({
+    mutationFn: async ({ lineId, partId, quantity }: { lineId: number; partId: number; quantity: number }) => {
+      return apiRequest("POST", `/api/work-order-lines/${lineId}/post-part`, { partId, quantity });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/work-orders", workOrderId, "lines"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/parts"] });
+      toast({ title: "Part Posted", description: "Part has been consumed and cost applied." });
+    },
+  });
 
   const { data: workOrder, isLoading } = useQuery<WorkOrderWithDetails>({
     queryKey: ["/api/work-orders", workOrderId],
@@ -181,7 +207,18 @@ export default function WorkOrderDetail() {
   });
 
   const createLineMutation = useMutation({
-    mutationFn: async (data: { description: string; partId?: number; quantity?: number; unitCost?: string; partsCost?: string }) => {
+    mutationFn: async (data: { 
+      description: string; 
+      vmrsCode?: string;
+      vmrsTitle?: string;
+      complaint?: string;
+      cause?: string;
+      correction?: string;
+      partId?: number; 
+      quantity?: number; 
+      unitCost?: string; 
+      partsCost?: string 
+    }) => {
       return apiRequest("POST", `/api/work-orders/${workOrderId}/lines`, data);
     },
     onSuccess: () => {
@@ -190,6 +227,11 @@ export default function WorkOrderDetail() {
       toast({ title: "Line Added", description: "Work order line has been added." });
       setShowAddLineDialog(false);
       setNewLineDescription("");
+      setNewLineVmrsCode("");
+      setNewLineVmrsTitle("");
+      setNewLineComplaint("");
+      setNewLineCause("");
+      setNewLineCorrection("");
       setNewLinePartId("");
       setNewLineQuantity("1");
       setNewLinePartsCost("");
@@ -267,6 +309,11 @@ export default function WorkOrderDetail() {
     
     createLineMutation.mutate({
       description: newLineDescription,
+      vmrsCode: newLineVmrsCode || undefined,
+      vmrsTitle: newLineVmrsTitle || undefined,
+      complaint: newLineComplaint || undefined,
+      cause: newLineCause || undefined,
+      correction: newLineCorrection || undefined,
       partId: selectedPart ? selectedPart.id : undefined,
       quantity: selectedPart ? quantity : undefined,
       unitCost: unitCost,
@@ -699,101 +746,186 @@ export default function WorkOrderDetail() {
             </CardHeader>
             <CardContent>
               {workOrderLines && workOrderLines.length > 0 ? (
-                <div className="space-y-3">
+                <div className="space-y-4">
                   {workOrderLines.map((line) => (
-                    <div key={line.id} className="p-4 rounded-lg bg-muted/50" data-testid={`line-${line.id}`}>
-                      <div className="flex items-start justify-between gap-4 flex-wrap">
-                        <div className="flex-1 min-w-0">
-                          <p className="font-medium">Line {line.lineNumber}: {line.description}</p>
-                          <div className="flex flex-wrap gap-4 text-sm text-muted-foreground mt-1">
-                            <span className="flex items-center gap-1">
-                              <Clock className="h-3 w-3" />
-                              {line.laborHours || 0}h labor
-                            </span>
-                            <span className="flex items-center gap-1">
-                              <Package className="h-3 w-3" />
-                              ${line.partsCost || 0} parts
-                            </span>
+                    <div key={line.id} className="p-4 rounded-lg bg-muted/50 border border-border/50" data-testid={`line-${line.id}`}>
+                      <div className="space-y-4">
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="h-6 w-6 rounded bg-primary/10 flex items-center justify-center font-bold text-primary text-xs">
+                                {line.lineNumber}
+                              </span>
+                              <p className="font-medium text-lg">{line.description}</p>
+                            </div>
+                            {line.vmrsTitle && (
+                              <p className="text-sm text-muted-foreground mt-1">
+                                <span className="font-semibold">VMRS:</span> {line.vmrsTitle} ({line.vmrsCode})
+                              </p>
+                            )}
                           </div>
-                          {line.status === "in_progress" && activeTimers[line.id] && (
-                            <div className="flex items-center gap-2 mt-2 text-primary font-mono text-lg">
-                              <Timer className="h-4 w-4 animate-pulse" />
-                              {formatElapsedTime(activeTimers[line.id])}
-                            </div>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <StatusBadge status={line.status} />
-                          {line.status === "pending" && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => startTimerMutation.mutate(line.id)}
-                              disabled={startTimerMutation.isPending}
-                              data-testid={`button-start-timer-${line.id}`}
-                            >
-                              <Play className="h-4 w-4 mr-1" />
-                              Start
-                            </Button>
-                          )}
-                          {line.status === "in_progress" && (
-                            <div className="flex gap-1">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => pauseTimerMutation.mutate(line.id)}
-                                disabled={pauseTimerMutation.isPending}
-                                data-testid={`button-pause-timer-${line.id}`}
-                              >
-                                <Square className="h-4 w-4 mr-1" />
-                                Pause
-                              </Button>
-                              <Button
-                                size="sm"
-                                onClick={() => stopTimerMutation.mutate({ lineId: line.id, complete: true })}
-                                disabled={stopTimerMutation.isPending}
-                                data-testid={`button-complete-line-${line.id}`}
-                              >
-                                <CheckCircle2 className="h-4 w-4 mr-1" />
-                                Done
-                              </Button>
-                            </div>
-                          )}
-                          {line.status === "paused" && (
-                            <div className="flex gap-1">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => startTimerMutation.mutate(line.id)}
-                                disabled={startTimerMutation.isPending}
-                                data-testid={`button-resume-timer-${line.id}`}
-                              >
-                                <Play className="h-4 w-4 mr-1" />
-                                Resume
-                              </Button>
-                              <Button
-                                size="sm"
-                                onClick={() => stopTimerMutation.mutate({ lineId: line.id, complete: true })}
-                                disabled={stopTimerMutation.isPending}
-                                data-testid={`button-complete-paused-${line.id}`}
-                              >
-                                <CheckCircle2 className="h-4 w-4 mr-1" />
-                                Done
-                              </Button>
-                            </div>
-                          )}
-                          {line.status !== "in_progress" && line.status !== "paused" && (
+                          <div className="flex items-center gap-2">
+                            <StatusBadge status={line.status} />
                             <Button
                               size="icon"
                               variant="ghost"
+                              className="h-8 w-8"
                               onClick={() => deleteLineMutation.mutate(line.id)}
                               disabled={deleteLineMutation.isPending}
-                              data-testid={`button-delete-line-${line.id}`}
                             >
                               <Trash2 className="h-4 w-4 text-destructive" />
                             </Button>
-                          )}
+                          </div>
                         </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                          <div className="space-y-1">
+                            <p className="text-[10px] uppercase font-bold text-muted-foreground">Complaint</p>
+                            <p className="p-2 rounded bg-background/50 border border-border/30 min-h-[40px]">
+                              {line.complaint || <span className="text-muted-foreground italic">No complaint recorded</span>}
+                            </p>
+                          </div>
+                          <div className="space-y-1">
+                            <p className="text-[10px] uppercase font-bold text-muted-foreground">Cause</p>
+                            <p className="p-2 rounded bg-background/50 border border-border/30 min-h-[40px]">
+                              {line.cause || <span className="text-muted-foreground italic">No cause recorded</span>}
+                            </p>
+                          </div>
+                          <div className="space-y-1">
+                            <p className="text-[10px] uppercase font-bold text-muted-foreground">Correction</p>
+                            <p className="p-2 rounded bg-background/50 border border-border/30 min-h-[40px]">
+                              {line.correction || <span className="text-muted-foreground italic">No correction recorded</span>}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-4 pt-2 border-t border-border/30">
+                          <div className="flex items-center gap-4 text-sm">
+                            <span className="flex items-center gap-1 font-medium">
+                              <Clock className="h-4 w-4 text-muted-foreground" />
+                              {line.laborHours || 0}h labor
+                            </span>
+                            <span className="flex items-center gap-1 font-medium">
+                              <Package className="h-4 w-4 text-muted-foreground" />
+                              ${line.partsCost || 0} parts
+                            </span>
+                            {line.partRequestStatus !== 'none' && (
+                              <Badge variant="outline" className="capitalize text-[10px]">
+                                {line.partRequestStatus}
+                              </Badge>
+                            )}
+                          </div>
+
+                          <div className="flex-1" />
+
+                          <div className="flex items-center gap-2">
+                            {line.status === "pending" && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-8"
+                                onClick={() => startTimerMutation.mutate(line.id)}
+                                disabled={startTimerMutation.isPending}
+                              >
+                                <Play className="h-3 w-3 mr-1" />
+                                Start
+                              </Button>
+                            )}
+                            {line.status === "in_progress" && (
+                              <div className="flex gap-2">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-8"
+                                  onClick={() => pauseTimerMutation.mutate(line.id)}
+                                  disabled={pauseTimerMutation.isPending}
+                                >
+                                  <Square className="h-3 w-3 mr-1" />
+                                  Pause
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  className="h-8"
+                                  onClick={() => stopTimerMutation.mutate({ lineId: line.id, complete: true })}
+                                  disabled={stopTimerMutation.isPending}
+                                >
+                                  <CheckCircle2 className="h-3 w-3 mr-1" />
+                                  Complete
+                                </Button>
+                              </div>
+                            )}
+                            {line.status === "paused" && (
+                              <div className="flex gap-2">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-8"
+                                  onClick={() => startTimerMutation.mutate(line.id)}
+                                  disabled={startTimerMutation.isPending}
+                                >
+                                  <Play className="h-3 w-3 mr-1" />
+                                  Resume
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  className="h-8"
+                                  onClick={() => stopTimerMutation.mutate({ lineId: line.id, complete: true })}
+                                  disabled={stopTimerMutation.isPending}
+                                >
+                                  <CheckCircle2 className="h-3 w-3 mr-1" />
+                                  Complete
+                                </Button>
+                              </div>
+                            )}
+
+                            {line.partRequestStatus === 'none' && (
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                className="h-8"
+                                onClick={() => {
+                                  const partId = prompt("Enter Part ID to Request");
+                                  const qty = prompt("Enter Quantity", "1");
+                                  if (partId && qty) {
+                                    requestPartMutation.mutate({ 
+                                      lineId: line.id, 
+                                      partId: parseInt(partId), 
+                                      quantity: parseFloat(qty) 
+                                    });
+                                  }
+                                }}
+                              >
+                                Request Part
+                              </Button>
+                            )}
+                            {(line.partRequestStatus === 'requested' || line.partRequestStatus === 'received') && (
+                              <Button
+                                size="sm"
+                                className="h-8"
+                                onClick={() => {
+                                  const partId = prompt("Enter Part ID to Post");
+                                  const qty = prompt("Enter Quantity", "1");
+                                  if (partId && qty) {
+                                    postPartMutation.mutate({ 
+                                      lineId: line.id, 
+                                      partId: parseInt(partId), 
+                                      quantity: parseFloat(qty) 
+                                    });
+                                  }
+                                }}
+                              >
+                                Post Part
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+
+                        {line.status === "in_progress" && activeTimers[line.id] && (
+                          <div className="flex items-center gap-2 mt-2 text-primary font-mono text-xl justify-center bg-primary/5 py-2 rounded">
+                            <Timer className="h-5 w-5 animate-pulse" />
+                            {formatElapsedTime(activeTimers[line.id])}
+                          </div>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -833,78 +965,86 @@ export default function WorkOrderDetail() {
       </Dialog>
 
       <Dialog open={showAddLineDialog} onOpenChange={setShowAddLineDialog}>
-        <DialogContent>
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Add Work Order Line</DialogTitle>
             <DialogDescription>
-              Add a new task or operation to this work order. You can track time and parts used.
+              Add a new task or operation. You can track labor time and request parts.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Task Description *</label>
-              <Input
-                placeholder="e.g., Replace oil filter, Check brake pads..."
-                value={newLineDescription}
-                onChange={(e) => setNewLineDescription(e.target.value)}
-                data-testid="input-line-description"
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Part (Optional)</label>
-              <Select value={newLinePartId} onValueChange={(value) => {
-                setNewLinePartId(value);
-                const part = parts?.find(p => p.id.toString() === value);
-                if (part?.unitCost) {
-                  setNewLinePartsCost(part.unitCost);
-                }
-              }}>
-                <SelectTrigger data-testid="select-part">
-                  <SelectValue placeholder="Select a part from inventory" />
-                </SelectTrigger>
-                <SelectContent>
-                  {parts?.map(part => (
-                    <SelectItem key={part.id} value={part.id.toString()}>
-                      {part.partNumber} - {part.name} (${part.unitCost || 0}) - Qty: {part.quantityOnHand || 0}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            {newLinePartId && (
+            <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium">Quantity</label>
-                <Input
-                  type="number"
-                  min="1"
-                  placeholder="1"
-                  value={newLineQuantity}
-                  onChange={(e) => setNewLineQuantity(e.target.value)}
-                  data-testid="input-quantity"
+                <label className="text-[10px] uppercase font-bold text-muted-foreground">VMRS Code</label>
+                <Input 
+                  placeholder="e.g. 013-001-001" 
+                  value={newLineVmrsCode} 
+                  onChange={(e) => setNewLineVmrsCode(e.target.value)} 
                 />
               </div>
-            )}
+              <div className="space-y-2">
+                <label className="text-[10px] uppercase font-bold text-muted-foreground">VMRS Title</label>
+                <Input 
+                  placeholder="e.g. Front Brakes" 
+                  value={newLineVmrsTitle} 
+                  onChange={(e) => setNewLineVmrsTitle(e.target.value)} 
+                />
+              </div>
+            </div>
+            
             <div className="space-y-2">
-              <label className="text-sm font-medium">Parts Cost ($){newLinePartId ? ' (Auto-calculated)' : ''}</label>
+              <label className="text-[10px] uppercase font-bold text-muted-foreground">Task Description *</label>
               <Input
-                type="number"
-                step="0.01"
-                placeholder="0.00"
-                value={newLinePartId ? (parseFloat(newLinePartsCost || "0") * parseInt(newLineQuantity || "1")).toFixed(2) : newLinePartsCost}
-                onChange={(e) => setNewLinePartsCost(e.target.value)}
-                disabled={!!newLinePartId}
-                data-testid="input-parts-cost"
+                placeholder="e.g., Replace brake pads, Change oil..."
+                value={newLineDescription}
+                onChange={(e) => setNewLineDescription(e.target.value)}
+              />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <label className="text-[10px] uppercase font-bold text-muted-foreground">Complaint</label>
+                <Textarea 
+                  placeholder="Reason for repair" 
+                  className="h-20"
+                  value={newLineComplaint} 
+                  onChange={(e) => setNewLineComplaint(e.target.value)} 
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] uppercase font-bold text-muted-foreground">Cause</label>
+                <Textarea 
+                  placeholder="Root cause found" 
+                  className="h-20"
+                  value={newLineCause} 
+                  onChange={(e) => setNewLineCause(e.target.value)} 
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] uppercase font-bold text-muted-foreground">Correction</label>
+                <Textarea 
+                  placeholder="Steps taken to fix" 
+                  className="h-20"
+                  value={newLineCorrection} 
+                  onChange={(e) => setNewLineCorrection(e.target.value)} 
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-[10px] uppercase font-bold text-muted-foreground">Notes</label>
+              <Textarea 
+                placeholder="General technician notes" 
+                value={newLineNotes} 
+                onChange={(e) => setNewLineNotes(e.target.value)} 
               />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowAddLineDialog(false)}>
-              Cancel
-            </Button>
+            <Button variant="outline" onClick={() => setShowAddLineDialog(false)}>Cancel</Button>
             <Button 
               onClick={handleAddLine}
               disabled={!newLineDescription.trim() || createLineMutation.isPending}
-              data-testid="button-confirm-add-line"
             >
               {createLineMutation.isPending ? (
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
