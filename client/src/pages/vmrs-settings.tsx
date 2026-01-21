@@ -120,43 +120,44 @@ export default function VmrsSettings() {
 
   const columns = [
     {
-      accessorKey: "code",
+      key: "code",
       header: "Code",
-      cell: ({ row }: any) => (
-        <span className="font-mono font-medium">{row.original.code}</span>
+      cell: (item: VmrsCode) => (
+        <span className="font-mono font-medium">{item.code}</span>
       ),
     },
     {
-      accessorKey: "title",
+      key: "title",
       header: "Title",
+      cell: (item: VmrsCode) => item.title,
     },
     {
-      accessorKey: "description",
+      key: "description",
       header: "Description",
-      cell: ({ row }: any) => (
+      cell: (item: VmrsCode) => (
         <span className="text-muted-foreground truncate max-w-[300px] block">
-          {row.original.description || "—"}
+          {item.description || "—"}
         </span>
       ),
     },
     {
-      id: "actions",
+      key: "actions",
       header: "",
-      cell: ({ row }: any) => (
+      cell: (item: VmrsCode) => (
         <div className="flex gap-2 justify-end">
           <Button
             size="icon"
             variant="ghost"
-            onClick={() => handleOpenEdit(row.original)}
-            data-testid={`button-edit-vmrs-${row.original.id}`}
+            onClick={() => handleOpenEdit(item)}
+            data-testid={`button-edit-vmrs-${item.id}`}
           >
             <Pencil className="h-4 w-4" />
           </Button>
           <Button
             size="icon"
             variant="ghost"
-            onClick={() => handleDelete(row.original.id)}
-            data-testid={`button-delete-vmrs-${row.original.id}`}
+            onClick={() => handleDelete(item.id)}
+            data-testid={`button-delete-vmrs-${item.id}`}
           >
             <Trash2 className="h-4 w-4 text-destructive" />
           </Button>
@@ -205,7 +206,7 @@ export default function VmrsSettings() {
         </CardHeader>
         <CardContent>
           {vmrsCodes.length > 0 ? (
-            <DataTable columns={columns} data={vmrsCodes} searchColumn="code" searchPlaceholder="Search by code..." />
+            <DataTable columns={columns} data={vmrsCodes} getRowKey={(item) => item.id} />
           ) : (
             <div className="text-center py-12 text-muted-foreground">
               <Code2 className="h-12 w-12 mx-auto mb-4 opacity-50" />
