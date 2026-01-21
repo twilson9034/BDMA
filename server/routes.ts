@@ -63,22 +63,32 @@ async function generateEstimateNumber(): Promise<string> {
 }
 
 async function checkAndUpdateWorkOrderStatus(workOrderId: number): Promise<void> {
+  console.log(`Checking status for Work Order ${workOrderId}`);
   const lines = await storage.getWorkOrderLines(workOrderId);
-  if (lines.length === 0) return;
+  if (lines.length === 0) {
+    console.log(`No lines found for Work Order ${workOrderId}`);
+    return;
+  }
 
   const allDone = lines.every(line => 
     line.status === "completed" || line.status === "rescheduled" || line.status === "cancelled"
   );
+  
+  console.log(`All lines done for Work Order ${workOrderId}: ${allDone}`);
+  console.log(`Line statuses: ${lines.map(l => l.status).join(", ")}`);
 
   if (allDone) {
     const wo = await storage.getWorkOrder(workOrderId);
     if (wo && wo.status !== "completed" && wo.status !== "cancelled") {
+      console.log(`Updating Work Order ${workOrderId} to ready_for_review`);
       await storage.updateWorkOrder(workOrderId, { status: "ready_for_review" });
       
       // Update asset status to operational if it was in maintenance
       if (wo.assetId) {
         const asset = await storage.getAsset(wo.assetId);
-        if (asset && asset.status === "in_maintenance") {
+        console.log(`Asset ${wo.assetId} current status: ${asset?.status}`);
+        if (asset && (asset.status === "in_maintenance" || asset.status === "down" || asset.status === "pending_inspection")) {
+          console.log(`Updating Asset ${wo.assetId} to operational`);
           await storage.updateAsset(wo.assetId, { status: "operational" });
         }
       }
