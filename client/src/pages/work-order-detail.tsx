@@ -41,7 +41,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { PriorityBadge } from "@/components/PriorityBadge";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import type { WorkOrder, Asset, WorkOrderLine, Part } from "@shared/schema";
+import type { WorkOrder, Asset, WorkOrderLine, Part, VmrsCode } from "@shared/schema";
 
 const workOrderFormSchema = z.object({
   description: z.string().optional(),
@@ -76,8 +76,7 @@ export default function WorkOrderDetail() {
   const [showAddLineDialog, setShowAddLineDialog] = useState(false);
   const [activeTimers, setActiveTimers] = useState<Record<number, number>>({});
   const [newLineDescription, setNewLineDescription] = useState("");
-  const [newLineVmrsCode, setNewLineVmrsCode] = useState("");
-  const [newLineVmrsTitle, setNewLineVmrsTitle] = useState("");
+  const [selectedVmrsCodeId, setSelectedVmrsCodeId] = useState<string>("");
   const [newLineComplaint, setNewLineComplaint] = useState("");
   const [newLineCause, setNewLineCause] = useState("");
   const [newLineCorrection, setNewLineCorrection] = useState("");
@@ -85,6 +84,18 @@ export default function WorkOrderDetail() {
   const [newLinePartId, setNewLinePartId] = useState<string>("");
   const [newLineQuantity, setNewLineQuantity] = useState("1");
   const [newLinePartsCost, setNewLinePartsCost] = useState("");
+
+  const handleVmrsCodeSelect = (vmrsCodeId: string) => {
+    setSelectedVmrsCodeId(vmrsCodeId);
+    if (vmrsCodeId) {
+      const selectedCode = vmrsCodes.find(c => c.id.toString() === vmrsCodeId);
+      if (selectedCode) {
+        setNewLineDescription(selectedCode.description || selectedCode.title);
+      }
+    } else {
+      setNewLineDescription("");
+    }
+  };
 
   const requestPartMutation = useMutation({
     mutationFn: async ({ lineId, partId, quantity }: { lineId: number; partId: number; quantity: number }) => {
@@ -118,6 +129,10 @@ export default function WorkOrderDetail() {
 
   const { data: parts } = useQuery<Part[]>({
     queryKey: ["/api/parts"],
+  });
+
+  const { data: vmrsCodes = [] } = useQuery<VmrsCode[]>({
+    queryKey: ["/api/vmrs-codes"],
   });
 
   const { data: workOrderLines } = useQuery<WorkOrderLine[]>({
@@ -228,8 +243,7 @@ export default function WorkOrderDetail() {
       toast({ title: "Line Added", description: "Work order line has been added." });
       setShowAddLineDialog(false);
       setNewLineDescription("");
-      setNewLineVmrsCode("");
-      setNewLineVmrsTitle("");
+      setSelectedVmrsCodeId("");
       setNewLineComplaint("");
       setNewLineCause("");
       setNewLineCorrection("");
@@ -295,6 +309,33 @@ export default function WorkOrderDetail() {
     },
   });
 
+  const updateLineMutation = useMutation({
+    mutationFn: async ({ lineId, data }: { lineId: number; data: Partial<{ notes: string; complaint: string; cause: string; correction: string }> }) => {
+      return apiRequest("PATCH", `/api/work-order-lines/${lineId}`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/work-orders", workOrderId, "lines"] });
+    },
+  });
+
+  const [editedLineNotes, setEditedLineNotes] = useState<Record<number, string>>({});
+  const [autoSaveTimers, setAutoSaveTimers] = useState<Record<number, NodeJS.Timeout>>({});
+
+  const handleLineNotesChange = (lineId: number, value: string) => {
+    setEditedLineNotes(prev => ({ ...prev, [lineId]: value }));
+    
+    if (autoSaveTimers[lineId]) {
+      clearTimeout(autoSaveTimers[lineId]);
+    }
+    
+    const timer = setTimeout(() => {
+      updateLineMutation.mutate({ lineId, data: { notes: value } });
+      toast({ title: "Notes Saved", description: "Your notes have been saved automatically." });
+    }, 1500);
+    
+    setAutoSaveTimers(prev => ({ ...prev, [lineId]: timer }));
+  };
+
   const formatElapsedTime = (seconds: number) => {
     const hrs = Math.floor(seconds / 3600);
     const mins = Math.floor((seconds % 3600) / 60);
@@ -303,16 +344,22 @@ export default function WorkOrderDetail() {
   };
 
   const handleAddLine = () => {
-    if (!newLineDescription.trim()) return;
+    if (!selectedVmrsCodeId) {
+      toast({ title: "Validation Error", description: "Please select a VMRS code", variant: "destructive" });
+      return;
+    }
+    const selectedVmrs = vmrsCodes.find(c => c.id.toString() === selectedVmrsCodeId);
+    if (!selectedVmrs) return;
+    
     const selectedPart = newLinePartId ? parts?.find(p => p.id.toString() === newLinePartId) : null;
     const quantity = parseInt(newLineQuantity) || 1;
     const unitCost = selectedPart?.unitCost || newLinePartsCost || undefined;
     const totalPartsCost = selectedPart && unitCost ? (parseFloat(unitCost) * quantity).toFixed(2) : newLinePartsCost || undefined;
     
     createLineMutation.mutate({
-      description: newLineDescription,
-      vmrsCode: newLineVmrsCode || undefined,
-      vmrsTitle: newLineVmrsTitle || undefined,
+      description: selectedVmrs.description || selectedVmrs.title,
+      vmrsCode: selectedVmrs.code,
+      vmrsTitle: selectedVmrs.title,
       complaint: newLineComplaint || undefined,
       cause: newLineCause || undefined,
       correction: newLineCorrection || undefined,
@@ -802,6 +849,20 @@ export default function WorkOrderDetail() {
                           </div>
                         </div>
 
+                        <div className="space-y-1">
+                          <p className="text-[10px] uppercase font-bold text-muted-foreground flex items-center gap-2">
+                            Notes
+                            {updateLineMutation.isPending && <Loader2 className="h-3 w-3 animate-spin" />}
+                          </p>
+                          <Textarea
+                            placeholder="Add technician notes..."
+                            className="min-h-[60px] bg-background/50"
+                            value={editedLineNotes[line.id] !== undefined ? editedLineNotes[line.id] : (line.notes || '')}
+                            onChange={(e) => handleLineNotesChange(line.id, e.target.value)}
+                            data-testid={`input-line-notes-${line.id}`}
+                          />
+                        </div>
+
                         <div className="flex flex-wrap items-center gap-4 pt-2 border-t border-border/30">
                           <div className="flex items-center gap-4 text-sm">
                             <span className="flex items-center gap-1 font-medium">
@@ -968,41 +1029,42 @@ export default function WorkOrderDetail() {
       </Dialog>
 
       <Dialog open={showAddLineDialog} onOpenChange={setShowAddLineDialog}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Add Work Order Line</DialogTitle>
             <DialogDescription>
-              Add a new task or operation. You can track labor time and request parts.
+              Select a VMRS code to add a maintenance task. Description auto-fills from the code.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <label className="text-[10px] uppercase font-bold text-muted-foreground">VMRS Code</label>
-                <Input 
-                  placeholder="e.g. 013-001-001" 
-                  value={newLineVmrsCode} 
-                  onChange={(e) => setNewLineVmrsCode(e.target.value)} 
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-[10px] uppercase font-bold text-muted-foreground">VMRS Title</label>
-                <Input 
-                  placeholder="e.g. Front Brakes" 
-                  value={newLineVmrsTitle} 
-                  onChange={(e) => setNewLineVmrsTitle(e.target.value)} 
-                />
-              </div>
+            <div className="space-y-2">
+              <label className="text-[10px] uppercase font-bold text-muted-foreground">VMRS Code *</label>
+              <Select value={selectedVmrsCodeId} onValueChange={handleVmrsCodeSelect}>
+                <SelectTrigger data-testid="select-vmrs-code">
+                  <SelectValue placeholder="Select a VMRS code..." />
+                </SelectTrigger>
+                <SelectContent className="max-h-[300px]">
+                  {vmrsCodes.length > 0 ? (
+                    vmrsCodes.map((code) => (
+                      <SelectItem key={code.id} value={code.id.toString()}>
+                        <span className="font-mono">{code.code}</span> - {code.title}
+                      </SelectItem>
+                    ))
+                  ) : (
+                    <SelectItem value="" disabled>No VMRS codes available. Add them in Settings.</SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
             </div>
             
-            <div className="space-y-2">
-              <label className="text-[10px] uppercase font-bold text-muted-foreground">Task Description *</label>
-              <Input
-                placeholder="e.g., Replace brake pads, Change oil..."
-                value={newLineDescription}
-                onChange={(e) => setNewLineDescription(e.target.value)}
-              />
-            </div>
+            {selectedVmrsCodeId && (
+              <div className="space-y-2">
+                <label className="text-[10px] uppercase font-bold text-muted-foreground">Description (auto-filled)</label>
+                <div className="p-3 bg-muted rounded-md text-sm">
+                  {newLineDescription || "No description available"}
+                </div>
+              </div>
+            )}
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="space-y-2">
@@ -1012,6 +1074,7 @@ export default function WorkOrderDetail() {
                   className="h-20"
                   value={newLineComplaint} 
                   onChange={(e) => setNewLineComplaint(e.target.value)} 
+                  data-testid="input-line-complaint"
                 />
               </div>
               <div className="space-y-2">
@@ -1021,6 +1084,7 @@ export default function WorkOrderDetail() {
                   className="h-20"
                   value={newLineCause} 
                   onChange={(e) => setNewLineCause(e.target.value)} 
+                  data-testid="input-line-cause"
                 />
               </div>
               <div className="space-y-2">
@@ -1030,6 +1094,7 @@ export default function WorkOrderDetail() {
                   className="h-20"
                   value={newLineCorrection} 
                   onChange={(e) => setNewLineCorrection(e.target.value)} 
+                  data-testid="input-line-correction"
                 />
               </div>
             </div>
@@ -1040,6 +1105,7 @@ export default function WorkOrderDetail() {
                 placeholder="General technician notes" 
                 value={newLineNotes} 
                 onChange={(e) => setNewLineNotes(e.target.value)} 
+                data-testid="input-line-notes"
               />
             </div>
           </div>
@@ -1047,7 +1113,8 @@ export default function WorkOrderDetail() {
             <Button variant="outline" onClick={() => setShowAddLineDialog(false)}>Cancel</Button>
             <Button 
               onClick={handleAddLine}
-              disabled={!newLineDescription.trim() || createLineMutation.isPending}
+              disabled={!selectedVmrsCodeId || createLineMutation.isPending}
+              data-testid="button-confirm-add-line"
             >
               {createLineMutation.isPending ? (
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />

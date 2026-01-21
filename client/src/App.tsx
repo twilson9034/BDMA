@@ -30,6 +30,7 @@ import Manuals from "@/pages/manuals";
 import Reports from "@/pages/reports";
 import Feedback from "@/pages/feedback";
 import Settings from "@/pages/settings";
+import VmrsSettings from "@/pages/vmrs-settings";
 import Estimates from "@/pages/estimates";
 import EstimateDetail from "@/pages/estimate-detail";
 import NotFound from "@/pages/not-found";
@@ -57,6 +58,7 @@ function AuthenticatedRouter() {
       <Route path="/estimates" component={Estimates} />
       <Route path="/estimates/:id" component={EstimateDetail} />
       <Route path="/settings" component={Settings} />
+      <Route path="/settings/vmrs" component={VmrsSettings} />
       <Route component={NotFound} />
     </Switch>
   );

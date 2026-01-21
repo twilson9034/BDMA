@@ -15,8 +15,11 @@ import {
   Palette, 
   Database, 
   Building,
-  LogOut
+  LogOut,
+  Code2,
+  ChevronRight
 } from "lucide-react";
+import { Link } from "wouter";
 
 export default function Settings() {
   const { user, logout, isLoggingOut } = useAuth();
@@ -257,6 +260,26 @@ export default function Settings() {
                 <Button variant="outline" className="mt-4 w-full">
                   Add Location
                 </Button>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Code2 className="h-5 w-5" />
+                  VMRS Codes
+                </CardTitle>
+                <CardDescription>
+                  Manage standard maintenance codes for work order categorization
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Link href="/settings/vmrs">
+                  <Button variant="outline" className="w-full justify-between" data-testid="button-manage-vmrs">
+                    Manage VMRS Codes
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </Link>
               </CardContent>
             </Card>
           </div>
