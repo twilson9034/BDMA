@@ -177,10 +177,12 @@ export async function registerRoutes(
 
   app.post("/api/vmrs-codes", requireAuth, async (req, res) => {
     try {
+      console.log("Creating VMRS code with body:", req.body);
       const validated = insertVmrsCodeSchema.parse(req.body);
       const code = await storage.createVmrsCode(validated);
       res.status(201).json(code);
     } catch (error) {
+      console.error("VMRS creation error:", error);
       if (error instanceof z.ZodError) {
         return res.status(400).json({ error: error.errors });
       }

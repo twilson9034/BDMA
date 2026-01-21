@@ -35,7 +35,7 @@ export default function VmrsSettings() {
 
   const createMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
-      return apiRequest("/api/vmrs-codes", { method: "POST", body: JSON.stringify(data) });
+      return apiRequest("POST", "/api/vmrs-codes", data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/vmrs-codes"] });
@@ -50,7 +50,7 @@ export default function VmrsSettings() {
 
   const updateMutation = useMutation({
     mutationFn: async ({ id, data }: { id: number; data: typeof formData }) => {
-      return apiRequest(`/api/vmrs-codes/${id}`, { method: "PATCH", body: JSON.stringify(data) });
+      return apiRequest("PATCH", `/api/vmrs-codes/${id}`, data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/vmrs-codes"] });
@@ -65,7 +65,7 @@ export default function VmrsSettings() {
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
-      return apiRequest(`/api/vmrs-codes/${id}`, { method: "DELETE" });
+      return apiRequest("DELETE", `/api/vmrs-codes/${id}`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/vmrs-codes"] });
