@@ -30,7 +30,7 @@ import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { Asset, InsertWorkOrder } from "@shared/schema";
 
 const workOrderFormSchema = z.object({
-  title: z.string().min(1, "Title is required"),
+  title: z.string().optional(),
   description: z.string().optional(),
   type: z.enum(["preventive", "corrective", "inspection", "emergency", "project"]),
   priority: z.enum(["critical", "high", "medium", "low"]),
@@ -67,7 +67,7 @@ export default function WorkOrderNew() {
   const createMutation = useMutation({
     mutationFn: async (data: WorkOrderFormValues) => {
       const payload: Partial<InsertWorkOrder> = {
-        title: data.title,
+        title: data.title || undefined, // Auto-generated on backend if not provided
         description: data.description || null,
         type: data.type,
         priority: data.priority,
@@ -127,10 +127,10 @@ export default function WorkOrderNew() {
                   name="title"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Title *</FormLabel>
+                      <FormLabel>Title (Optional)</FormLabel>
                       <FormControl>
                         <Input 
-                          placeholder="Enter work order title" 
+                          placeholder="Auto-generated as WO# | Asset# if left blank" 
                           {...field} 
                           data-testid="input-title"
                         />

@@ -9,7 +9,9 @@ import {
   TrendingUp,
   Calendar,
   CheckCircle2,
-  ArrowRight
+  ArrowRight,
+  Calculator,
+  ShoppingCart
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -53,6 +55,15 @@ interface RecentWorkOrder {
   createdAt: string;
 }
 
+interface UnfulfilledPart {
+  id: number;
+  estimateId: number;
+  partNumber: string | null;
+  description: string;
+  quantity: string;
+  lineType: string;
+}
+
 const workOrderTrendData = [
   { month: "Jan", completed: 45, opened: 52 },
   { month: "Feb", completed: 52, opened: 48 },
@@ -75,6 +86,10 @@ export default function Dashboard() {
 
   const { data: recentWorkOrders, isLoading: workOrdersLoading } = useQuery<RecentWorkOrder[]>({
     queryKey: ["/api/work-orders/recent"],
+  });
+
+  const { data: unfulfilledParts } = useQuery<UnfulfilledPart[]>({
+    queryKey: ["/api/estimates/unfulfilled-parts"],
   });
 
   if (statsLoading) {
@@ -335,7 +350,56 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid gap-6 lg:grid-cols-3">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between gap-2">
+            <CardTitle className="text-base font-medium flex items-center gap-2">
+              <ShoppingCart className="h-4 w-4" />
+              Parts Fulfillment
+            </CardTitle>
+            <Button variant="ghost" size="sm" asChild>
+              <Link href="/estimates">View Estimates</Link>
+            </Button>
+          </CardHeader>
+          <CardContent>
+            {(!unfulfilledParts || unfulfilledParts.length === 0) ? (
+              <div className="flex flex-col items-center justify-center py-6 text-muted-foreground">
+                <CheckCircle2 className="h-8 w-8 mb-2 text-green-500" />
+                <p className="text-sm">All parts fulfilled</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {unfulfilledParts.slice(0, 4).map((part) => (
+                  <Link
+                    key={part.id}
+                    href={`/estimates/${part.estimateId}`}
+                    className="flex items-center justify-between p-3 rounded-lg bg-orange-500/10 border border-orange-500/20 hover-elevate"
+                    data-testid={`unfulfilled-part-${part.id}`}
+                  >
+                    <div>
+                      <p className="font-medium text-sm">{part.description}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {part.partNumber || "No part number"}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-medium text-orange-600 dark:text-orange-400">Qty: {part.quantity}</p>
+                      <p className="text-xs text-muted-foreground capitalize">
+                        {part.lineType.replace("_", " ")}
+                      </p>
+                    </div>
+                  </Link>
+                ))}
+                {unfulfilledParts.length > 4 && (
+                  <p className="text-xs text-center text-muted-foreground">
+                    +{unfulfilledParts.length - 4} more items needing fulfillment
+                  </p>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-2">
             <CardTitle className="text-base font-medium">Low Stock Alerts</CardTitle>

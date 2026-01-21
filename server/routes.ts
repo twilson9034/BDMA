@@ -261,9 +261,20 @@ export async function registerRoutes(
   app.post("/api/work-orders", requireAuth, async (req, res) => {
     try {
       const workOrderNumber = await generateWorkOrderNumber();
+      
+      // Auto-generate title: WO# | Asset#
+      let autoTitle = workOrderNumber;
+      if (req.body.assetId) {
+        const asset = await storage.getAsset(parseInt(req.body.assetId));
+        if (asset) {
+          autoTitle = `${workOrderNumber} | ${asset.assetNumber}`;
+        }
+      }
+      
       const validated = insertWorkOrderSchema.parse({
         ...req.body,
         workOrderNumber,
+        title: req.body.title || autoTitle,
       });
       const wo = await storage.createWorkOrder(validated);
       res.status(201).json(wo);
@@ -562,6 +573,12 @@ export async function registerRoutes(
     res.json(estimates);
   });
 
+  // Unfulfilled Parts Widget - must be before :id route
+  app.get("/api/estimates/unfulfilled-parts", async (req, res) => {
+    const lines = await storage.getUnfulfilledEstimateLines();
+    res.json(lines);
+  });
+
   app.get("/api/estimates/:id", async (req, res) => {
     const estimate = await storage.getEstimate(parseInt(req.params.id));
     if (!estimate) return res.status(404).json({ error: "Estimate not found" });
@@ -680,12 +697,6 @@ export async function registerRoutes(
     } catch (error) {
       res.status(500).json({ error: "Failed to delete estimate line" });
     }
-  });
-
-  // Unfulfilled Parts Widget
-  app.get("/api/estimates/unfulfilled-parts", async (req, res) => {
-    const lines = await storage.getUnfulfilledEstimateLines();
-    res.json(lines);
   });
 
   return httpServer;
