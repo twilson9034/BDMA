@@ -315,6 +315,10 @@ export default function WorkOrderDetail() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/work-orders", workOrderId, "lines"] });
+      toast({ title: "Saved", description: "Changes saved automatically." });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to save changes.", variant: "destructive" });
     },
   });
 
@@ -330,7 +334,6 @@ export default function WorkOrderDetail() {
     
     const timer = setTimeout(() => {
       updateLineMutation.mutate({ lineId, data: { notes: value } });
-      toast({ title: "Notes Saved", description: "Your notes have been saved automatically." });
     }, 1500);
     
     setAutoSaveTimers(prev => ({ ...prev, [lineId]: timer }));
