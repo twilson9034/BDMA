@@ -43,7 +43,12 @@ const SCHEMA_MAPPINGS: Record<string, { required: string[]; optional: string[] }
   },
   parts: {
     required: ["partNumber", "name"],
-    optional: ["description", "category", "manufacturer", "unitCost", "quantityOnHand", "reorderPoint", "reorderQuantity", "barcode"],
+    optional: [
+      "description", "category", "manufacturer", "unitCost", "quantityOnHand", 
+      "reorderPoint", "reorderQuantity", "barcode", "bin", "vendor", "vmrsCode", 
+      "type", "altPartNum", "interVmrs", "majorVmrs", "minorVmrs", 
+      "prevPoFacility", "tankFacility", "orderPrice", "lastOrderDate", "avgShipDays"
+    ],
   },
   work_orders: {
     required: ["assetId", "type", "priority"],
