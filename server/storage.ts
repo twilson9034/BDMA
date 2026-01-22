@@ -74,6 +74,10 @@ import {
   type InsertFaultCode,
   type FaultCode,
   type WorkOrderTransaction,
+  type InsertPurchaseRequisitionLine,
+  type PurchaseRequisitionLine,
+  type InsertPurchaseOrderLine,
+  type PurchaseOrderLine,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -146,11 +150,23 @@ export interface IStorage {
   createRequisition(requisition: InsertPurchaseRequisition): Promise<PurchaseRequisition>;
   updateRequisition(id: number, requisition: Partial<InsertPurchaseRequisition>): Promise<PurchaseRequisition | undefined>;
   
+  // Purchase Requisition Lines
+  getRequisitionLines(requisitionId: number): Promise<PurchaseRequisitionLine[]>;
+  createRequisitionLine(line: InsertPurchaseRequisitionLine): Promise<PurchaseRequisitionLine>;
+  updateRequisitionLine(id: number, line: Partial<InsertPurchaseRequisitionLine>): Promise<PurchaseRequisitionLine | undefined>;
+  deleteRequisitionLine(id: number): Promise<void>;
+  
   // Purchase Orders
   getPurchaseOrders(): Promise<PurchaseOrder[]>;
   getPurchaseOrder(id: number): Promise<PurchaseOrder | undefined>;
   createPurchaseOrder(po: InsertPurchaseOrder): Promise<PurchaseOrder>;
   updatePurchaseOrder(id: number, po: Partial<InsertPurchaseOrder>): Promise<PurchaseOrder | undefined>;
+  
+  // Purchase Order Lines
+  getPurchaseOrderLines(poId: number): Promise<PurchaseOrderLine[]>;
+  createPurchaseOrderLine(line: InsertPurchaseOrderLine): Promise<PurchaseOrderLine>;
+  updatePurchaseOrderLine(id: number, line: Partial<InsertPurchaseOrderLine>): Promise<PurchaseOrderLine | undefined>;
+  deletePurchaseOrderLine(id: number): Promise<void>;
   
   // Manuals
   getManuals(): Promise<Manual[]>;
@@ -510,6 +526,25 @@ export class DatabaseStorage implements IStorage {
     return updated;
   }
 
+  // Purchase Requisition Lines
+  async getRequisitionLines(requisitionId: number): Promise<PurchaseRequisitionLine[]> {
+    return db.select().from(purchaseRequisitionLines).where(eq(purchaseRequisitionLines.requisitionId, requisitionId));
+  }
+
+  async createRequisitionLine(line: InsertPurchaseRequisitionLine): Promise<PurchaseRequisitionLine> {
+    const [created] = await db.insert(purchaseRequisitionLines).values(line).returning();
+    return created;
+  }
+
+  async updateRequisitionLine(id: number, line: Partial<InsertPurchaseRequisitionLine>): Promise<PurchaseRequisitionLine | undefined> {
+    const [updated] = await db.update(purchaseRequisitionLines).set(line).where(eq(purchaseRequisitionLines.id, id)).returning();
+    return updated;
+  }
+
+  async deleteRequisitionLine(id: number): Promise<void> {
+    await db.delete(purchaseRequisitionLines).where(eq(purchaseRequisitionLines.id, id));
+  }
+
   // Purchase Orders
   async getPurchaseOrders(): Promise<PurchaseOrder[]> {
     return db.select().from(purchaseOrders).orderBy(desc(purchaseOrders.createdAt));
@@ -528,6 +563,25 @@ export class DatabaseStorage implements IStorage {
   async updatePurchaseOrder(id: number, po: Partial<InsertPurchaseOrder>): Promise<PurchaseOrder | undefined> {
     const [updated] = await db.update(purchaseOrders).set({ ...po, updatedAt: new Date() }).where(eq(purchaseOrders.id, id)).returning();
     return updated;
+  }
+
+  // Purchase Order Lines
+  async getPurchaseOrderLines(poId: number): Promise<PurchaseOrderLine[]> {
+    return db.select().from(purchaseOrderLines).where(eq(purchaseOrderLines.poId, poId));
+  }
+
+  async createPurchaseOrderLine(line: InsertPurchaseOrderLine): Promise<PurchaseOrderLine> {
+    const [created] = await db.insert(purchaseOrderLines).values(line).returning();
+    return created;
+  }
+
+  async updatePurchaseOrderLine(id: number, line: Partial<InsertPurchaseOrderLine>): Promise<PurchaseOrderLine | undefined> {
+    const [updated] = await db.update(purchaseOrderLines).set(line).where(eq(purchaseOrderLines.id, id)).returning();
+    return updated;
+  }
+
+  async deletePurchaseOrderLine(id: number): Promise<void> {
+    await db.delete(purchaseOrderLines).where(eq(purchaseOrderLines.id, id));
   }
 
   // Manuals
