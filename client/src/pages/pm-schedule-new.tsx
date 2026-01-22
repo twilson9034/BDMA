@@ -100,11 +100,11 @@ export default function PmScheduleNew() {
 
   const applyTemplate = (templateId: string) => {
     const template = templates?.find(t => t.id === parseInt(templateId));
-    if (template && Array.isArray(template.tasks)) {
-      setTasks([...tasks, ...template.tasks]);
+    if (template && Array.isArray(template.items)) {
+      setTasks([...tasks, ...template.items]);
       toast({ 
         title: "Template Applied", 
-        description: `Added ${template.tasks.length} tasks from "${template.name}".` 
+        description: `Added ${template.items.length} tasks from "${template.name}".` 
       });
     }
   };
