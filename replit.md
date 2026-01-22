@@ -117,3 +117,18 @@ Key backend patterns:
 ### Dashboard Widgets
 - **FleetHealthWidget**: Displays fleet health score (0-100) based on predictions, faults, and asset status
 - **PredictionsWidget**: Shows active AI predictions with acknowledge/dismiss actions
+
+### Checklist Templates
+- **Reusable Checklists**: Create maintenance task checklists that can be assigned to multiple PM schedules and assets
+- **Categories**: pm_service, inspection, safety, pre_trip, post_trip, seasonal, other
+- **Make/Model Assignments**: Bulk-assign checklists to assets based on manufacturer, model, or asset type (e.g., all Ford F-150s get the same "A Service" checklist)
+- **AI Generation**: Use "Generate with AI" button to auto-generate task lists based on PM type, interval, and vehicle specifications
+- **API Routes**: 
+  - GET/POST /api/checklist-templates - List and create templates
+  - GET/PATCH/DELETE /api/checklist-templates/:id - Template CRUD
+  - GET/POST /api/checklist-templates/:id/assignments - Make/model assignments
+  - DELETE /api/checklist-assignments/:id - Remove assignment
+  - GET /api/assets/:id/applicable-checklists - Get checklists for an asset
+  - POST /api/ai/generate-checklist - AI-powered task generation
+- **PM Schedule Integration**: PM schedules have editable task checklists with inline AI generation, saved to taskChecklist field
+- **Navigation**: Sidebar → Operations → Checklists

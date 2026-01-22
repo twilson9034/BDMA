@@ -45,6 +45,9 @@ import Settings from "@/pages/settings";
 import VmrsSettings from "@/pages/vmrs-settings";
 import Estimates from "@/pages/estimates";
 import EstimateDetail from "@/pages/estimate-detail";
+import ChecklistTemplates from "@/pages/checklist-templates";
+import ChecklistTemplateNew from "@/pages/checklist-template-new";
+import ChecklistTemplateDetail from "@/pages/checklist-template-detail";
 import NotFound from "@/pages/not-found";
 
 function AuthenticatedRouter() {
@@ -81,6 +84,9 @@ function AuthenticatedRouter() {
       <Route path="/feedback" component={Feedback} />
       <Route path="/estimates" component={Estimates} />
       <Route path="/estimates/:id" component={EstimateDetail} />
+      <Route path="/checklist-templates" component={ChecklistTemplates} />
+      <Route path="/checklist-templates/new" component={ChecklistTemplateNew} />
+      <Route path="/checklist-templates/:id" component={ChecklistTemplateDetail} />
       <Route path="/settings" component={Settings} />
       <Route path="/settings/vmrs" component={VmrsSettings} />
       <Route component={NotFound} />

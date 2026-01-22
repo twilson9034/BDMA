@@ -29,6 +29,8 @@ import {
   estimateLines,
   telematicsData,
   faultCodes,
+  checklistTemplates,
+  checklistMakeModelAssignments,
   type User,
   type UpsertUser,
   type InsertLocation,
@@ -78,6 +80,10 @@ import {
   type PurchaseRequisitionLine,
   type InsertPurchaseOrderLine,
   type PurchaseOrderLine,
+  type InsertChecklistTemplate,
+  type ChecklistTemplate,
+  type InsertChecklistMakeModelAssignment,
+  type ChecklistMakeModelAssignment,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -253,6 +259,20 @@ export interface IStorage {
   addLineItem(lineId: number, data: { description: string; quantity: number; unitCost: number; partId?: number }): Promise<void>;
   getSimilarAssets(manufacturer: string, model: string, excludeAssetId: number): Promise<Asset[]>;
   getFleetPartReplacementPatterns(): Promise<{ partId: number; partNumber: string; partName: string; replacementCount: number; avgMeterReading: number }[]>;
+
+  // Checklist Templates
+  getChecklistTemplates(): Promise<ChecklistTemplate[]>;
+  getChecklistTemplate(id: number): Promise<ChecklistTemplate | undefined>;
+  createChecklistTemplate(template: InsertChecklistTemplate): Promise<ChecklistTemplate>;
+  updateChecklistTemplate(id: number, template: Partial<InsertChecklistTemplate>): Promise<ChecklistTemplate | undefined>;
+  deleteChecklistTemplate(id: number): Promise<void>;
+  
+  // Checklist Make/Model Assignments
+  getChecklistAssignments(templateId?: number): Promise<ChecklistMakeModelAssignment[]>;
+  getChecklistsForAsset(manufacturer: string, model: string, assetType: string): Promise<ChecklistTemplate[]>;
+  createChecklistAssignment(assignment: InsertChecklistMakeModelAssignment): Promise<ChecklistMakeModelAssignment>;
+  deleteChecklistAssignment(id: number): Promise<void>;
+  deleteChecklistAssignmentsByTemplate(templateId: number): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1009,6 +1029,73 @@ export class DatabaseStorage implements IStorage {
       replacementCount: r.replacementCount,
       avgMeterReading: 0,
     }));
+  }
+
+  // Checklist Templates
+  async getChecklistTemplates(): Promise<ChecklistTemplate[]> {
+    return db.select().from(checklistTemplates).orderBy(desc(checklistTemplates.createdAt));
+  }
+
+  async getChecklistTemplate(id: number): Promise<ChecklistTemplate | undefined> {
+    const [template] = await db.select().from(checklistTemplates).where(eq(checklistTemplates.id, id));
+    return template;
+  }
+
+  async createChecklistTemplate(template: InsertChecklistTemplate): Promise<ChecklistTemplate> {
+    const [created] = await db.insert(checklistTemplates).values(template).returning();
+    return created;
+  }
+
+  async updateChecklistTemplate(id: number, template: Partial<InsertChecklistTemplate>): Promise<ChecklistTemplate | undefined> {
+    const [updated] = await db.update(checklistTemplates)
+      .set({ ...template, updatedAt: new Date() })
+      .where(eq(checklistTemplates.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteChecklistTemplate(id: number): Promise<void> {
+    await db.delete(checklistTemplates).where(eq(checklistTemplates.id, id));
+  }
+
+  // Checklist Make/Model Assignments
+  async getChecklistAssignments(templateId?: number): Promise<ChecklistMakeModelAssignment[]> {
+    if (templateId) {
+      return db.select().from(checklistMakeModelAssignments)
+        .where(eq(checklistMakeModelAssignments.checklistTemplateId, templateId));
+    }
+    return db.select().from(checklistMakeModelAssignments);
+  }
+
+  async getChecklistsForAsset(manufacturer: string, model: string, assetType: string): Promise<ChecklistTemplate[]> {
+    const assignments = await db.select({
+      templateId: checklistMakeModelAssignments.checklistTemplateId
+    }).from(checklistMakeModelAssignments)
+      .where(sql`
+        (${checklistMakeModelAssignments.manufacturer} IS NULL OR ${checklistMakeModelAssignments.manufacturer} = ${manufacturer}) AND
+        (${checklistMakeModelAssignments.model} IS NULL OR ${checklistMakeModelAssignments.model} = ${model}) AND
+        (${checklistMakeModelAssignments.assetType} IS NULL OR ${checklistMakeModelAssignments.assetType} = ${assetType})
+      `);
+    
+    if (assignments.length === 0) return [];
+    
+    const templateIds = assignments.map(a => a.templateId);
+    return db.select().from(checklistTemplates)
+      .where(sql`${checklistTemplates.id} IN (${sql.join(templateIds.map(id => sql`${id}`), sql`, `)})`);
+  }
+
+  async createChecklistAssignment(assignment: InsertChecklistMakeModelAssignment): Promise<ChecklistMakeModelAssignment> {
+    const [created] = await db.insert(checklistMakeModelAssignments).values(assignment).returning();
+    return created;
+  }
+
+  async deleteChecklistAssignment(id: number): Promise<void> {
+    await db.delete(checklistMakeModelAssignments).where(eq(checklistMakeModelAssignments.id, id));
+  }
+
+  async deleteChecklistAssignmentsByTemplate(templateId: number): Promise<void> {
+    await db.delete(checklistMakeModelAssignments)
+      .where(eq(checklistMakeModelAssignments.checklistTemplateId, templateId));
   }
 }
 

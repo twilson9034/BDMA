@@ -2,11 +2,10 @@ import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useLocation, useRoute, Link } from "wouter";
+import { useLocation, useRoute } from "wouter";
 import { 
-  ArrowLeft, Save, Loader2, Edit, Calendar, 
-  Clock, DollarSign, X, CheckCircle2, AlertTriangle, Truck,
-  Plus, Sparkles
+  ArrowLeft, Save, Loader2, Edit, X, Plus, Trash2, 
+  ClipboardList, CheckCircle2, Sparkles, Truck
 } from "lucide-react";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
@@ -31,117 +30,170 @@ import {
   FormMessage,
   FormDescription,
 } from "@/components/ui/form";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { PageHeader } from "@/components/PageHeader";
 import { PageLoader } from "@/components/LoadingSpinner";
-import { PriorityBadge } from "@/components/PriorityBadge";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import type { Asset } from "@shared/schema";
 
-interface PmSchedule {
+interface ChecklistTemplate {
   id: number;
   name: string;
   description: string | null;
-  intervalType: "days" | "miles" | "hours" | "cycles";
-  intervalValue: number;
-  estimatedHours: string | null;
-  estimatedCost: string | null;
-  priority: string;
-  taskChecklist: string[] | null;
+  category: string;
+  estimatedMinutes: number | null;
+  items: string[] | null;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
 }
 
-interface PmAssetInstance {
+interface MakeModelAssignment {
   id: number;
-  pmScheduleId: number;
-  assetId: number;
-  lastCompletedDate: string | null;
-  lastCompletedMeter: string | null;
-  nextDueDate: string | null;
-  nextDueMeter: string | null;
-  isOverdue: boolean;
+  checklistTemplateId: number;
+  manufacturer: string | null;
+  model: string | null;
+  year: number | null;
+  assetType: string | null;
 }
 
-const pmFormSchema = z.object({
+const categoryLabels: Record<string, string> = {
+  pm_service: "PM Service",
+  inspection: "Inspection",
+  safety: "Safety",
+  pre_trip: "Pre-Trip",
+  post_trip: "Post-Trip",
+  seasonal: "Seasonal",
+  other: "Other",
+};
+
+const templateFormSchema = z.object({
   name: z.string().min(1, "Name is required"),
   description: z.string().optional(),
-  intervalType: z.enum(["days", "miles", "hours", "cycles"]),
-  intervalValue: z.number().min(1, "Interval must be at least 1"),
-  estimatedHours: z.string().optional(),
-  estimatedCost: z.string().optional(),
-  priority: z.enum(["low", "medium", "high", "critical"]),
+  category: z.enum(["pm_service", "inspection", "safety", "pre_trip", "post_trip", "seasonal", "other"]),
+  estimatedMinutes: z.number().optional(),
   isActive: z.boolean(),
 });
 
-type PmFormValues = z.infer<typeof pmFormSchema>;
+type TemplateFormValues = z.infer<typeof templateFormSchema>;
 
-export default function PmScheduleDetail() {
-  const [, params] = useRoute("/pm-schedules/:id");
+export default function ChecklistTemplateDetail() {
+  const [, params] = useRoute("/checklist-templates/:id");
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const [isEditing, setIsEditing] = useState(false);
   const [tasks, setTasks] = useState<string[]>([]);
   const [newTask, setNewTask] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [newAssignment, setNewAssignment] = useState({ manufacturer: "", model: "", assetType: "" });
   
-  const pmId = params?.id ? parseInt(params.id) : null;
+  const templateId = params?.id ? parseInt(params.id) : null;
 
-  const { data: pm, isLoading } = useQuery<PmSchedule>({
-    queryKey: ["/api/pm-schedules", pmId],
-    enabled: !!pmId,
+  const { data: template, isLoading } = useQuery<ChecklistTemplate>({
+    queryKey: ["/api/checklist-templates", templateId],
+    enabled: !!templateId,
   });
 
-  const { data: assets } = useQuery<Asset[]>({
-    queryKey: ["/api/assets"],
+  const { data: assignments } = useQuery<MakeModelAssignment[]>({
+    queryKey: ["/api/checklist-templates", templateId, "assignments"],
+    enabled: !!templateId,
   });
 
-  const form = useForm<PmFormValues>({
-    resolver: zodResolver(pmFormSchema),
+  const form = useForm<TemplateFormValues>({
+    resolver: zodResolver(templateFormSchema),
     defaultValues: {
       name: "",
       description: "",
-      intervalType: "days",
-      intervalValue: 30,
-      estimatedHours: "",
-      estimatedCost: "",
-      priority: "medium",
+      category: "pm_service",
+      estimatedMinutes: undefined,
       isActive: true,
     },
   });
 
   useEffect(() => {
-    if (pm) {
+    if (template) {
       form.reset({
-        name: pm.name || "",
-        description: pm.description || "",
-        intervalType: pm.intervalType || "days",
-        intervalValue: pm.intervalValue || 30,
-        estimatedHours: pm.estimatedHours || "",
-        estimatedCost: pm.estimatedCost || "",
-        priority: (pm.priority as any) || "medium",
-        isActive: pm.isActive ?? true,
+        name: template.name || "",
+        description: template.description || "",
+        category: (template.category as any) || "pm_service",
+        estimatedMinutes: template.estimatedMinutes || undefined,
+        isActive: template.isActive ?? true,
       });
-      setTasks(pm.taskChecklist || []);
+      setTasks(template.items || []);
     }
-  }, [pm, form]);
+  }, [template, form]);
 
   const updateMutation = useMutation({
-    mutationFn: async (data: PmFormValues) => {
-      return apiRequest("PATCH", `/api/pm-schedules/${pmId}`, {
+    mutationFn: async (data: TemplateFormValues) => {
+      return apiRequest("PATCH", `/api/checklist-templates/${templateId}`, {
         ...data,
-        taskChecklist: tasks,
+        items: tasks,
+        estimatedMinutes: data.estimatedMinutes || null,
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/pm-schedules"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/pm-schedules", pmId] });
-      toast({ title: "Schedule Updated", description: "The PM schedule has been updated." });
+      queryClient.invalidateQueries({ queryKey: ["/api/checklist-templates"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/checklist-templates", templateId] });
+      toast({ title: "Template Updated", description: "The checklist template has been updated." });
       setIsEditing(false);
     },
     onError: () => {
-      toast({ title: "Error", description: "Failed to update schedule", variant: "destructive" });
+      toast({ title: "Error", description: "Failed to update template", variant: "destructive" });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest("DELETE", `/api/checklist-templates/${templateId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/checklist-templates"] });
+      toast({ title: "Template Deleted", description: "The checklist template has been deleted." });
+      navigate("/checklist-templates");
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to delete template", variant: "destructive" });
+    },
+  });
+
+  const createAssignmentMutation = useMutation({
+    mutationFn: async (data: typeof newAssignment) => {
+      return apiRequest("POST", `/api/checklist-templates/${templateId}/assignments`, {
+        manufacturer: data.manufacturer || null,
+        model: data.model || null,
+        assetType: data.assetType || null,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/checklist-templates", templateId, "assignments"] });
+      toast({ title: "Assignment Added", description: "Make/model assignment has been added." });
+      setNewAssignment({ manufacturer: "", model: "", assetType: "" });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to add assignment", variant: "destructive" });
+    },
+  });
+
+  const deleteAssignmentMutation = useMutation({
+    mutationFn: async (assignmentId: number) => {
+      return apiRequest("DELETE", `/api/checklist-assignments/${assignmentId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/checklist-templates", templateId, "assignments"] });
+      toast({ title: "Assignment Removed", description: "Make/model assignment has been removed." });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to remove assignment", variant: "destructive" });
     },
   });
 
@@ -160,9 +212,7 @@ export default function PmScheduleDetail() {
     setIsGenerating(true);
     try {
       const response = await apiRequest("POST", "/api/ai/generate-checklist", {
-        pmType: form.getValues("name"),
-        intervalType: form.getValues("intervalType"),
-        intervalValue: form.getValues("intervalValue"),
+        pmType: form.getValues("name") || form.getValues("category"),
         assetType: "vehicle",
         existingTasks: tasks,
       });
@@ -178,8 +228,7 @@ export default function PmScheduleDetail() {
     }
   };
 
-
-  const onSubmit = (data: PmFormValues) => {
+  const onSubmit = (data: TemplateFormValues) => {
     updateMutation.mutate(data);
   };
 
@@ -187,38 +236,28 @@ export default function PmScheduleDetail() {
     return <PageLoader />;
   }
 
-  if (!pm) {
+  if (!template) {
     return (
       <div className="space-y-6">
-        <PageHeader title="Schedule Not Found" description="The requested PM schedule could not be found." />
-        <Button variant="outline" onClick={() => navigate("/pm-schedules")}>
+        <PageHeader title="Template Not Found" description="The requested checklist template could not be found." />
+        <Button variant="outline" onClick={() => navigate("/checklist-templates")}>
           <ArrowLeft className="h-4 w-4 mr-2" />
-          Back to PM Schedules
+          Back to Templates
         </Button>
       </div>
     );
   }
 
-  const getIntervalLabel = (type: string) => {
-    switch (type) {
-      case "days": return "Days";
-      case "miles": return "Miles";
-      case "hours": return "Engine Hours";
-      case "cycles": return "Cycles";
-      default: return type;
-    }
-  };
-
   return (
     <div className="space-y-6 fade-in">
       <div className="flex items-center gap-4 mb-4">
-        <Button variant="ghost" size="icon" onClick={() => navigate("/pm-schedules")} data-testid="button-back">
+        <Button variant="ghost" size="icon" onClick={() => navigate("/checklist-templates")} data-testid="button-back">
           <ArrowLeft className="h-4 w-4" />
         </Button>
       </div>
       <PageHeader
-        title={pm.name}
-        description={`Every ${pm.intervalValue.toLocaleString()} ${getIntervalLabel(pm.intervalType).toLowerCase()}`}
+        title={template.name}
+        description={categoryLabels[template.category] || template.category}
         actions={
           <div className="flex gap-2">
             {!isEditing ? (
@@ -226,6 +265,10 @@ export default function PmScheduleDetail() {
                 <Button variant="outline" onClick={() => setIsEditing(true)} data-testid="button-edit">
                   <Edit className="h-4 w-4 mr-2" />
                   Edit
+                </Button>
+                <Button variant="destructive" onClick={() => setShowDeleteDialog(true)} data-testid="button-delete">
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete
                 </Button>
               </>
             ) : (
@@ -244,16 +287,16 @@ export default function PmScheduleDetail() {
         }
       />
 
-      <div className="grid gap-4 sm:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-3">
         <Card>
           <CardContent className="pt-4">
             <div className="flex items-center gap-3">
               <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                <Calendar className="h-5 w-5 text-primary" />
+                <ClipboardList className="h-5 w-5 text-primary" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Interval</p>
-                <p className="font-medium">{pm.intervalValue.toLocaleString()} {getIntervalLabel(pm.intervalType)}</p>
+                <p className="text-sm text-muted-foreground">Tasks</p>
+                <p className="font-medium">{tasks.length} items</p>
               </div>
             </div>
           </CardContent>
@@ -262,11 +305,11 @@ export default function PmScheduleDetail() {
           <CardContent className="pt-4">
             <div className="flex items-center gap-3">
               <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                <Clock className="h-5 w-5 text-primary" />
+                <Truck className="h-5 w-5 text-primary" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Est. Hours</p>
-                <p className="font-medium">{pm.estimatedHours ? `${pm.estimatedHours} hrs` : "N/A"}</p>
+                <p className="text-sm text-muted-foreground">Assignments</p>
+                <p className="font-medium">{assignments?.length || 0} make/models</p>
               </div>
             </div>
           </CardContent>
@@ -274,21 +317,8 @@ export default function PmScheduleDetail() {
         <Card>
           <CardContent className="pt-4">
             <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                <DollarSign className="h-5 w-5 text-primary" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Est. Cost</p>
-                <p className="font-medium">{pm.estimatedCost ? `$${Number(pm.estimatedCost).toFixed(2)}` : "N/A"}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4">
-            <div className="flex items-center gap-3">
-              <div className={`h-10 w-10 rounded-lg flex items-center justify-center ${pm.isActive ? "bg-green-500/10" : "bg-muted"}`}>
-                {pm.isActive ? (
+              <div className={`h-10 w-10 rounded-lg flex items-center justify-center ${template.isActive ? "bg-green-500/10" : "bg-muted"}`}>
+                {template.isActive ? (
                   <CheckCircle2 className="h-5 w-5 text-green-500" />
                 ) : (
                   <X className="h-5 w-5 text-muted-foreground" />
@@ -296,7 +326,7 @@ export default function PmScheduleDetail() {
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Status</p>
-                <p className="font-medium">{pm.isActive ? "Active" : "Inactive"}</p>
+                <p className="font-medium">{template.isActive ? "Active" : "Inactive"}</p>
               </div>
             </div>
           </CardContent>
@@ -309,7 +339,7 @@ export default function PmScheduleDetail() {
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
               <Card>
                 <CardHeader>
-                  <CardTitle>Schedule Information</CardTitle>
+                  <CardTitle>Template Information</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <FormField
@@ -341,21 +371,24 @@ export default function PmScheduleDetail() {
                   <div className="grid gap-4 sm:grid-cols-2">
                     <FormField
                       control={form.control}
-                      name="intervalType"
+                      name="category"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Interval Type</FormLabel>
+                          <FormLabel>Category</FormLabel>
                           <Select value={field.value} onValueChange={field.onChange} disabled={!isEditing}>
                             <FormControl>
-                              <SelectTrigger data-testid="select-interval-type">
+                              <SelectTrigger data-testid="select-category">
                                 <SelectValue />
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent>
-                              <SelectItem value="days">Days</SelectItem>
-                              <SelectItem value="miles">Miles</SelectItem>
-                              <SelectItem value="hours">Engine Hours</SelectItem>
-                              <SelectItem value="cycles">Cycles</SelectItem>
+                              <SelectItem value="pm_service">PM Service</SelectItem>
+                              <SelectItem value="inspection">Inspection</SelectItem>
+                              <SelectItem value="safety">Safety</SelectItem>
+                              <SelectItem value="pre_trip">Pre-Trip</SelectItem>
+                              <SelectItem value="post_trip">Post-Trip</SelectItem>
+                              <SelectItem value="seasonal">Seasonal</SelectItem>
+                              <SelectItem value="other">Other</SelectItem>
                             </SelectContent>
                           </Select>
                           <FormMessage />
@@ -364,71 +397,21 @@ export default function PmScheduleDetail() {
                     />
                     <FormField
                       control={form.control}
-                      name="intervalValue"
+                      name="estimatedMinutes"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Interval Value</FormLabel>
+                          <FormLabel>Estimated Time (minutes)</FormLabel>
                           <FormControl>
                             <Input 
-                              {...field} 
                               type="number" 
-                              min="1"
-                              onChange={(e) => field.onChange(parseInt(e.target.value) || 0)}
-                              disabled={!isEditing} 
-                              data-testid="input-interval-value" 
+                              min="0"
+                              {...field} 
+                              value={field.value || ""}
+                              onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : undefined)}
+                              disabled={!isEditing}
+                              data-testid="input-minutes" 
                             />
                           </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-                  <div className="grid gap-4 sm:grid-cols-3">
-                    <FormField
-                      control={form.control}
-                      name="estimatedHours"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Estimated Hours</FormLabel>
-                          <FormControl>
-                            <Input {...field} type="number" step="0.5" disabled={!isEditing} data-testid="input-hours" />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="estimatedCost"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Estimated Cost</FormLabel>
-                          <FormControl>
-                            <Input {...field} type="number" step="0.01" disabled={!isEditing} data-testid="input-cost" />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="priority"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Priority</FormLabel>
-                          <Select value={field.value} onValueChange={field.onChange} disabled={!isEditing}>
-                            <FormControl>
-                              <SelectTrigger data-testid="select-priority">
-                                <SelectValue />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              <SelectItem value="low">Low</SelectItem>
-                              <SelectItem value="medium">Medium</SelectItem>
-                              <SelectItem value="high">High</SelectItem>
-                              <SelectItem value="critical">Critical</SelectItem>
-                            </SelectContent>
-                          </Select>
                           <FormMessage />
                         </FormItem>
                       )}
@@ -442,7 +425,7 @@ export default function PmScheduleDetail() {
                         <div className="space-y-0.5">
                           <FormLabel>Active</FormLabel>
                           <FormDescription>
-                            {field.value ? "This schedule is actively generating work orders" : "This schedule is paused"}
+                            Active templates can be assigned to PM schedules and assets
                           </FormDescription>
                         </div>
                         <FormControl>
@@ -515,10 +498,7 @@ export default function PmScheduleDetail() {
                     </ul>
                   ) : (
                     <p className="text-sm text-muted-foreground text-center py-4">
-                      {isEditing 
-                        ? "No tasks added yet. Add tasks manually or use AI to generate them."
-                        : "No tasks in this PM schedule."
-                      }
+                      No tasks in this checklist.
                     </p>
                   )}
                 </CardContent>
@@ -530,31 +510,74 @@ export default function PmScheduleDetail() {
         <div className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>Schedule Details</CardTitle>
+              <CardTitle>Make/Model Assignments</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Status</span>
-                <Badge variant={pm.isActive ? "default" : "secondary"}>
-                  {pm.isActive ? "Active" : "Inactive"}
-                </Badge>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Assign this checklist to specific vehicle makes and models for automatic use.
+              </p>
+              
+              <div className="space-y-2">
+                <Input
+                  placeholder="Manufacturer (e.g., Ford)"
+                  value={newAssignment.manufacturer}
+                  onChange={(e) => setNewAssignment({ ...newAssignment, manufacturer: e.target.value })}
+                  data-testid="input-manufacturer"
+                />
+                <Input
+                  placeholder="Model (e.g., F-150)"
+                  value={newAssignment.model}
+                  onChange={(e) => setNewAssignment({ ...newAssignment, model: e.target.value })}
+                  data-testid="input-model"
+                />
+                <Select 
+                  value={newAssignment.assetType} 
+                  onValueChange={(v) => setNewAssignment({ ...newAssignment, assetType: v })}
+                >
+                  <SelectTrigger data-testid="select-asset-type">
+                    <SelectValue placeholder="Asset Type (optional)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="vehicle">Vehicle</SelectItem>
+                    <SelectItem value="equipment">Equipment</SelectItem>
+                    <SelectItem value="facility">Facility</SelectItem>
+                    <SelectItem value="tool">Tool</SelectItem>
+                    <SelectItem value="other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button 
+                  className="w-full" 
+                  onClick={() => createAssignmentMutation.mutate(newAssignment)}
+                  disabled={!newAssignment.manufacturer && !newAssignment.model && !newAssignment.assetType}
+                  data-testid="button-add-assignment"
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Assignment
+                </Button>
               </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Priority</span>
-                <PriorityBadge priority={pm.priority} />
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Interval</span>
-                <span>{pm.intervalValue.toLocaleString()} {getIntervalLabel(pm.intervalType)}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Created</span>
-                <span>{new Date(pm.createdAt).toLocaleDateString()}</span>
-              </div>
-              {pm.updatedAt && (
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Updated</span>
-                  <span>{new Date(pm.updatedAt).toLocaleDateString()}</span>
+
+              {assignments && assignments.length > 0 && (
+                <div className="space-y-2 pt-4 border-t">
+                  {assignments.map((assignment) => (
+                    <div key={assignment.id} className="flex items-center justify-between p-2 rounded-lg border">
+                      <div className="text-sm">
+                        {[
+                          assignment.manufacturer,
+                          assignment.model,
+                          assignment.assetType && `(${assignment.assetType})`
+                        ].filter(Boolean).join(" ") || "All Assets"}
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => deleteAssignmentMutation.mutate(assignment.id)}
+                        className="h-8 w-8"
+                        data-testid={`button-remove-assignment-${assignment.id}`}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
                 </div>
               )}
             </CardContent>
@@ -562,23 +585,50 @@ export default function PmScheduleDetail() {
 
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Truck className="h-4 w-4" />
-                Quick Actions
-              </CardTitle>
+              <CardTitle>Details</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-2">
-              <Button variant="outline" className="w-full justify-start gap-2" asChild>
-                <Link href="/pm-schedules/new">
-                  <Calendar className="h-4 w-4" />
-                  Create New Schedule
-                </Link>
-              </Button>
+            <CardContent className="space-y-3">
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Status</span>
+                <Badge variant={template.isActive ? "default" : "secondary"}>
+                  {template.isActive ? "Active" : "Inactive"}
+                </Badge>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Category</span>
+                <span>{categoryLabels[template.category] || template.category}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Created</span>
+                <span>{new Date(template.createdAt).toLocaleDateString()}</span>
+              </div>
+              {template.updatedAt && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Updated</span>
+                  <span>{new Date(template.updatedAt).toLocaleDateString()}</span>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
       </div>
 
+      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Checklist Template?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete this checklist template and all its assignments. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => deleteMutation.mutate()}>
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

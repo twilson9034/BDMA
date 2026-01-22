@@ -21,7 +21,10 @@ import {
   insertTelematicsDataSchema,
   insertFaultCodeSchema,
   insertVmrsCodeSchema,
+  insertChecklistTemplateSchema,
+  insertChecklistMakeModelAssignmentSchema,
 } from "@shared/schema";
+import OpenAI from "openai";
 import { z } from "zod";
 import { setupAuth, registerAuthRoutes } from "./replit_integrations/auth";
 
@@ -649,10 +652,15 @@ export async function registerRoutes(
 
   app.patch("/api/pm-schedules/:id", requireAuth, async (req, res) => {
     try {
-      const updated = await storage.updatePmSchedule(parseInt(req.params.id), req.body);
+      const partialSchema = insertPmScheduleSchema.partial();
+      const validated = partialSchema.parse(req.body);
+      const updated = await storage.updatePmSchedule(parseInt(req.params.id), validated);
       if (!updated) return res.status(404).json({ error: "PM schedule not found" });
       res.json(updated);
     } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
       res.status(500).json({ error: "Failed to update PM schedule" });
     }
   });
@@ -1590,6 +1598,185 @@ export async function registerRoutes(
       res.json(transactions);
     } catch (error) {
       res.status(500).json({ error: "Failed to get transactions" });
+    }
+  });
+
+  // ============================================================
+  // CHECKLIST TEMPLATES
+  // ============================================================
+  
+  app.get("/api/checklist-templates", async (req, res) => {
+    try {
+      const templates = await storage.getChecklistTemplates();
+      res.json(templates);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get checklist templates" });
+    }
+  });
+
+  app.get("/api/checklist-templates/:id", async (req, res) => {
+    try {
+      const template = await storage.getChecklistTemplate(parseInt(req.params.id));
+      if (!template) return res.status(404).json({ error: "Checklist template not found" });
+      res.json(template);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get checklist template" });
+    }
+  });
+
+  app.post("/api/checklist-templates", requireAuth, async (req, res) => {
+    try {
+      const validated = insertChecklistTemplateSchema.parse(req.body);
+      const template = await storage.createChecklistTemplate(validated);
+      res.status(201).json(template);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: "Failed to create checklist template" });
+    }
+  });
+
+  app.patch("/api/checklist-templates/:id", requireAuth, async (req, res) => {
+    try {
+      const partialSchema = insertChecklistTemplateSchema.partial();
+      const validated = partialSchema.parse(req.body);
+      const updated = await storage.updateChecklistTemplate(parseInt(req.params.id), validated);
+      if (!updated) return res.status(404).json({ error: "Checklist template not found" });
+      res.json(updated);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: "Failed to update checklist template" });
+    }
+  });
+
+  app.delete("/api/checklist-templates/:id", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteChecklistTemplate(parseInt(req.params.id));
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete checklist template" });
+    }
+  });
+
+  // ============================================================
+  // CHECKLIST MAKE/MODEL ASSIGNMENTS
+  // ============================================================
+
+  app.get("/api/checklist-templates/:id/assignments", async (req, res) => {
+    try {
+      const assignments = await storage.getChecklistAssignments(parseInt(req.params.id));
+      res.json(assignments);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get assignments" });
+    }
+  });
+
+  app.post("/api/checklist-templates/:id/assignments", requireAuth, async (req, res) => {
+    try {
+      const validated = insertChecklistMakeModelAssignmentSchema.parse({
+        ...req.body,
+        checklistTemplateId: parseInt(req.params.id),
+      });
+      const assignment = await storage.createChecklistAssignment(validated);
+      res.status(201).json(assignment);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: "Failed to create assignment" });
+    }
+  });
+
+  app.delete("/api/checklist-assignments/:id", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteChecklistAssignment(parseInt(req.params.id));
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete assignment" });
+    }
+  });
+
+  // Get checklists applicable to an asset based on make/model
+  app.get("/api/assets/:id/applicable-checklists", async (req, res) => {
+    try {
+      const asset = await storage.getAsset(parseInt(req.params.id));
+      if (!asset) return res.status(404).json({ error: "Asset not found" });
+      
+      const checklists = await storage.getChecklistsForAsset(
+        asset.manufacturer || "",
+        asset.model || "",
+        asset.type
+      );
+      res.json(checklists);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get applicable checklists" });
+    }
+  });
+
+  // ============================================================
+  // AI CHECKLIST GENERATION
+  // ============================================================
+
+  app.post("/api/ai/generate-checklist", requireAuth, async (req, res) => {
+    try {
+      const { 
+        pmType, 
+        assetType, 
+        manufacturer, 
+        model, 
+        intervalType,
+        intervalValue,
+        existingTasks = []
+      } = req.body;
+
+      const openai = new OpenAI({
+        apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
+        baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+      });
+
+      const prompt = `You are a fleet maintenance expert. Generate a comprehensive preventive maintenance task checklist for the following:
+
+PM Type/Name: ${pmType || "Preventive Maintenance Service"}
+Asset Type: ${assetType || "Vehicle"}
+${manufacturer ? `Manufacturer: ${manufacturer}` : ""}
+${model ? `Model: ${model}` : ""}
+${intervalType ? `Interval: Every ${intervalValue} ${intervalType}` : ""}
+
+${existingTasks.length > 0 ? `Existing tasks to consider (don't duplicate): ${existingTasks.join(", ")}` : ""}
+
+Generate 10-20 specific, actionable maintenance tasks. Each task should be a clear, concise instruction (e.g., "Check engine oil level and condition", "Inspect brake pads for wear").
+
+Return ONLY a JSON array of strings with the task descriptions. No explanations, just the JSON array.
+Example: ["Check engine oil level", "Inspect tire pressure and tread depth", "Test all exterior lights"]`;
+
+      const response = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [{ role: "user", content: prompt }],
+        max_completion_tokens: 1000,
+      });
+
+      const content = response.choices[0]?.message?.content || "[]";
+      
+      // Parse the JSON response
+      let tasks: string[] = [];
+      try {
+        // Handle potential markdown code blocks
+        const jsonMatch = content.match(/\[[\s\S]*\]/);
+        if (jsonMatch) {
+          tasks = JSON.parse(jsonMatch[0]);
+        }
+      } catch {
+        console.error("Failed to parse AI response:", content);
+        tasks = [];
+      }
+
+      res.json({ tasks });
+    } catch (error) {
+      console.error("AI checklist generation error:", error);
+      res.status(500).json({ error: "Failed to generate checklist" });
     }
   });
 

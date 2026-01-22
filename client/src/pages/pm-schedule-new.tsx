@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { ArrowLeft, Save, Loader2, Calendar, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, Save, Loader2, Calendar, Plus, Trash2, Sparkles } from "lucide-react";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -48,6 +48,7 @@ export default function PmScheduleNew() {
   const { toast } = useToast();
   const [tasks, setTasks] = useState<string[]>([]);
   const [newTask, setNewTask] = useState("");
+  const [isGenerating, setIsGenerating] = useState(false);
 
   const form = useForm<PmFormValues>({
     resolver: zodResolver(pmFormSchema),
@@ -90,6 +91,28 @@ export default function PmScheduleNew() {
 
   const removeTask = (index: number) => {
     setTasks(tasks.filter((_, i) => i !== index));
+  };
+
+  const generateWithAI = async () => {
+    setIsGenerating(true);
+    try {
+      const response = await apiRequest("POST", "/api/ai/generate-checklist", {
+        pmType: form.getValues("name"),
+        intervalType: form.getValues("intervalType"),
+        intervalValue: form.getValues("intervalValue"),
+        assetType: "vehicle",
+        existingTasks: tasks,
+      });
+      const data = await response.json();
+      if (data.tasks && Array.isArray(data.tasks)) {
+        setTasks([...tasks, ...data.tasks]);
+        toast({ title: "Tasks Generated", description: `Added ${data.tasks.length} AI-generated tasks.` });
+      }
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to generate tasks", variant: "destructive" });
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   const onSubmit = (data: PmFormValues) => {
@@ -274,8 +297,23 @@ export default function PmScheduleNew() {
               </Card>
 
               <Card>
-                <CardHeader>
+                <CardHeader className="flex flex-row items-center justify-between gap-2">
                   <CardTitle>Task Checklist</CardTitle>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={generateWithAI}
+                    disabled={isGenerating}
+                    data-testid="button-ai-generate"
+                  >
+                    {isGenerating ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <Sparkles className="h-4 w-4 mr-2" />
+                    )}
+                    Generate with AI
+                  </Button>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   {tasks.length > 0 && (

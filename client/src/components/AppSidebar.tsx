@@ -5,6 +5,7 @@ import {
   Truck,
   Package,
   ClipboardList,
+  ClipboardCheck,
   Calendar,
   ShoppingCart,
   Users,
@@ -46,6 +47,7 @@ const mainNavItems = [
 
 const operationsItems = [
   { title: "PM Schedules", url: "/pm-schedules", icon: Calendar },
+  { title: "Checklists", url: "/checklist-templates", icon: ClipboardCheck },
   { title: "DVIRs", url: "/dvirs", icon: ClipboardList },
   { title: "Predictions", url: "/predictions", icon: AlertTriangle },
   { title: "Estimates", url: "/estimates", icon: Calculator },

@@ -821,3 +821,54 @@ export const faultCodesRelations = relations(faultCodes, ({ one }) => ({
 export const insertFaultCodeSchema = createInsertSchema(faultCodes).omit({ id: true, createdAt: true });
 export type InsertFaultCode = z.infer<typeof insertFaultCodeSchema>;
 export type FaultCode = typeof faultCodes.$inferSelect;
+
+// ============================================================
+// CHECKLIST TEMPLATES (Reusable maintenance checklists)
+// ============================================================
+export const checklistCategoryEnum = ["pm_service", "inspection", "safety", "pre_trip", "post_trip", "seasonal", "other"] as const;
+
+export const checklistTemplates = pgTable("checklist_templates", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  description: text("description"),
+  category: text("category").notNull().default("pm_service").$type<typeof checklistCategoryEnum[number]>(),
+  estimatedMinutes: integer("estimated_minutes"),
+  items: jsonb("items").$type<string[]>(),
+  isActive: boolean("is_active").default(true),
+  createdById: varchar("created_by_id"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const checklistTemplatesRelations = relations(checklistTemplates, ({ many }) => ({
+  makeModelAssignments: many(checklistMakeModelAssignments),
+}));
+
+export const insertChecklistTemplateSchema = createInsertSchema(checklistTemplates).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertChecklistTemplate = z.infer<typeof insertChecklistTemplateSchema>;
+export type ChecklistTemplate = typeof checklistTemplates.$inferSelect;
+
+// ============================================================
+// CHECKLIST MAKE/MODEL ASSIGNMENTS (Bulk assignment to asset types)
+// ============================================================
+export const checklistMakeModelAssignments = pgTable("checklist_make_model_assignments", {
+  id: serial("id").primaryKey(),
+  checklistTemplateId: integer("checklist_template_id").notNull().references(() => checklistTemplates.id, { onDelete: "cascade" }),
+  manufacturer: text("manufacturer"),
+  model: text("model"),
+  year: integer("year"),
+  assetType: text("asset_type").$type<typeof assetTypeEnum[number]>(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_checklist_assignments_template").on(table.checklistTemplateId),
+  index("idx_checklist_assignments_make").on(table.manufacturer),
+  index("idx_checklist_assignments_model").on(table.model),
+]);
+
+export const checklistMakeModelAssignmentsRelations = relations(checklistMakeModelAssignments, ({ one }) => ({
+  checklistTemplate: one(checklistTemplates, { fields: [checklistMakeModelAssignments.checklistTemplateId], references: [checklistTemplates.id] }),
+}));
+
+export const insertChecklistMakeModelAssignmentSchema = createInsertSchema(checklistMakeModelAssignments).omit({ id: true, createdAt: true });
+export type InsertChecklistMakeModelAssignment = z.infer<typeof insertChecklistMakeModelAssignmentSchema>;
+export type ChecklistMakeModelAssignment = typeof checklistMakeModelAssignments.$inferSelect;
