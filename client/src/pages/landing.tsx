@@ -135,7 +135,7 @@ export default function LandingPage() {
                 </h1>
                 <p className="text-lg text-muted-foreground max-w-lg">
                   Enterprise-grade CMMS with AI-powered predictive maintenance, smart part suggestions, 
-                  and seamless data migration. One flat rate, full access to everything.
+                  and seamless data migration. Predictable tiered pricing for fleets of all sizes.
                 </p>
               </div>
               
@@ -235,59 +235,36 @@ export default function LandingPage() {
             </p>
           </div>
 
-          <Card className="relative overflow-hidden">
-            <div className="absolute top-0 right-0 bg-primary text-primary-foreground px-4 py-1 text-sm font-medium rounded-bl-lg">
-              All-Inclusive
+            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
+              {[
+                { name: "Starter", max: "10 Assets", price: "$80" },
+                { name: "Growing", max: "50 Assets", price: "$300" },
+                { name: "Fleet", max: "150 Assets", price: "$750" },
+                { name: "Enterprise", max: "500 Assets", price: "$2,000" },
+              ].map((tier) => (
+                <Card key={tier.name} className="relative overflow-hidden hover-elevate transition-all duration-200">
+                  <CardContent className="p-6 text-center space-y-4">
+                    <div className="space-y-1">
+                      <h3 className="font-bold text-xl">{tier.name}</h3>
+                      <p className="text-sm text-muted-foreground">Up to {tier.max}</p>
+                    </div>
+                    <div className="py-4">
+                      <span className="text-4xl font-bold">{tier.price}</span>
+                      <span className="text-muted-foreground ml-1">/mo</span>
+                    </div>
+                    <Button variant={tier.name === "Fleet" ? "default" : "outline"} className="w-full" asChild>
+                      <a href="/api/login">Select Plan</a>
+                    </Button>
+                  </CardContent>
+                </Card>
+              ))}
             </div>
-            <CardContent className="p-8">
-              <div className="grid md:grid-cols-2 gap-8 items-center">
-                <div className="space-y-6">
-                  <div className="flex items-center gap-3">
-                    <div className="h-14 w-14 rounded-xl bg-primary/10 flex items-center justify-center">
-                      <DollarSign className="h-7 w-7 text-primary" />
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">Per user, per month</p>
-                      <p className="text-4xl font-bold">Contact Us</p>
-                    </div>
-                  </div>
-                  <p className="text-muted-foreground">
-                    Custom pricing based on your fleet size. Volume discounts available for larger organizations.
-                  </p>
-                  <Button size="lg" asChild className="w-full gap-2" data-testid="button-contact-sales">
-                    <a href="/api/login">
-                      Get Started
-                      <ArrowRight className="h-4 w-4" />
-                    </a>
-                  </Button>
-                </div>
-                <div className="space-y-3">
-                  <p className="font-semibold text-sm uppercase tracking-wide text-muted-foreground mb-4">
-                    Everything Included:
-                  </p>
-                  <ul className="space-y-3">
-                    {[
-                      "Unlimited assets & work orders",
-                      "AI predictive maintenance",
-                      "Smart part suggestions",
-                      "Bulk data import & migration",
-                      "Barcode & QR scanning",
-                      "Full inventory management",
-                      "Procurement & PO workflows",
-                      "Telematics integration",
-                      "Manual-powered AI intelligence",
-                      "Unlimited users & technicians",
-                    ].map((item) => (
-                      <li key={item} className="flex items-center gap-2 text-sm">
-                        <CheckCircle2 className="h-4 w-4 text-primary flex-shrink-0" />
-                        <span>{item}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+            <div className="mt-12 text-center">
+              <p className="text-muted-foreground mb-4">Need more than 500 assets? Contact us for custom enterprise pricing.</p>
+              <Button variant="ghost" asChild>
+                <a href="/api/login">Contact Sales</a>
+              </Button>
+            </div>
         </div>
       </section>
 
