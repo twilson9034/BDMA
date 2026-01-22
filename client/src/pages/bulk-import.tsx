@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import * as XLSX from "xlsx";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -96,11 +97,7 @@ export default function BulkImportPage() {
 
   const importMutation = useMutation({
     mutationFn: async (data: { type: string; fileName: string; data: any[]; mappings: Record<string, string> }) => {
-      return apiRequest("/api/import-jobs", {
-        method: "POST",
-        body: JSON.stringify(data),
-        headers: { "Content-Type": "application/json" },
-      });
+      return apiRequest("/api/import-jobs", "POST", data);
     },
     onSuccess: () => {
       toast({ title: "Import started", description: "Your data is being processed" });
@@ -126,13 +123,45 @@ export default function BulkImportPage() {
     setFileName(file.name);
     const reader = new FileReader();
     reader.onload = (event) => {
-      const text = event.target?.result as string;
-      const { headers, rows } = parseCSV(text);
-      setCsvHeaders(headers);
-      setCsvData(rows);
-      setMappings({});
+      const data = event.target?.result;
+      if (file.name.endsWith(".csv")) {
+        const { headers, rows } = parseCSV(data as string);
+        setCsvHeaders(headers);
+        setCsvData(rows);
+        setMappings({});
+      } else if (file.name.endsWith(".xlsx") || file.name.endsWith(".xls")) {
+        const workbook = XLSX.read(data, { type: "binary" });
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+        
+        if (jsonData.length > 0) {
+          const headers = (jsonData[0] as any[]).map(h => String(h || "").trim());
+          const rows: Record<string, string>[] = [];
+          
+          for (let i = 1; i < jsonData.length; i++) {
+            const rowValues = jsonData[i] as any[];
+            const row: Record<string, string> = {};
+            headers.forEach((header, index) => {
+              if (header) {
+                row[header] = String(rowValues[index] || "").trim();
+              }
+            });
+            rows.push(row);
+          }
+          
+          setCsvHeaders(headers.filter(h => h !== ""));
+          setCsvData(rows);
+          setMappings({});
+        }
+      }
     };
-    reader.readAsText(file);
+
+    if (file.name.endsWith(".csv")) {
+      reader.readAsText(file);
+    } else {
+      reader.readAsBinaryString(file);
+    }
   };
 
   const handleMappingChange = (csvColumn: string, schemaField: string) => {
@@ -246,9 +275,9 @@ export default function BulkImportPage() {
           {importType && (
             <Card>
               <CardHeader>
-                <CardTitle>Step 2: Upload CSV File</CardTitle>
+                <CardTitle>Step 2: Upload File</CardTitle>
                 <CardDescription>
-                  Upload a CSV file with your {selectedTypeInfo?.label.toLowerCase()} data
+                  Upload a CSV or Excel (.xlsx, .xls) file with your {selectedTypeInfo?.label.toLowerCase()} data
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -256,19 +285,19 @@ export default function BulkImportPage() {
                   <div className="border-2 border-dashed rounded-lg p-8 text-center">
                     <Input
                       type="file"
-                      accept=".csv"
+                      accept=".csv,.xlsx,.xls"
                       onChange={handleFileUpload}
                       className="hidden"
-                      id="csv-upload"
-                      data-testid="input-csv-file"
+                      id="file-upload"
+                      data-testid="input-import-file"
                     />
                     <Label
-                      htmlFor="csv-upload"
+                      htmlFor="file-upload"
                       className="cursor-pointer flex flex-col items-center gap-2"
                     >
                       <Upload className="h-10 w-10 text-muted-foreground" />
                       <span className="text-sm text-muted-foreground">
-                        {fileName || "Click to upload or drag and drop a CSV file"}
+                        {fileName || "Click to upload or drag and drop a CSV or Excel file"}
                       </span>
                     </Label>
                   </div>
@@ -296,7 +325,7 @@ export default function BulkImportPage() {
               <CardHeader>
                 <CardTitle>Step 3: Map Fields</CardTitle>
                 <CardDescription>
-                  Map your CSV columns to the system fields
+                  Map your file columns to the system fields
                 </CardDescription>
               </CardHeader>
               <CardContent>
