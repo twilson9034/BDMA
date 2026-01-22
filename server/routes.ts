@@ -815,12 +815,22 @@ export async function registerRoutes(
       const poNumber = await generatePONumber();
       const data = { ...req.body };
       
-      // Parse dates if they are strings
-      if (data.expectedDeliveryDate && typeof data.expectedDeliveryDate === 'string') {
-        data.expectedDeliveryDate = new Date(data.expectedDeliveryDate);
+      // Ensure vendorId is a number
+      if (data.vendorId && typeof data.vendorId === 'string') {
+        data.vendorId = parseInt(data.vendorId);
       }
-      if (data.orderDate && typeof data.orderDate === 'string') {
+      
+      // Parse dates if they are strings
+      if (data.expectedDeliveryDate && typeof data.expectedDeliveryDate === 'string' && data.expectedDeliveryDate.trim()) {
+        data.expectedDeliveryDate = new Date(data.expectedDeliveryDate);
+      } else {
+        delete data.expectedDeliveryDate;
+      }
+
+      if (data.orderDate && typeof data.orderDate === 'string' && data.orderDate.trim()) {
         data.orderDate = new Date(data.orderDate);
+      } else {
+        delete data.orderDate;
       }
 
       const validated = insertPurchaseOrderSchema.parse({
@@ -844,14 +854,23 @@ export async function registerRoutes(
   app.patch("/api/purchase-orders/:id", requireAuth, async (req, res) => {
     try {
       const data = { ...req.body };
-      if (data.orderDate && typeof data.orderDate === 'string') {
+      if (data.vendorId && typeof data.vendorId === 'string') {
+        data.vendorId = parseInt(data.vendorId);
+      }
+      if (data.orderDate && typeof data.orderDate === 'string' && data.orderDate.trim()) {
         data.orderDate = new Date(data.orderDate);
+      } else if (data.orderDate === "") {
+        data.orderDate = null;
       }
-      if (data.expectedDeliveryDate && typeof data.expectedDeliveryDate === 'string') {
+      if (data.expectedDeliveryDate && typeof data.expectedDeliveryDate === 'string' && data.expectedDeliveryDate.trim()) {
         data.expectedDeliveryDate = new Date(data.expectedDeliveryDate);
+      } else if (data.expectedDeliveryDate === "") {
+        data.expectedDeliveryDate = null;
       }
-      if (data.receivedDate && typeof data.receivedDate === 'string') {
+      if (data.receivedDate && typeof data.receivedDate === 'string' && data.receivedDate.trim()) {
         data.receivedDate = new Date(data.receivedDate);
+      } else if (data.receivedDate === "") {
+        data.receivedDate = null;
       }
       
       const updated = await storage.updatePurchaseOrder(parseInt(req.params.id), data);
