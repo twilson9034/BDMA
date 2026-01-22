@@ -676,9 +676,13 @@ export async function registerRoutes(
         ...req.body,
         requisitionNumber,
       });
-      const requisition = await storage.createRequisition(validated);
+      const requisition = await storage.createRequisition({
+        ...validated,
+        requestedById: (req.user as any)?.id || null,
+      });
       res.status(201).json(requisition);
     } catch (error) {
+      console.error("Requisition creation error:", error);
       if (error instanceof z.ZodError) {
         return res.status(400).json({ error: error.errors });
       }
@@ -756,9 +760,13 @@ export async function registerRoutes(
         ...req.body,
         poNumber,
       });
-      const po = await storage.createPurchaseOrder(validated);
+      const po = await storage.createPurchaseOrder({
+        ...validated,
+        createdById: (req.user as any)?.id || null,
+      });
       res.status(201).json(po);
     } catch (error) {
+      console.error("PO creation error:", error);
       if (error instanceof z.ZodError) {
         return res.status(400).json({ error: error.errors });
       }
