@@ -136,11 +136,15 @@ Key backend patterns:
 
 ### Bulk Data Import
 - **Import Types**: Assets, parts, work order history, purchase orders, vendors, locations
-- **CSV Parsing**: Client-side CSV parsing with column header detection
+- **CSV Parsing**: Client-side CSV parsing with column header detection, UTF-8/BOM handling
 - **Field Mapping**: Interactive mapping UI to match CSV columns to schema fields
 - **Progress Tracking**: Real-time import progress with success/error counts
 - **Template Downloads**: Download CSV templates with required/optional columns
 - **Import History**: View past imports with status and error details
+- **Duplicate Detection**: Pre-import checks for existing records (parts: partNumber/barcode, assets: assetNumber)
+- **Detailed Error Reporting**: Row-by-row validation errors with categorized error types (duplicate, missing_required, invalid_format, database_error)
+- **Error Summary Dialog**: View error breakdowns by type/field plus individual row failures (stores up to 500 errors, displays 200)
+- **Status Handling**: Import status includes "completed_with_errors" for partial successes
 - **Navigation**: Sidebar → Resources → Data Import
 - **API Routes**: GET/POST /api/import-jobs, GET /api/import-jobs/:id
 
