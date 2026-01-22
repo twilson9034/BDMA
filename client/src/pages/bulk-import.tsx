@@ -97,7 +97,7 @@ export default function BulkImportPage() {
 
   const importMutation = useMutation({
     mutationFn: async (data: { type: string; fileName: string; data: any[]; mappings: Record<string, string> }) => {
-      return apiRequest("/api/import-jobs", "POST", data);
+      return apiRequest("POST", "/api/import-jobs", data);
     },
     onSuccess: () => {
       toast({ title: "Import started", description: "Your data is being processed" });
