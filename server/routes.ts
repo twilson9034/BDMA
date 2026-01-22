@@ -696,8 +696,13 @@ export async function registerRoutes(
       const req_ = await storage.getRequisition(id);
       if (!req_) return res.status(404).json({ error: "Requisition not found" });
 
-      console.log("Updating requisition status to:", req.body.status);
-      const updated = await storage.updateRequisition(id, req.body);
+      const data = { ...req.body };
+      if (data.approvedAt && typeof data.approvedAt === 'string') {
+        data.approvedAt = new Date(data.approvedAt);
+      }
+
+      console.log("Updating requisition status to:", data.status);
+      const updated = await storage.updateRequisition(id, data);
       res.json(updated);
     } catch (error) {
       console.error("Update requisition error:", error);
@@ -838,10 +843,22 @@ export async function registerRoutes(
 
   app.patch("/api/purchase-orders/:id", requireAuth, async (req, res) => {
     try {
-      const updated = await storage.updatePurchaseOrder(parseInt(req.params.id), req.body);
+      const data = { ...req.body };
+      if (data.orderDate && typeof data.orderDate === 'string') {
+        data.orderDate = new Date(data.orderDate);
+      }
+      if (data.expectedDeliveryDate && typeof data.expectedDeliveryDate === 'string') {
+        data.expectedDeliveryDate = new Date(data.expectedDeliveryDate);
+      }
+      if (data.receivedDate && typeof data.receivedDate === 'string') {
+        data.receivedDate = new Date(data.receivedDate);
+      }
+      
+      const updated = await storage.updatePurchaseOrder(parseInt(req.params.id), data);
       if (!updated) return res.status(404).json({ error: "Purchase order not found" });
       res.json(updated);
     } catch (error) {
+      console.error("Update PO error:", error);
       res.status(500).json({ error: "Failed to update purchase order" });
     }
   });
