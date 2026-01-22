@@ -692,11 +692,59 @@ export async function registerRoutes(
 
   app.patch("/api/requisitions/:id", requireAuth, async (req, res) => {
     try {
-      const updated = await storage.updateRequisition(parseInt(req.params.id), req.body);
-      if (!updated) return res.status(404).json({ error: "Requisition not found" });
+      const id = parseInt(req.params.id);
+      const req_ = await storage.getRequisition(id);
+      if (!req_) return res.status(404).json({ error: "Requisition not found" });
+
+      const updated = await storage.updateRequisition(id, req.body);
       res.json(updated);
     } catch (error) {
       res.status(500).json({ error: "Failed to update requisition" });
+    }
+  });
+
+  app.post("/api/requisitions/:id/convert", requireAuth, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const requisition = await storage.getRequisition(id);
+      if (!requisition) return res.status(404).json({ error: "Requisition not found" });
+      if (requisition.status !== "approved") {
+        return res.status(400).json({ error: "Only approved requisitions can be converted" });
+      }
+
+      const lines = await storage.getRequisitionLines(id);
+      if (lines.length === 0) {
+        return res.status(400).json({ error: "Requisition has no lines" });
+      }
+
+      const poNumber = await generatePONumber();
+      const po = await storage.createPurchaseOrder({
+        poNumber,
+        requisitionId: id,
+        vendorId: requisition.vendorId!,
+        title: requisition.title,
+        description: requisition.description,
+        totalAmount: requisition.totalAmount,
+        status: "draft",
+        createdById: (req.user as any)?.id || null,
+      });
+
+      for (const line of lines) {
+        await storage.createPurchaseOrderLine({
+          poId: po.id,
+          partId: line.partId,
+          description: line.description,
+          quantityOrdered: line.quantity,
+          unitCost: line.unitCost,
+          totalCost: line.totalCost,
+        });
+      }
+
+      await storage.updateRequisition(id, { status: "converted" });
+      res.status(201).json(po);
+    } catch (error) {
+      console.error("Conversion error:", error);
+      res.status(500).json({ error: "Failed to convert requisition to PO" });
     }
   });
 

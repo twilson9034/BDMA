@@ -215,6 +215,36 @@ export default function RequisitionDetail() {
     },
   });
 
+  const submitMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest("PATCH", `/api/requisitions/${requisitionId}`, {
+        status: "pending_approval",
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/requisitions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/requisitions", requisitionId] });
+      toast({ title: "Requisition Submitted", description: "The requisition has been submitted for approval." });
+    },
+  });
+
+  const convertToPOMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest("POST", `/api/requisitions/${requisitionId}/convert`, {});
+    },
+    onSuccess: async (res) => {
+      const po = await res.json();
+      queryClient.invalidateQueries({ queryKey: ["/api/requisitions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/requisitions", requisitionId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
+      toast({ title: "Converted to PO", description: "The requisition has been converted to a purchase order." });
+      navigate(`/purchase-orders/${po.id}`);
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to convert to PO", variant: "destructive" });
+    },
+  });
+
   const handleAddLine = () => {
     if (!newLine.description || !newLine.quantity) {
       toast({ title: "Error", description: "Description and quantity are required", variant: "destructive" });
@@ -285,6 +315,12 @@ export default function RequisitionDetail() {
         description={requisition.title}
         actions={
           <div className="flex gap-2">
+            {requisition.status === "draft" && lines.length > 0 && (
+              <Button onClick={() => submitMutation.mutate()} disabled={submitMutation.isPending}>
+                <FileText className="h-4 w-4 mr-2" />
+                Submit for Approval
+              </Button>
+            )}
             {requisition.status === "pending_approval" && (
               <>
                 <Button variant="default" onClick={() => approveMutation.mutate()} disabled={approveMutation.isPending}>
@@ -296,6 +332,12 @@ export default function RequisitionDetail() {
                   Reject
                 </Button>
               </>
+            )}
+            {requisition.status === "approved" && (
+              <Button onClick={() => convertToPOMutation.mutate()} disabled={convertToPOMutation.isPending}>
+                <ShoppingCart className="h-4 w-4 mr-2" />
+                Convert to PO
+              </Button>
             )}
             {!isEditing ? (
               <>

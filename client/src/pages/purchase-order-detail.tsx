@@ -158,17 +158,23 @@ export default function PurchaseOrderDetail() {
   });
 
 
-  const markReceivedMutation = useMutation({
-    mutationFn: async () => {
-      return apiRequest("PATCH", `/api/purchase-orders/${poId}`, {
-        status: "received",
-        receivedDate: new Date().toISOString(),
-      });
+  const updateStatusMutation = useMutation({
+    mutationFn: async (status: string) => {
+      const data: any = { status };
+      if (status === "received") {
+        data.receivedDate = new Date().toISOString();
+      } else if (status === "ordered") {
+        data.orderDate = new Date().toISOString();
+      }
+      return apiRequest("PATCH", `/api/purchase-orders/${poId}`, data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
       queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders", poId] });
-      toast({ title: "Order Received", description: "The order has been marked as received." });
+      toast({ title: "PO Updated", description: "The purchase order status has been updated." });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to update purchase order", variant: "destructive" });
     },
   });
 
@@ -278,8 +284,20 @@ export default function PurchaseOrderDetail() {
         description={po.title}
         actions={
           <div className="flex gap-2">
+            {po.status === "draft" && lines.length > 0 && (
+              <Button onClick={() => updateStatusMutation.mutate("submitted")} disabled={updateStatusMutation.isPending}>
+                <ShoppingCart className="h-4 w-4 mr-2" />
+                Submit Order
+              </Button>
+            )}
+            {po.status === "submitted" && (
+              <Button onClick={() => updateStatusMutation.mutate("ordered")} disabled={updateStatusMutation.isPending}>
+                <Truck className="h-4 w-4 mr-2" />
+                Mark Ordered
+              </Button>
+            )}
             {po.status === "ordered" && (
-              <Button variant="default" onClick={() => markReceivedMutation.mutate()} disabled={markReceivedMutation.isPending}>
+              <Button variant="default" onClick={() => updateStatusMutation.mutate("received")} disabled={updateStatusMutation.isPending}>
                 <CheckCircle2 className="h-4 w-4 mr-2" />
                 Mark Received
               </Button>
