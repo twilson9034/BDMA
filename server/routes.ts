@@ -625,6 +625,23 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/predictions", async (_req, res) => {
+    const results = await storage.getPredictions();
+    res.json(results);
+  });
+
+  app.patch("/api/predictions/:id/acknowledge", async (req, res) => {
+    const id = parseInt(req.params.id);
+    await storage.acknowledgePrediction(id);
+    res.json({ success: true });
+  });
+
+  app.patch("/api/predictions/:id/dismiss", async (req, res) => {
+    const id = parseInt(req.params.id);
+    await storage.dismissPrediction(id);
+    res.json({ success: true });
+  });
+
   // PM Schedules
   app.get("/api/pm-schedules", async (req, res) => {
     const schedules = await storage.getPmSchedules();
