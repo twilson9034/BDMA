@@ -904,6 +904,82 @@ export async function registerRoutes(
     }
   });
 
+  // Receive PO Line - updates line quantity received and increments part inventory
+  app.post("/api/po-lines/:id/receive", requireAuth, async (req, res) => {
+    try {
+      const lineId = parseInt(req.params.id);
+      const { quantityReceived } = req.body;
+
+      // Validate input - must be a positive number
+      const qtyToReceive = parseFloat(quantityReceived);
+      if (!quantityReceived || isNaN(qtyToReceive) || qtyToReceive <= 0) {
+        return res.status(400).json({ error: "Quantity must be a positive number" });
+      }
+
+      // Get the line
+      const line = await storage.getPurchaseOrderLine(lineId);
+      if (!line) {
+        return res.status(404).json({ error: "PO line not found" });
+      }
+
+      // Calculate new received quantity
+      const currentReceived = parseFloat(line.quantityReceived || "0");
+      const newReceived = currentReceived + qtyToReceive;
+      const ordered = parseFloat(line.quantityOrdered);
+
+      if (newReceived > ordered) {
+        return res.status(400).json({ error: `Cannot receive more than ordered. Remaining: ${(ordered - currentReceived).toFixed(2)}` });
+      }
+
+      // Update the line with new received quantity
+      const updatedLine = await storage.updatePurchaseOrderLine(lineId, {
+        quantityReceived: newReceived.toString(),
+      });
+
+      // If line has a partId, increment the part's inventory
+      if (line.partId) {
+        const part = await storage.getPart(line.partId);
+        if (part) {
+          const currentQty = parseFloat(part.quantityOnHand || "0");
+          const newQty = currentQty + qtyToReceive;
+          await storage.updatePart(line.partId, {
+            quantityOnHand: newQty.toString(),
+          });
+        }
+      }
+
+      // Re-fetch all lines after update to calculate PO status correctly
+      const allLines = await storage.getPurchaseOrderLines(line.poId);
+      let totalOrdered = 0;
+      let totalReceived = 0;
+      for (const l of allLines) {
+        totalOrdered += parseFloat(l.quantityOrdered);
+        totalReceived += parseFloat(l.quantityReceived || "0");
+      }
+
+      // Update PO status based on receipt progress
+      let newStatus: string | undefined;
+      if (totalReceived >= totalOrdered) {
+        newStatus = "received";
+      } else if (totalReceived > 0) {
+        newStatus = "partial";
+      }
+
+      if (newStatus) {
+        const updateData: any = { status: newStatus };
+        if (newStatus === "received") {
+          updateData.receivedDate = new Date();
+        }
+        await storage.updatePurchaseOrder(line.poId, updateData);
+      }
+
+      res.json(updatedLine);
+    } catch (error) {
+      console.error("Receive PO line error:", error);
+      res.status(500).json({ error: "Failed to receive PO line" });
+    }
+  });
+
   // Manuals
   app.get("/api/manuals", async (req, res) => {
     const manuals = await storage.getManuals();

@@ -5,7 +5,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation, useRoute, Link } from "wouter";
 import { 
   ArrowLeft, Save, Loader2, Edit, ShoppingCart, 
-  CheckCircle2, XCircle, X, Truck, DollarSign, Plus, Trash2
+  CheckCircle2, XCircle, X, Truck, DollarSign, Plus, Trash2, Package
 } from "lucide-react";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
@@ -115,6 +115,8 @@ export default function PurchaseOrderDetail() {
     partId: "",
   });
 
+  const [receiveQuantities, setReceiveQuantities] = useState<Record<number, string>>({});
+
   const form = useForm<PoFormValues>({
     resolver: zodResolver(poFormSchema),
     defaultValues: {
@@ -211,6 +213,39 @@ export default function PurchaseOrderDetail() {
       toast({ title: "Error", description: "Failed to remove line item", variant: "destructive" });
     },
   });
+
+  const receiveLineMutation = useMutation({
+    mutationFn: async ({ lineId, quantityReceived }: { lineId: number; quantityReceived: string }) => {
+      return apiRequest("POST", `/api/po-lines/${lineId}/receive`, { quantityReceived });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders", poId, "lines"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders", poId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/parts"] });
+      setReceiveQuantities({});
+      toast({ title: "Items Received", description: "Inventory has been updated." });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to receive items", variant: "destructive" });
+    },
+  });
+
+  const handleReceiveLine = (lineId: number) => {
+    const qty = receiveQuantities[lineId];
+    if (!qty || parseFloat(qty) <= 0) {
+      toast({ title: "Error", description: "Enter a valid quantity to receive", variant: "destructive" });
+      return;
+    }
+    receiveLineMutation.mutate({ lineId, quantityReceived: qty });
+  };
+
+  const handleReceiveAll = (line: POLine) => {
+    const remaining = Number(line.quantityOrdered) - Number(line.quantityReceived || 0);
+    if (remaining > 0) {
+      receiveLineMutation.mutate({ lineId: line.id, quantityReceived: remaining.toString() });
+    }
+  };
 
   const handleAddLine = () => {
     if (!newLine.description || !newLine.quantityOrdered) {
@@ -518,36 +553,97 @@ export default function PurchaseOrderDetail() {
                       <TableHead className="text-right">Received</TableHead>
                       <TableHead className="text-right">Unit Cost</TableHead>
                       <TableHead className="text-right">Total</TableHead>
+                      {(po.status === "ordered" || po.status === "partial") && (
+                        <TableHead className="text-right">Receive</TableHead>
+                      )}
                       <TableHead className="w-[50px]"></TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {lines.map((line) => (
-                      <TableRow key={line.id} data-testid={`row-line-${line.id}`}>
-                        <TableCell>{line.description}</TableCell>
-                        <TableCell className="text-right">{Number(line.quantityOrdered).toFixed(2)}</TableCell>
-                        <TableCell className="text-right">
-                          {line.quantityReceived ? Number(line.quantityReceived).toFixed(2) : "-"}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {line.unitCost ? `$${Number(line.unitCost).toFixed(2)}` : "-"}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {line.totalCost ? `$${Number(line.totalCost).toFixed(2)}` : "-"}
-                        </TableCell>
-                        <TableCell>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => deleteLineMutation.mutate(line.id)}
-                            disabled={deleteLineMutation.isPending}
-                            data-testid={`button-delete-line-${line.id}`}
-                          >
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                    {lines.map((line) => {
+                      const ordered = Number(line.quantityOrdered);
+                      const received = Number(line.quantityReceived || 0);
+                      const remaining = ordered - received;
+                      const isFullyReceived = remaining <= 0;
+
+                      return (
+                        <TableRow key={line.id} data-testid={`row-line-${line.id}`}>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              {line.description}
+                              {isFullyReceived && (
+                                <Badge variant="outline" className="bg-green-500/10 text-green-600 text-xs">
+                                  Complete
+                                </Badge>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right">{ordered.toFixed(2)}</TableCell>
+                          <TableCell className="text-right">
+                            <span className={received > 0 ? "text-green-600 dark:text-green-400 font-medium" : ""}>
+                              {received.toFixed(2)}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {line.unitCost ? `$${Number(line.unitCost).toFixed(2)}` : "-"}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {line.totalCost ? `$${Number(line.totalCost).toFixed(2)}` : "-"}
+                          </TableCell>
+                          {(po.status === "ordered" || po.status === "partial") && (
+                            <TableCell>
+                              {!isFullyReceived ? (
+                                <div className="flex items-center gap-1 justify-end">
+                                  <Input
+                                    type="number"
+                                    step="0.01"
+                                    min="0"
+                                    max={remaining}
+                                    placeholder={`Max ${remaining}`}
+                                    className="w-20 h-8 text-right text-sm"
+                                    value={receiveQuantities[line.id] || ""}
+                                    onChange={(e) => setReceiveQuantities({ ...receiveQuantities, [line.id]: e.target.value })}
+                                    data-testid={`input-receive-${line.id}`}
+                                  />
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => handleReceiveLine(line.id)}
+                                    disabled={receiveLineMutation.isPending}
+                                    data-testid={`button-receive-${line.id}`}
+                                  >
+                                    <Package className="h-3 w-3" />
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="default"
+                                    onClick={() => handleReceiveAll(line)}
+                                    disabled={receiveLineMutation.isPending}
+                                    title="Receive all remaining"
+                                    data-testid={`button-receive-all-${line.id}`}
+                                  >
+                                    All
+                                  </Button>
+                                </div>
+                              ) : (
+                                <span className="text-muted-foreground text-sm">-</span>
+                              )}
+                            </TableCell>
+                          )}
+                          <TableCell>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => deleteLineMutation.mutate(line.id)}
+                              disabled={deleteLineMutation.isPending || po.status === "received"}
+                              data-testid={`button-delete-line-${line.id}`}
+                            >
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                   </TableBody>
                 </Table>
               ) : (

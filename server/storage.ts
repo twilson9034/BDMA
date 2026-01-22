@@ -164,6 +164,7 @@ export interface IStorage {
   
   // Purchase Order Lines
   getPurchaseOrderLines(poId: number): Promise<PurchaseOrderLine[]>;
+  getPurchaseOrderLine(id: number): Promise<PurchaseOrderLine | undefined>;
   createPurchaseOrderLine(line: InsertPurchaseOrderLine): Promise<PurchaseOrderLine>;
   updatePurchaseOrderLine(id: number, line: Partial<InsertPurchaseOrderLine>): Promise<PurchaseOrderLine | undefined>;
   deletePurchaseOrderLine(id: number): Promise<void>;
@@ -568,6 +569,11 @@ export class DatabaseStorage implements IStorage {
   // Purchase Order Lines
   async getPurchaseOrderLines(poId: number): Promise<PurchaseOrderLine[]> {
     return db.select().from(purchaseOrderLines).where(eq(purchaseOrderLines.poId, poId));
+  }
+
+  async getPurchaseOrderLine(id: number): Promise<PurchaseOrderLine | undefined> {
+    const [line] = await db.select().from(purchaseOrderLines).where(eq(purchaseOrderLines.id, id));
+    return line;
   }
 
   async createPurchaseOrderLine(line: InsertPurchaseOrderLine): Promise<PurchaseOrderLine> {
