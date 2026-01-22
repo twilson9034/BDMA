@@ -145,9 +145,9 @@ export default function WorkOrderDetail() {
   // Smart part suggestions based on VMRS code and asset make/model
   const suggestionsQueryParams = suggestionsVmrs ? new URLSearchParams({
     vmrsCode: suggestionsVmrs,
-    ...(asset?.manufacturer && { manufacturer: asset.manufacturer }),
-    ...(asset?.model && { model: asset.model }),
-    ...(asset?.year && { year: asset.year.toString() }),
+    ...(linkedAsset?.manufacturer && { manufacturer: linkedAsset.manufacturer }),
+    ...(linkedAsset?.model && { model: linkedAsset.model }),
+    ...(linkedAsset?.year && { year: linkedAsset.year.toString() }),
   }).toString() : "";
   
   const { data: smartSuggestions, isLoading: suggestionsLoading } = useQuery<{
