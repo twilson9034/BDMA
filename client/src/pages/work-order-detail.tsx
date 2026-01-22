@@ -6,7 +6,8 @@ import { useLocation, useRoute } from "wouter";
 import { 
   ArrowLeft, Save, Loader2, Edit, Trash2, Clock, 
   Calendar, User, Wrench, AlertTriangle, CheckCircle2,
-  Plus, X, Play, Square, Timer, Package, CalendarClock
+  Plus, X, Play, Square, Timer, Package, CalendarClock,
+  Sparkles, Lightbulb
 } from "lucide-react";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
@@ -92,6 +93,8 @@ export default function WorkOrderDetail() {
   const [addItemDescription, setAddItemDescription] = useState("");
   const [addItemQuantity, setAddItemQuantity] = useState("1");
   const [addItemUnitCost, setAddItemUnitCost] = useState("");
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [suggestionsVmrs, setSuggestionsVmrs] = useState<string | null>(null);
 
   const handleVmrsCodeSelect = (vmrsCodeId: string) => {
     setSelectedVmrsCodeId(vmrsCodeId);
@@ -137,6 +140,22 @@ export default function WorkOrderDetail() {
 
   const { data: parts } = useQuery<Part[]>({
     queryKey: ["/api/parts"],
+  });
+
+  // Smart part suggestions based on VMRS code and asset make/model
+  const suggestionsQueryParams = suggestionsVmrs ? new URLSearchParams({
+    vmrsCode: suggestionsVmrs,
+    ...(asset?.manufacturer && { manufacturer: asset.manufacturer }),
+    ...(asset?.model && { model: asset.model }),
+    ...(asset?.year && { year: asset.year.toString() }),
+  }).toString() : "";
+  
+  const { data: smartSuggestions, isLoading: suggestionsLoading } = useQuery<{
+    historical: { partId: number; partNumber: string; partName: string | null; usageCount: number }[];
+    source: string;
+  }>({
+    queryKey: [`/api/smart-part-suggestions?${suggestionsQueryParams}`],
+    enabled: !!suggestionsVmrs && showSuggestions,
   });
 
   const { data: vmrsCodes = [] } = useQuery<VmrsCode[]>({
@@ -1294,7 +1313,13 @@ export default function WorkOrderDetail() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={showAddItemDialog !== null} onOpenChange={(open) => !open && setShowAddItemDialog(null)}>
+      <Dialog open={showAddItemDialog !== null} onOpenChange={(open) => {
+        if (!open) {
+          setShowAddItemDialog(null);
+          setShowSuggestions(false);
+          setSuggestionsVmrs(null);
+        }
+      }}>
         <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Add Part/Item</DialogTitle>
@@ -1317,31 +1342,100 @@ export default function WorkOrderDetail() {
             </div>
 
             {addItemType === "inventory" ? (
-              <div className="space-y-2">
-                <label className="text-[10px] uppercase font-bold text-muted-foreground">Select Part</label>
-                <Select value={addItemPartId} onValueChange={setAddItemPartId}>
-                  <SelectTrigger data-testid="select-inventory-part">
-                    <SelectValue placeholder="Select a part..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {parts?.map((part) => (
-                      <SelectItem key={part.id} value={part.id.toString()}>
-                        {part.partNumber} - {part.name} (Qty: {part.quantityOnHand || 0}, ${part.unitCost || 0})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {addItemPartId && (() => {
-                  const selectedPart = parts?.find(p => p.id.toString() === addItemPartId);
-                  if (selectedPart && Number(selectedPart.quantityOnHand || 0) === 0) {
+              <div className="space-y-3">
+                {(() => {
+                  const line = workOrderLines?.find(l => l.id === showAddItemDialog);
+                  const lineVmrs = line?.vmrsCode;
+                  if (lineVmrs) {
                     return (
-                      <p className="text-xs text-amber-600">
-                        This part is out of stock. You can still add it, but inventory will show as 0.
-                      </p>
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <label className="text-[10px] uppercase font-bold text-muted-foreground flex items-center gap-1">
+                            <Sparkles className="h-3 w-3 text-primary" />
+                            Smart Suggestions
+                          </label>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 text-xs"
+                            onClick={() => {
+                              setSuggestionsVmrs(lineVmrs);
+                              setShowSuggestions(true);
+                            }}
+                            data-testid="button-get-suggestions"
+                          >
+                            <Lightbulb className="h-3 w-3 mr-1" />
+                            Get Suggestions
+                          </Button>
+                        </div>
+                        {showSuggestions && suggestionsVmrs === lineVmrs && (
+                          <div className="border rounded-lg p-2 bg-primary/5 space-y-1">
+                            {suggestionsLoading ? (
+                              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                                Finding parts used for {lineVmrs}...
+                              </div>
+                            ) : smartSuggestions?.historical && smartSuggestions.historical.length > 0 ? (
+                              <>
+                                <p className="text-xs text-muted-foreground mb-2">
+                                  Parts commonly used for this VMRS code on similar vehicles:
+                                </p>
+                                {smartSuggestions.historical.map((suggestion) => {
+                                  const partInInventory = parts?.find(p => p.id === suggestion.partId);
+                                  return (
+                                    <button
+                                      key={suggestion.partId}
+                                      onClick={() => setAddItemPartId(suggestion.partId.toString())}
+                                      className="w-full text-left p-2 rounded bg-background hover-elevate text-xs flex items-center justify-between"
+                                      data-testid={`button-suggestion-${suggestion.partId}`}
+                                    >
+                                      <span className="font-medium">{suggestion.partNumber} - {suggestion.partName}</span>
+                                      <span className="text-muted-foreground">
+                                        {partInInventory ? `Qty: ${partInInventory.quantityOnHand || 0}` : ""}
+                                        {suggestion.usageCount > 1 ? ` (used ${suggestion.usageCount}x)` : ""}
+                                      </span>
+                                    </button>
+                                  );
+                                })}
+                              </>
+                            ) : (
+                              <p className="text-xs text-muted-foreground">
+                                No historical part usage found for this VMRS code. Select a part from the list below.
+                              </p>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     );
                   }
                   return null;
                 })()}
+                <div className="space-y-2">
+                  <label className="text-[10px] uppercase font-bold text-muted-foreground">Select Part</label>
+                  <Select value={addItemPartId} onValueChange={setAddItemPartId}>
+                    <SelectTrigger data-testid="select-inventory-part">
+                      <SelectValue placeholder="Select a part..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {parts?.map((part) => (
+                        <SelectItem key={part.id} value={part.id.toString()}>
+                          {part.partNumber} - {part.name} (Qty: {part.quantityOnHand || 0}, ${part.unitCost || 0})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {addItemPartId && (() => {
+                    const selectedPart = parts?.find(p => p.id.toString() === addItemPartId);
+                    if (selectedPart && Number(selectedPart.quantityOnHand || 0) === 0) {
+                      return (
+                        <p className="text-xs text-amber-600">
+                          This part is out of stock. You can still add it, but inventory will show as 0.
+                        </p>
+                      );
+                    }
+                    return null;
+                  })()}
+                </div>
               </div>
             ) : (
               <>

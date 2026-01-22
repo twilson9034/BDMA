@@ -133,3 +133,20 @@ Key backend patterns:
   - POST /api/ai/generate-checklist - AI-powered task generation
 - **PM Schedule Integration**: PM schedules have editable task checklists with inline AI generation, saved to taskChecklist field
 - **Navigation**: Sidebar → Operations → Checklists
+
+### Bulk Data Import
+- **Import Types**: Assets, parts, work order history, purchase orders, vendors, locations
+- **CSV Parsing**: Client-side CSV parsing with column header detection
+- **Field Mapping**: Interactive mapping UI to match CSV columns to schema fields
+- **Progress Tracking**: Real-time import progress with success/error counts
+- **Template Downloads**: Download CSV templates with required/optional columns
+- **Import History**: View past imports with status and error details
+- **Navigation**: Sidebar → Resources → Data Import
+- **API Routes**: GET/POST /api/import-jobs, GET /api/import-jobs/:id
+
+### Smart Part Suggestions
+- **Historical Analysis**: Tracks part usage by VMRS code, manufacturer, model, and year in `part_usage_history` table
+- **Work Order Integration**: When adding parts to a work order line with a VMRS code, click "Get Suggestions" to see parts commonly used for similar repairs
+- **AI Manual Scanning**: POST /api/smart-part-suggestions/ai endpoint uses OpenAI to recommend parts based on service manuals
+- **Usage Recording**: Part usage is recorded for future suggestions when parts are consumed
+- **API Routes**: GET /api/smart-part-suggestions, POST /api/smart-part-suggestions/ai, POST /api/part-usage
