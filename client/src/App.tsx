@@ -20,12 +20,24 @@ import Assets from "@/pages/assets";
 import AssetNew from "@/pages/asset-new";
 import AssetDetail from "@/pages/asset-detail";
 import Inventory from "@/pages/inventory";
+import PartDetail from "@/pages/part-detail";
+import PartNew from "@/pages/part-new";
 import PMSchedules from "@/pages/pm-schedules";
+import PMScheduleDetail from "@/pages/pm-schedule-detail";
+import PMScheduleNew from "@/pages/pm-schedule-new";
 import DVIRs from "@/pages/dvirs";
+import DvirDetail from "@/pages/dvir-detail";
+import DvirNew from "@/pages/dvir-new";
 import Predictions from "@/pages/predictions";
 import Requisitions from "@/pages/requisitions";
+import RequisitionDetail from "@/pages/requisition-detail";
+import RequisitionNew from "@/pages/requisition-new";
 import PurchaseOrders from "@/pages/purchase-orders";
+import PurchaseOrderDetail from "@/pages/purchase-order-detail";
+import PurchaseOrderNew from "@/pages/purchase-order-new";
 import Vendors from "@/pages/vendors";
+import VendorDetail from "@/pages/vendor-detail";
+import VendorNew from "@/pages/vendor-new";
 import Manuals from "@/pages/manuals";
 import Reports from "@/pages/reports";
 import Feedback from "@/pages/feedback";
@@ -46,12 +58,24 @@ function AuthenticatedRouter() {
       <Route path="/assets/new" component={AssetNew} />
       <Route path="/assets/:id" component={AssetDetail} />
       <Route path="/inventory" component={Inventory} />
+      <Route path="/inventory/new" component={PartNew} />
+      <Route path="/inventory/:id" component={PartDetail} />
       <Route path="/pm-schedules" component={PMSchedules} />
+      <Route path="/pm-schedules/new" component={PMScheduleNew} />
+      <Route path="/pm-schedules/:id" component={PMScheduleDetail} />
       <Route path="/dvirs" component={DVIRs} />
+      <Route path="/dvirs/new" component={DvirNew} />
+      <Route path="/dvirs/:id" component={DvirDetail} />
       <Route path="/predictions" component={Predictions} />
       <Route path="/requisitions" component={Requisitions} />
+      <Route path="/requisitions/new" component={RequisitionNew} />
+      <Route path="/requisitions/:id" component={RequisitionDetail} />
       <Route path="/purchase-orders" component={PurchaseOrders} />
+      <Route path="/purchase-orders/new" component={PurchaseOrderNew} />
+      <Route path="/purchase-orders/:id" component={PurchaseOrderDetail} />
       <Route path="/vendors" component={Vendors} />
+      <Route path="/vendors/new" component={VendorNew} />
+      <Route path="/vendors/:id" component={VendorDetail} />
       <Route path="/manuals" component={Manuals} />
       <Route path="/reports" component={Reports} />
       <Route path="/feedback" component={Feedback} />
