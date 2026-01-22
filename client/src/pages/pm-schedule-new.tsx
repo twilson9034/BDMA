@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { ArrowLeft, Save, Loader2, Calendar, Plus, Trash2, Sparkles } from "lucide-react";
+import { ArrowLeft, Save, Loader2, Calendar, Plus, Trash2, Sparkles, ClipboardList } from "lucide-react";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,6 +29,7 @@ import {
 import { PageHeader } from "@/components/PageHeader";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { ChecklistTemplate } from "@shared/schema";
 
 const pmFormSchema = z.object({
   name: z.string().min(1, "Name is required"),
@@ -49,6 +50,10 @@ export default function PmScheduleNew() {
   const [tasks, setTasks] = useState<string[]>([]);
   const [newTask, setNewTask] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
+
+  const { data: templates } = useQuery<ChecklistTemplate[]>({
+    queryKey: ["/api/checklist-templates"],
+  });
 
   const form = useForm<PmFormValues>({
     resolver: zodResolver(pmFormSchema),
@@ -91,6 +96,17 @@ export default function PmScheduleNew() {
 
   const removeTask = (index: number) => {
     setTasks(tasks.filter((_, i) => i !== index));
+  };
+
+  const applyTemplate = (templateId: string) => {
+    const template = templates?.find(t => t.id === parseInt(templateId));
+    if (template && Array.isArray(template.tasks)) {
+      setTasks([...tasks, ...template.tasks]);
+      toast({ 
+        title: "Template Applied", 
+        description: `Added ${template.tasks.length} tasks from "${template.name}".` 
+      });
+    }
   };
 
   const generateWithAI = async () => {
@@ -299,21 +315,35 @@ export default function PmScheduleNew() {
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between gap-2">
                   <CardTitle>Task Checklist</CardTitle>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={generateWithAI}
-                    disabled={isGenerating}
-                    data-testid="button-ai-generate"
-                  >
-                    {isGenerating ? (
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    ) : (
-                      <Sparkles className="h-4 w-4 mr-2" />
-                    )}
-                    Generate with AI
-                  </Button>
+                  <div className="flex gap-2">
+                    <Select onValueChange={applyTemplate}>
+                      <SelectTrigger className="w-[200px]" data-testid="select-template">
+                        <SelectValue placeholder="Apply Template" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {templates?.map(template => (
+                          <SelectItem key={template.id} value={template.id.toString()}>
+                            {template.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={generateWithAI}
+                      disabled={isGenerating}
+                      data-testid="button-ai-generate"
+                    >
+                      {isGenerating ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <Sparkles className="h-4 w-4 mr-2" />
+                      )}
+                      AI
+                    </Button>
+                  </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   {tasks.length > 0 && (
@@ -341,7 +371,7 @@ export default function PmScheduleNew() {
                     </Button>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Optional: Add specific tasks that should be completed during this maintenance.
+                    Optional: Add specific tasks or apply a template to pre-fill the checklist.
                   </p>
                 </CardContent>
               </Card>
