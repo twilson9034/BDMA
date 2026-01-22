@@ -23,6 +23,7 @@ import {
   insertVmrsCodeSchema,
   insertChecklistTemplateSchema,
   insertChecklistMakeModelAssignmentSchema,
+  type ImportErrorSummary,
 } from "@shared/schema";
 import OpenAI from "openai";
 import { z } from "zod";
@@ -1905,60 +1906,213 @@ Example: ["Check engine oil level", "Inspect tire pressure and tread depth", "Te
   async function processImportJob(jobId: number, type: string, data: any[], mappings: Record<string, string>) {
     let successCount = 0;
     let errorCount = 0;
-    const errors: { row: number; message: string }[] = [];
+    let skippedDuplicates = 0;
+    const errors: { row: number; field?: string; value?: string; message: string; errorType: string }[] = [];
+    
+    // Track seen values for duplicate detection within this import
+    const seenPartNumbers = new Set<string>();
+    const seenBarcodes = new Set<string>();
+    const seenAssetNumbers = new Set<string>();
+    
+    // Pre-fetch existing records for duplicate checking
+    const existingParts = type === "parts" ? await storage.getParts() : [];
+    const existingAssets = type === "assets" ? await storage.getAssets() : [];
+    const existingPartNumbers = new Set(existingParts.map(p => p.partNumber?.toLowerCase()));
+    const existingBarcodes = new Set(existingParts.filter(p => p.barcode).map(p => p.barcode!.toLowerCase()));
+    const existingAssetNumbers = new Set(existingAssets.map(a => a.assetNumber?.toLowerCase()));
 
     for (let i = 0; i < data.length; i++) {
       try {
         const row = data[i];
         const mapped = mapRowToSchema(row, mappings);
+        
+        // Validate required fields
+        const validationErrors = validateImportRow(type, mapped, i + 1);
+        if (validationErrors.length > 0) {
+          errors.push(...validationErrors);
+          errorCount++;
+          continue;
+        }
 
         switch (type) {
-          case "assets":
+          case "assets": {
+            const assetNum = String(mapped.assetNumber || "").toLowerCase().trim();
+            if (!assetNum) {
+              errors.push({ row: i + 1, field: "assetNumber", message: "Asset number is required", errorType: "missing_required" });
+              errorCount++;
+              continue;
+            }
+            // Check for duplicates
+            if (existingAssetNumbers.has(assetNum) || seenAssetNumbers.has(assetNum)) {
+              errors.push({ row: i + 1, field: "assetNumber", value: mapped.assetNumber, message: `Duplicate asset number: "${mapped.assetNumber}" already exists`, errorType: "duplicate" });
+              skippedDuplicates++;
+              errorCount++;
+              continue;
+            }
+            seenAssetNumbers.add(assetNum);
             await storage.createAsset(mapped);
             break;
-          case "parts":
+          }
+          
+          case "parts": {
+            const partNum = String(mapped.partNumber || "").toLowerCase().trim();
+            const barcode = mapped.barcode ? String(mapped.barcode).toLowerCase().trim() : null;
+            
+            if (!partNum) {
+              errors.push({ row: i + 1, field: "partNumber", message: "Part number is required", errorType: "missing_required" });
+              errorCount++;
+              continue;
+            }
+            
+            // Check for duplicate part number
+            if (existingPartNumbers.has(partNum) || seenPartNumbers.has(partNum)) {
+              errors.push({ row: i + 1, field: "partNumber", value: mapped.partNumber, message: `Duplicate part number: "${mapped.partNumber}" already exists`, errorType: "duplicate" });
+              skippedDuplicates++;
+              errorCount++;
+              continue;
+            }
+            
+            // Check for duplicate barcode (if provided)
+            if (barcode && (existingBarcodes.has(barcode) || seenBarcodes.has(barcode))) {
+              errors.push({ row: i + 1, field: "barcode", value: mapped.barcode, message: `Duplicate barcode: "${mapped.barcode}" already exists`, errorType: "duplicate" });
+              skippedDuplicates++;
+              errorCount++;
+              continue;
+            }
+            
+            seenPartNumbers.add(partNum);
+            if (barcode) seenBarcodes.add(barcode);
+            
+            // Clean up numeric fields
+            if (mapped.unitCost) mapped.unitCost = String(parseFloat(String(mapped.unitCost).replace(/[^0-9.-]/g, "")) || 0);
+            if (mapped.quantityOnHand) mapped.quantityOnHand = String(parseInt(String(mapped.quantityOnHand).replace(/[^0-9-]/g, "")) || 0);
+            if (mapped.reorderPoint) mapped.reorderPoint = String(parseInt(String(mapped.reorderPoint).replace(/[^0-9-]/g, "")) || 0);
+            if (mapped.reorderQuantity) mapped.reorderQuantity = String(parseInt(String(mapped.reorderQuantity).replace(/[^0-9-]/g, "")) || 0);
+            if (mapped.orderPrice) mapped.orderPrice = String(parseFloat(String(mapped.orderPrice).replace(/[^0-9.-]/g, "")) || 0);
+            
             await storage.createPart(mapped);
             break;
+          }
+          
           case "vendors":
+            if (!mapped.name) {
+              errors.push({ row: i + 1, field: "name", message: "Vendor name is required", errorType: "missing_required" });
+              errorCount++;
+              continue;
+            }
             await storage.createVendor(mapped);
             break;
+            
           case "work_orders":
             const woNumber = await generateWorkOrderNumber();
             await storage.createWorkOrder({ ...mapped, workOrderNumber: woNumber });
             break;
+            
           case "purchase_orders":
             const poNumber = await generatePONumber();
             await storage.createPurchaseOrder({ ...mapped, poNumber });
             break;
+            
           default:
             throw new Error(`Unsupported import type: ${type}`);
         }
         successCount++;
       } catch (error: any) {
         errorCount++;
-        errors.push({ row: i + 1, message: error.message || "Unknown error" });
+        // Parse database errors for better messages
+        let errorMessage = error.message || "Unknown error";
+        let errorType = "database_error";
+        
+        if (errorMessage.includes("duplicate key")) {
+          errorType = "duplicate";
+          errorMessage = "Record already exists in database";
+        } else if (errorMessage.includes("violates not-null")) {
+          errorType = "missing_required";
+          const match = errorMessage.match(/column "(\w+)"/);
+          errorMessage = match ? `Required field "${match[1]}" is missing` : "Required field is missing";
+        } else if (errorMessage.includes("invalid input syntax")) {
+          errorType = "invalid_format";
+          errorMessage = "Invalid data format";
+        }
+        
+        errors.push({ row: i + 1, message: errorMessage, errorType });
       }
 
-      // Update progress every 10 rows
-      if ((i + 1) % 10 === 0 || i === data.length - 1) {
+      // Update progress every 50 rows (reduced frequency for large imports)
+      if ((i + 1) % 50 === 0 || i === data.length - 1) {
         await storage.updateImportJob(jobId, {
           processedRows: i + 1,
           successRows: successCount,
           errorRows: errorCount,
-          errors,
+          errors: errors.slice(0, 500), // Limit stored errors to prevent huge payloads
         });
       }
     }
 
+    // Generate error summary
+    const errorSummary = generateErrorSummary(errors);
+
     // Mark as completed
     await storage.updateImportJob(jobId, {
-      status: errors.length > 0 && successCount === 0 ? "failed" : "completed",
+      status: successCount === 0 ? "failed" : errors.length > 0 ? "completed_with_errors" : "completed",
       processedRows: data.length,
       successRows: successCount,
       errorRows: errorCount,
-      errors,
+      errors: errors.slice(0, 500),
+      errorSummary,
       completedAt: new Date(),
     });
+  }
+  
+  function validateImportRow(type: string, mapped: Record<string, any>, rowNum: number): { row: number; field?: string; message: string; errorType: string }[] {
+    const errors: { row: number; field?: string; message: string; errorType: string }[] = [];
+    
+    switch (type) {
+      case "parts":
+        if (!mapped.partNumber || String(mapped.partNumber).trim() === "") {
+          errors.push({ row: rowNum, field: "partNumber", message: "Part number is required", errorType: "missing_required" });
+        }
+        if (!mapped.name || String(mapped.name).trim() === "") {
+          errors.push({ row: rowNum, field: "name", message: "Part name is required", errorType: "missing_required" });
+        }
+        break;
+      case "assets":
+        if (!mapped.assetNumber || String(mapped.assetNumber).trim() === "") {
+          errors.push({ row: rowNum, field: "assetNumber", message: "Asset number is required", errorType: "missing_required" });
+        }
+        if (!mapped.name || String(mapped.name).trim() === "") {
+          errors.push({ row: rowNum, field: "name", message: "Asset name is required", errorType: "missing_required" });
+        }
+        if (!mapped.type || String(mapped.type).trim() === "") {
+          errors.push({ row: rowNum, field: "type", message: "Asset type is required", errorType: "missing_required" });
+        }
+        break;
+    }
+    
+    return errors;
+  }
+  
+  function generateErrorSummary(errors: { row: number; field?: string; message: string; errorType: string }[]): ImportErrorSummary {
+    const byType: Record<string, number> = {};
+    const byField: Record<string, number> = {};
+    const sampleErrors: Record<string, string[]> = {};
+    
+    for (const error of errors) {
+      byType[error.errorType] = (byType[error.errorType] || 0) + 1;
+      if (error.field) {
+        byField[error.field] = (byField[error.field] || 0) + 1;
+      }
+      
+      // Keep sample errors for each type
+      if (!sampleErrors[error.errorType]) {
+        sampleErrors[error.errorType] = [];
+      }
+      if (sampleErrors[error.errorType].length < 3) {
+        sampleErrors[error.errorType].push(`Row ${error.row}: ${error.message}`);
+      }
+    }
+    
+    return { byType, byField, sampleErrors, totalErrors: errors.length };
   }
 
   function mapRowToSchema(row: Record<string, any>, mappings: Record<string, string>) {
