@@ -9,7 +9,9 @@ import {
   insertWorkOrderLineSchema,
   insertPmScheduleSchema,
   insertPurchaseRequisitionSchema,
+  insertPurchaseRequisitionLineSchema,
   insertPurchaseOrderSchema,
+  insertPurchaseOrderLineSchema,
   insertManualSchema,
   insertDvirSchema,
   insertDvirDefectSchema,
@@ -694,6 +696,47 @@ export async function registerRoutes(
     }
   });
 
+  // Requisition Lines
+  app.get("/api/requisitions/:id/lines", async (req, res) => {
+    const lines = await storage.getRequisitionLines(parseInt(req.params.id));
+    res.json(lines);
+  });
+
+  app.post("/api/requisitions/:id/lines", requireAuth, async (req, res) => {
+    try {
+      const validated = insertPurchaseRequisitionLineSchema.parse({
+        ...req.body,
+        requisitionId: parseInt(req.params.id),
+      });
+      const line = await storage.createRequisitionLine(validated);
+      res.status(201).json(line);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: "Failed to create requisition line" });
+    }
+  });
+
+  app.patch("/api/requisition-lines/:id", requireAuth, async (req, res) => {
+    try {
+      const updated = await storage.updateRequisitionLine(parseInt(req.params.id), req.body);
+      if (!updated) return res.status(404).json({ error: "Requisition line not found" });
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update requisition line" });
+    }
+  });
+
+  app.delete("/api/requisition-lines/:id", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteRequisitionLine(parseInt(req.params.id));
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete requisition line" });
+    }
+  });
+
   // Purchase Orders
   app.get("/api/purchase-orders", async (req, res) => {
     const orders = await storage.getPurchaseOrders();
@@ -730,6 +773,47 @@ export async function registerRoutes(
       res.json(updated);
     } catch (error) {
       res.status(500).json({ error: "Failed to update purchase order" });
+    }
+  });
+
+  // Purchase Order Lines
+  app.get("/api/purchase-orders/:id/lines", async (req, res) => {
+    const lines = await storage.getPurchaseOrderLines(parseInt(req.params.id));
+    res.json(lines);
+  });
+
+  app.post("/api/purchase-orders/:id/lines", requireAuth, async (req, res) => {
+    try {
+      const validated = insertPurchaseOrderLineSchema.parse({
+        ...req.body,
+        poId: parseInt(req.params.id),
+      });
+      const line = await storage.createPurchaseOrderLine(validated);
+      res.status(201).json(line);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: "Failed to create PO line" });
+    }
+  });
+
+  app.patch("/api/po-lines/:id", requireAuth, async (req, res) => {
+    try {
+      const updated = await storage.updatePurchaseOrderLine(parseInt(req.params.id), req.body);
+      if (!updated) return res.status(404).json({ error: "PO line not found" });
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update PO line" });
+    }
+  });
+
+  app.delete("/api/po-lines/:id", requireAuth, async (req, res) => {
+    try {
+      await storage.deletePurchaseOrderLine(parseInt(req.params.id));
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete PO line" });
     }
   });
 
