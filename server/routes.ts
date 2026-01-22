@@ -1737,6 +1737,57 @@ export async function registerRoutes(
         baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
       });
 
+      // Fetch associated manuals for the make/model
+      // Wrapped in try/catch to gracefully handle manual retrieval failures
+      let manualContext = "";
+      if (manufacturer) {
+        try {
+          const manuals = await storage.getManualsByMakeModel(manufacturer, model || undefined);
+          if (manuals.length > 0) {
+            manualContext = "\n\nASSOCIATED SERVICE MANUALS:\n";
+            manualContext += "The following maintenance and service manuals are available. Reference them when generating tasks:\n\n";
+            
+            let totalContentLength = 0;
+            const MAX_MANUAL_CONTENT_CHARS = 6000; // Cap total manual content to prevent token overflow
+            
+            for (const manual of manuals.slice(0, 3)) {
+              if (totalContentLength >= MAX_MANUAL_CONTENT_CHARS) break;
+              
+              manualContext += `Manual: ${manual.title} (${manual.type})\n`;
+              if (manual.description) {
+                manualContext += `Description: ${manual.description}\n`;
+              }
+              
+              // Get manual sections for more detailed content
+              const sections = await storage.getManualSections(manual.id);
+              if (sections.length > 0) {
+                manualContext += `Sections:\n`;
+                for (const section of sections.slice(0, 8)) {
+                  if (totalContentLength >= MAX_MANUAL_CONTENT_CHARS) break;
+                  
+                  manualContext += `  - ${section.title}`;
+                  if (section.content) {
+                    const remainingBudget = MAX_MANUAL_CONTENT_CHARS - totalContentLength;
+                    const previewLength = Math.min(300, remainingBudget);
+                    const preview = section.content.substring(0, previewLength);
+                    manualContext += `: ${preview}${section.content.length > previewLength ? '...' : ''}\n`;
+                    totalContentLength += preview.length + section.title.length;
+                  } else {
+                    manualContext += `\n`;
+                    totalContentLength += section.title.length;
+                  }
+                }
+              }
+              manualContext += `\n`;
+            }
+            manualContext += "Use the information from these manuals to generate accurate, manufacturer-specific maintenance tasks. Reference specific procedures, torque specs, and fluid specifications where applicable.\n";
+          }
+        } catch (error) {
+          console.warn("Failed to fetch manuals for checklist generation, proceeding without manual knowledge:", error);
+          // Continue without manual context - AI will still generate generic tasks
+        }
+      }
+
       const prompt = `You are a fleet maintenance expert. Generate a comprehensive preventive maintenance task checklist for the following:
 
 PM Type/Name: ${pmType || "Preventive Maintenance Service"}
@@ -1744,10 +1795,10 @@ Asset Type: ${assetType || "Vehicle"}
 ${manufacturer ? `Manufacturer: ${manufacturer}` : ""}
 ${model ? `Model: ${model}` : ""}
 ${intervalType ? `Interval: Every ${intervalValue} ${intervalType}` : ""}
-
+${manualContext}
 ${existingTasks.length > 0 ? `Existing tasks to consider (don't duplicate): ${existingTasks.join(", ")}` : ""}
 
-Generate 10-20 specific, actionable maintenance tasks. Each task should be a clear, concise instruction (e.g., "Check engine oil level and condition", "Inspect brake pads for wear").
+Generate 10-20 specific, actionable maintenance tasks. Each task should be a clear, concise instruction (e.g., "Check engine oil level and condition", "Inspect brake pads for wear"). If service manual information is provided, incorporate manufacturer-specific procedures and specifications into the tasks.
 
 Return ONLY a JSON array of strings with the task descriptions. No explanations, just the JSON array.
 Example: ["Check engine oil level", "Inspect tire pressure and tread depth", "Test all exterior lights"]`;

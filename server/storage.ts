@@ -178,6 +178,8 @@ export interface IStorage {
   // Manuals
   getManuals(): Promise<Manual[]>;
   getManual(id: number): Promise<Manual | undefined>;
+  getManualsByMakeModel(manufacturer: string, model?: string): Promise<Manual[]>;
+  getManualSections(manualId: number): Promise<ManualSection[]>;
   createManual(manual: InsertManual): Promise<Manual>;
   updateManual(id: number, manual: Partial<InsertManual>): Promise<Manual | undefined>;
   
@@ -628,6 +630,30 @@ export class DatabaseStorage implements IStorage {
   async updateManual(id: number, manual: Partial<InsertManual>): Promise<Manual | undefined> {
     const [updated] = await db.update(manuals).set({ ...manual, updatedAt: new Date() }).where(eq(manuals.id, id)).returning();
     return updated;
+  }
+
+  async getManualsByMakeModel(manufacturer: string, model?: string): Promise<Manual[]> {
+    if (model) {
+      return db.select().from(manuals)
+        .where(and(
+          eq(manuals.manufacturer, manufacturer),
+          eq(manuals.model, model),
+          eq(manuals.isActive, true)
+        ))
+        .orderBy(desc(manuals.createdAt));
+    }
+    return db.select().from(manuals)
+      .where(and(
+        eq(manuals.manufacturer, manufacturer),
+        eq(manuals.isActive, true)
+      ))
+      .orderBy(desc(manuals.createdAt));
+  }
+
+  async getManualSections(manualId: number): Promise<ManualSection[]> {
+    return db.select().from(manualSections)
+      .where(eq(manualSections.manualId, manualId))
+      .orderBy(manualSections.pageStart);
   }
 
   // DVIRs

@@ -99,6 +99,7 @@ Key backend patterns:
 - **Fallback Logic**: Analyzes battery voltage, coolant temp, oil pressure, DEF level, fault codes if OpenAI fails
 - **Similar Asset Analysis**: Queries maintenance history from other assets with same make/model to identify patterns and predict similar issues
 - **Fleet Part Patterns**: Analyzes fleet-wide part replacement trends to identify frequently replaced parts and potential systemic issues
+- **Manual Knowledge Integration**: AI reads associated service/maintenance manuals for the asset's make/model. Manual sections are included in the analysis prompt to provide manufacturer-specific recommendations, known issues, and proper procedures. Uses `storage.getManualsByMakeModel()` and `storage.getManualSections()` to retrieve manual content.
 
 ### Barcode/QR Scanning
 - **BarcodeScanner Component**: Header-integrated scanner with manual entry and camera modes
@@ -122,7 +123,7 @@ Key backend patterns:
 - **Reusable Checklists**: Create maintenance task checklists that can be assigned to multiple PM schedules and assets
 - **Categories**: pm_service, inspection, safety, pre_trip, post_trip, seasonal, other
 - **Make/Model Assignments**: Bulk-assign checklists to assets based on manufacturer, model, or asset type (e.g., all Ford F-150s get the same "A Service" checklist)
-- **AI Generation**: Use "Generate with AI" button to auto-generate task lists based on PM type, interval, and vehicle specifications
+- **AI Generation**: Use "Generate with AI" button to auto-generate task lists based on PM type, interval, vehicle specifications, and associated service manuals. When manufacturer/model is provided, the AI fetches relevant manuals and their sections to generate manufacturer-specific maintenance tasks.
 - **API Routes**: 
   - GET/POST /api/checklist-templates - List and create templates
   - GET/PATCH/DELETE /api/checklist-templates/:id - Template CRUD

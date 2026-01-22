@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import { storage } from "../storage";
-import type { Asset, TelematicsData, FaultCode, InsertPrediction } from "@shared/schema";
+import type { Asset, TelematicsData, FaultCode, InsertPrediction, Manual, ManualSection } from "@shared/schema";
 
 const openai = new OpenAI({
   apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
@@ -44,8 +44,39 @@ export async function analyzeAssetHealth(assetId: number): Promise<AnalysisResul
   }
 
   const partPatterns = await storage.getFleetPartReplacementPatterns();
+  
+  // Fetch associated manuals and their sections for this asset's make/model
+  // Wrapped in try/catch to gracefully handle manual retrieval failures
+  let manualKnowledge: { manual: Manual; sections: ManualSection[] }[] = [];
+  if (asset.manufacturer) {
+    try {
+      const assetManuals = await storage.getManualsByMakeModel(asset.manufacturer, asset.model || undefined);
+      let totalContentLength = 0;
+      const MAX_MANUAL_CONTENT_CHARS = 8000; // Cap total manual content to prevent token overflow
+      
+      for (const manual of assetManuals.slice(0, 3)) { // Limit to 3 most relevant manuals
+        if (totalContentLength >= MAX_MANUAL_CONTENT_CHARS) break;
+        
+        const sections = await storage.getManualSections(manual.id);
+        // Calculate remaining budget and only include sections that fit
+        const sectionsWithBudget = sections.slice(0, 10).map(s => ({
+          ...s,
+          content: s.content ? s.content.substring(0, Math.min(500, MAX_MANUAL_CONTENT_CHARS - totalContentLength)) : null
+        }));
+        
+        for (const section of sectionsWithBudget) {
+          totalContentLength += (section.content?.length || 0) + (section.title?.length || 0);
+        }
+        
+        manualKnowledge.push({ manual, sections: sectionsWithBudget });
+      }
+    } catch (error) {
+      console.warn("Failed to fetch manuals for AI analysis, proceeding without manual knowledge:", error);
+      // Continue without manual knowledge - AI analysis will still work with other data
+    }
+  }
 
-  const prompt = buildAnalysisPrompt(asset, telematics, activeFaults, recentWorkOrders, similarAssetsHistory, partPatterns);
+  const prompt = buildAnalysisPrompt(asset, telematics ?? null, activeFaults, recentWorkOrders, similarAssetsHistory, partPatterns, manualKnowledge);
 
   try {
     const response = await openai.chat.completions.create({
@@ -53,25 +84,26 @@ export async function analyzeAssetHealth(assetId: number): Promise<AnalysisResul
       messages: [
         {
           role: "system",
-          content: `You are an expert fleet maintenance analyst AI. Analyze vehicle telematics data, fault codes, maintenance history, similar make/model asset patterns, and fleet-wide part replacement trends to predict potential failures and recommend preventive actions. 
+          content: `You are an expert fleet maintenance analyst AI. Analyze vehicle telematics data, fault codes, maintenance history, similar make/model asset patterns, fleet-wide part replacement trends, and associated service manuals to predict potential failures and recommend preventive actions. 
 
 KEY ANALYSIS PRIORITIES:
 1. Current asset telemetry and fault codes
 2. Similar make/model patterns - if other vehicles of the same make/model have experienced specific issues, this vehicle may be at risk
 3. Fleet-wide part replacement trends - frequently replaced parts may indicate systemic issues or normal wear items to monitor
+4. Service manual knowledge - reference manufacturer maintenance manuals to identify recommended service intervals, known issues, and proper procedures
 
 Always respond with a valid JSON array of predictions. Each prediction should have:
-- predictionType: string (e.g., "engine_failure", "brake_wear", "battery_replacement", "fluid_service", "similar_model_pattern", "fleet_trend")
+- predictionType: string (e.g., "engine_failure", "brake_wear", "battery_replacement", "fluid_service", "similar_model_pattern", "fleet_trend", "manual_recommendation")
 - prediction: string (clear description of the predicted issue)
 - severity: "low" | "medium" | "high" | "critical"
 - confidence: number between 0 and 1
-- reasoning: string (detailed explanation of why this prediction was made, including references to similar asset patterns if applicable)
-- dataPoints: array of strings (specific data points that led to this prediction)
+- reasoning: string (detailed explanation of why this prediction was made, including references to similar asset patterns or service manuals if applicable)
+- dataPoints: array of strings (specific data points that led to this prediction, including manual references)
 - recommendedAction: string (what maintenance action should be taken)
 - estimatedCost: number (optional, estimated repair cost in USD)
 - daysUntilDue: number (optional, estimated days until maintenance is needed)
 
-When similar make/model assets have had specific maintenance issues, increase the severity and confidence of predictions for those same issues on this asset. Be specific and actionable. If there are no concerning patterns, return an empty array.`
+When similar make/model assets have had specific maintenance issues, increase the severity and confidence of predictions for those same issues on this asset. When service manuals are available, reference them to support your predictions and recommendations. Be specific and actionable. If there are no concerning patterns, return an empty array.`
         },
         {
           role: "user",
@@ -99,7 +131,7 @@ When similar make/model assets have had specific maintenance issues, increase th
     }));
   } catch (error) {
     console.error("AI analysis error:", error);
-    return generateFallbackPredictions(asset, telematics, activeFaults);
+    return generateFallbackPredictions(asset, telematics ?? null, activeFaults);
   }
 }
 
@@ -109,7 +141,8 @@ function buildAnalysisPrompt(
   faultCodes: FaultCode[],
   workOrders: any[],
   similarAssetsHistory: { assetName: string; workOrders: any[] }[] = [],
-  partPatterns: { partId: number; partNumber: string; partName: string; replacementCount: number }[] = []
+  partPatterns: { partId: number; partNumber: string; partName: string; replacementCount: number }[] = [],
+  manualKnowledge: { manual: Manual; sections: ManualSection[] }[] = []
 ): string {
   let prompt = `Analyze maintenance needs for:
 
@@ -176,7 +209,37 @@ Current Meter: ${asset.currentMeterReading || "N/A"} ${asset.meterType || ""}
     prompt += `\nConsider if any of these frequently-replaced parts may need attention on this asset.\n\n`;
   }
 
-  prompt += `Based on this data, identify any maintenance predictions, potential failures, or recommended preventive actions. Consider patterns from similar make/model assets and fleet-wide part replacement trends. Return as JSON with a "predictions" array.`;
+  // Include manual knowledge from associated service/maintenance manuals
+  if (manualKnowledge.length > 0) {
+    prompt += `ASSOCIATED SERVICE MANUALS:\n`;
+    prompt += `The following maintenance and service manuals are available for this asset's make/model. Use this knowledge to provide more accurate predictions and maintenance recommendations:\n\n`;
+    
+    manualKnowledge.forEach(mk => {
+      prompt += `Manual: ${mk.manual.title} (${mk.manual.type})\n`;
+      if (mk.manual.description) {
+        prompt += `Description: ${mk.manual.description}\n`;
+      }
+      
+      if (mk.sections.length > 0) {
+        prompt += `Sections:\n`;
+        mk.sections.slice(0, 10).forEach(section => {
+          prompt += `  - ${section.title}`;
+          if (section.content) {
+            // Include first 500 chars of content to avoid token limits
+            const contentPreview = section.content.substring(0, 500);
+            prompt += `: ${contentPreview}${section.content.length > 500 ? '...' : ''}\n`;
+          } else {
+            prompt += `\n`;
+          }
+        });
+      }
+      prompt += `\n`;
+    });
+    
+    prompt += `Reference these manuals when making predictions. If a fault code or symptom matches known issues documented in the manuals, cite the manual as a data point.\n\n`;
+  }
+
+  prompt += `Based on this data, identify any maintenance predictions, potential failures, or recommended preventive actions. Consider patterns from similar make/model assets, fleet-wide part replacement trends, and information from service manuals. Return as JSON with a "predictions" array.`;
 
   return prompt;
 }
