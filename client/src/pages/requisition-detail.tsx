@@ -5,7 +5,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation, useRoute, Link } from "wouter";
 import { 
   ArrowLeft, Save, Loader2, Edit, FileText, 
-  CheckCircle2, XCircle, Clock, X, ShoppingCart
+  CheckCircle2, XCircle, Clock, X, ShoppingCart, Plus, Trash2
 } from "lucide-react";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
@@ -28,11 +28,19 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { PageHeader } from "@/components/PageHeader";
 import { PageLoader } from "@/components/LoadingSpinner";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import type { Vendor } from "@shared/schema";
+import type { Vendor, Part } from "@shared/schema";
 
 interface PurchaseRequisition {
   id: number;
@@ -48,6 +56,17 @@ interface PurchaseRequisition {
   approvedAt: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+interface RequisitionLine {
+  id: number;
+  requisitionId: number;
+  partId: number | null;
+  description: string;
+  quantity: string;
+  unitCost: string | null;
+  totalCost: string | null;
+  createdAt: string;
 }
 
 const requisitionFormSchema = z.object({
@@ -76,6 +95,22 @@ export default function RequisitionDetail() {
 
   const { data: vendors } = useQuery<Vendor[]>({
     queryKey: ["/api/vendors"],
+  });
+
+  const { data: lines = [], isLoading: linesLoading } = useQuery<RequisitionLine[]>({
+    queryKey: ["/api/requisitions", requisitionId, "lines"],
+    enabled: !!requisitionId,
+  });
+
+  const { data: parts = [] } = useQuery<Part[]>({
+    queryKey: ["/api/parts"],
+  });
+
+  const [newLine, setNewLine] = useState({
+    description: "",
+    quantity: "",
+    unitCost: "",
+    partId: "",
   });
 
   const form = useForm<RequisitionFormValues>({
@@ -145,6 +180,65 @@ export default function RequisitionDetail() {
       toast({ title: "Requisition Rejected", description: "The requisition has been rejected." });
     },
   });
+
+  const addLineMutation = useMutation({
+    mutationFn: async (lineData: { description: string; quantity: string; unitCost: string; partId?: number }) => {
+      const totalCost = lineData.unitCost && lineData.quantity 
+        ? (parseFloat(lineData.quantity) * parseFloat(lineData.unitCost)).toString()
+        : null;
+      return apiRequest("POST", `/api/requisitions/${requisitionId}/lines`, {
+        ...lineData,
+        partId: lineData.partId || null,
+        totalCost,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/requisitions", requisitionId, "lines"] });
+      setNewLine({ description: "", quantity: "", unitCost: "", partId: "" });
+      toast({ title: "Line Added", description: "Item added to requisition." });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to add line item", variant: "destructive" });
+    },
+  });
+
+  const deleteLineMutation = useMutation({
+    mutationFn: async (lineId: number) => {
+      return apiRequest("DELETE", `/api/requisition-lines/${lineId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/requisitions", requisitionId, "lines"] });
+      toast({ title: "Line Removed", description: "Item removed from requisition." });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to remove line item", variant: "destructive" });
+    },
+  });
+
+  const handleAddLine = () => {
+    if (!newLine.description || !newLine.quantity) {
+      toast({ title: "Error", description: "Description and quantity are required", variant: "destructive" });
+      return;
+    }
+    addLineMutation.mutate({
+      description: newLine.description,
+      quantity: newLine.quantity,
+      unitCost: newLine.unitCost || "0",
+      partId: newLine.partId ? parseInt(newLine.partId) : undefined,
+    });
+  };
+
+  const handleSelectPart = (partId: string) => {
+    const part = parts.find(p => p.id === parseInt(partId));
+    if (part) {
+      setNewLine({
+        ...newLine,
+        partId,
+        description: part.name,
+        unitCost: part.unitCost || "",
+      });
+    }
+  };
 
   const onSubmit = (data: RequisitionFormValues) => {
     updateMutation.mutate(data);
@@ -345,6 +439,111 @@ export default function RequisitionDetail() {
               </Card>
             </form>
           </Form>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between gap-2">
+              <CardTitle>Line Items</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {lines.length > 0 ? (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Description</TableHead>
+                      <TableHead className="text-right">Qty</TableHead>
+                      <TableHead className="text-right">Unit Cost</TableHead>
+                      <TableHead className="text-right">Total</TableHead>
+                      <TableHead className="w-[50px]"></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {lines.map((line) => (
+                      <TableRow key={line.id} data-testid={`row-line-${line.id}`}>
+                        <TableCell>{line.description}</TableCell>
+                        <TableCell className="text-right">{Number(line.quantity).toFixed(2)}</TableCell>
+                        <TableCell className="text-right">
+                          {line.unitCost ? `$${Number(line.unitCost).toFixed(2)}` : "-"}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {line.totalCost ? `$${Number(line.totalCost).toFixed(2)}` : "-"}
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => deleteLineMutation.mutate(line.id)}
+                            disabled={deleteLineMutation.isPending}
+                            data-testid={`button-delete-line-${line.id}`}
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              ) : (
+                <p className="text-muted-foreground text-sm">No items added yet.</p>
+              )}
+
+              <div className="mt-4 pt-4 border-t space-y-3">
+                <p className="text-sm font-medium">Add Item</p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Select value={newLine.partId} onValueChange={handleSelectPart}>
+                    <SelectTrigger data-testid="select-part">
+                      <SelectValue placeholder="Select from inventory (optional)" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {parts.map((part) => (
+                        <SelectItem key={part.id} value={part.id.toString()}>
+                          {part.partNumber} - {part.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Input
+                    placeholder="Description *"
+                    value={newLine.description}
+                    onChange={(e) => setNewLine({ ...newLine, description: e.target.value })}
+                    data-testid="input-line-description"
+                  />
+                </div>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <Input
+                    placeholder="Quantity *"
+                    type="number"
+                    step="0.01"
+                    value={newLine.quantity}
+                    onChange={(e) => setNewLine({ ...newLine, quantity: e.target.value })}
+                    data-testid="input-line-quantity"
+                  />
+                  <Input
+                    placeholder="Unit Cost"
+                    type="number"
+                    step="0.01"
+                    value={newLine.unitCost}
+                    onChange={(e) => setNewLine({ ...newLine, unitCost: e.target.value })}
+                    data-testid="input-line-unitcost"
+                  />
+                  <Button onClick={handleAddLine} disabled={addLineMutation.isPending} data-testid="button-add-line">
+                    {addLineMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Plus className="h-4 w-4 mr-2" />}
+                    Add
+                  </Button>
+                </div>
+              </div>
+
+              {lines.length > 0 && (
+                <div className="mt-4 pt-4 border-t flex justify-end">
+                  <div className="text-right">
+                    <span className="text-muted-foreground text-sm">Total: </span>
+                    <span className="font-semibold">
+                      ${lines.reduce((sum, line) => sum + (Number(line.totalCost) || 0), 0).toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </div>
 
         <div className="space-y-6">
