@@ -833,6 +833,14 @@ export async function registerRoutes(
         delete data.orderDate;
       }
 
+      // Ensure numeric fields are numbers or null, never empty strings
+      if (data.totalAmount === "") {
+        data.totalAmount = null;
+      }
+      if (data.shippingCost === "") {
+        data.shippingCost = null;
+      }
+
       const validated = insertPurchaseOrderSchema.parse({
         ...data,
         poNumber,
