@@ -95,6 +95,7 @@ function AuthenticatedRouter() {
       <Route path="/import" component={BulkImport} />
       <Route path="/settings" component={Settings} />
       <Route path="/settings/vmrs" component={VmrsSettings} />
+      <Route path="/landing" component={LandingPage} />
       <Route component={NotFound} />
     </Switch>
   );
