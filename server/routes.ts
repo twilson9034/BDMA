@@ -696,9 +696,11 @@ export async function registerRoutes(
       const req_ = await storage.getRequisition(id);
       if (!req_) return res.status(404).json({ error: "Requisition not found" });
 
+      console.log("Updating requisition status to:", req.body.status);
       const updated = await storage.updateRequisition(id, req.body);
       res.json(updated);
     } catch (error) {
+      console.error("Update requisition error:", error);
       res.status(500).json({ error: "Failed to update requisition" });
     }
   });
@@ -727,6 +729,8 @@ export async function registerRoutes(
         totalAmount: requisition.totalAmount,
         status: "draft",
         createdById: (req.user as any)?.id || null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
       });
 
       for (const line of lines) {
@@ -804,8 +808,18 @@ export async function registerRoutes(
   app.post("/api/purchase-orders", requireAuth, async (req, res) => {
     try {
       const poNumber = await generatePONumber();
+      const data = { ...req.body };
+      
+      // Parse dates if they are strings
+      if (data.expectedDeliveryDate && typeof data.expectedDeliveryDate === 'string') {
+        data.expectedDeliveryDate = new Date(data.expectedDeliveryDate);
+      }
+      if (data.orderDate && typeof data.orderDate === 'string') {
+        data.orderDate = new Date(data.orderDate);
+      }
+
       const validated = insertPurchaseOrderSchema.parse({
-        ...req.body,
+        ...data,
         poNumber,
       });
       const po = await storage.createPurchaseOrder({

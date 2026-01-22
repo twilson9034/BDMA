@@ -156,15 +156,21 @@ export default function RequisitionDetail() {
 
   const approveMutation = useMutation({
     mutationFn: async () => {
+      const approvedAt = new Date().toISOString();
+      console.log("Approving requisition at:", approvedAt);
       return apiRequest("PATCH", `/api/requisitions/${requisitionId}`, {
         status: "approved",
-        approvedAt: new Date().toISOString(),
+        approvedAt,
       });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/requisitions"] });
       queryClient.invalidateQueries({ queryKey: ["/api/requisitions", requisitionId] });
       toast({ title: "Requisition Approved", description: "The requisition has been approved." });
+    },
+    onError: (error) => {
+      console.error("Approval mutation failed:", error);
+      toast({ title: "Error", description: "Failed to approve requisition", variant: "destructive" });
     },
   });
 
