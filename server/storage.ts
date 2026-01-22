@@ -84,6 +84,12 @@ import {
   type ChecklistTemplate,
   type InsertChecklistMakeModelAssignment,
   type ChecklistMakeModelAssignment,
+  importJobs,
+  type InsertImportJob,
+  type ImportJob,
+  partUsageHistory,
+  type InsertPartUsageHistory,
+  type PartUsageHistory,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -275,6 +281,17 @@ export interface IStorage {
   createChecklistAssignment(assignment: InsertChecklistMakeModelAssignment): Promise<ChecklistMakeModelAssignment>;
   deleteChecklistAssignment(id: number): Promise<void>;
   deleteChecklistAssignmentsByTemplate(templateId: number): Promise<void>;
+  
+  // Import Jobs
+  getImportJobs(): Promise<ImportJob[]>;
+  getImportJob(id: number): Promise<ImportJob | undefined>;
+  createImportJob(job: InsertImportJob): Promise<ImportJob>;
+  updateImportJob(id: number, job: Partial<InsertImportJob>): Promise<ImportJob | undefined>;
+  
+  // Part Usage History (for smart suggestions)
+  getPartUsageHistory(vmrsCode?: string, manufacturer?: string, model?: string, year?: number): Promise<PartUsageHistory[]>;
+  createPartUsageHistory(usage: InsertPartUsageHistory): Promise<PartUsageHistory>;
+  getSmartPartSuggestions(vmrsCode: string, manufacturer?: string, model?: string, year?: number): Promise<{ partId: number; partNumber: string; partName: string | null; usageCount: number }[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1122,6 +1139,75 @@ export class DatabaseStorage implements IStorage {
   async deleteChecklistAssignmentsByTemplate(templateId: number): Promise<void> {
     await db.delete(checklistMakeModelAssignments)
       .where(eq(checklistMakeModelAssignments.checklistTemplateId, templateId));
+  }
+
+  // Import Jobs
+  async getImportJobs(): Promise<ImportJob[]> {
+    return db.select().from(importJobs).orderBy(sql`${importJobs.createdAt} DESC`);
+  }
+
+  async getImportJob(id: number): Promise<ImportJob | undefined> {
+    const [job] = await db.select().from(importJobs).where(eq(importJobs.id, id));
+    return job;
+  }
+
+  async createImportJob(job: InsertImportJob): Promise<ImportJob> {
+    const [created] = await db.insert(importJobs).values(job).returning();
+    return created;
+  }
+
+  async updateImportJob(id: number, job: Partial<InsertImportJob>): Promise<ImportJob | undefined> {
+    const [updated] = await db.update(importJobs).set(job).where(eq(importJobs.id, id)).returning();
+    return updated;
+  }
+
+  // Part Usage History
+  async getPartUsageHistory(vmrsCode?: string, manufacturer?: string, model?: string, year?: number): Promise<PartUsageHistory[]> {
+    let query = db.select().from(partUsageHistory);
+    const conditions = [];
+    if (vmrsCode) conditions.push(eq(partUsageHistory.vmrsCode, vmrsCode));
+    if (manufacturer) conditions.push(eq(partUsageHistory.manufacturer, manufacturer));
+    if (model) conditions.push(eq(partUsageHistory.model, model));
+    if (year) conditions.push(eq(partUsageHistory.year, year));
+    
+    if (conditions.length > 0) {
+      query = query.where(and(...conditions)) as typeof query;
+    }
+    return query.orderBy(sql`${partUsageHistory.usedAt} DESC`);
+  }
+
+  async createPartUsageHistory(usage: InsertPartUsageHistory): Promise<PartUsageHistory> {
+    const [created] = await db.insert(partUsageHistory).values(usage).returning();
+    return created;
+  }
+
+  async getSmartPartSuggestions(vmrsCode: string, manufacturer?: string, model?: string, year?: number): Promise<{ partId: number; partNumber: string; partName: string | null; usageCount: number }[]> {
+    // Query part usage history to find most used parts for this VMRS code and make/model
+    const conditions = [eq(partUsageHistory.vmrsCode, vmrsCode)];
+    if (manufacturer) conditions.push(eq(partUsageHistory.manufacturer, manufacturer));
+    if (model) conditions.push(eq(partUsageHistory.model, model));
+    // Year is optional - if not provided, get all years
+    if (year) conditions.push(eq(partUsageHistory.year, year));
+    
+    const results = await db
+      .select({
+        partId: partUsageHistory.partId,
+        partNumber: partUsageHistory.partNumber,
+        partName: partUsageHistory.partName,
+        usageCount: sql<number>`COUNT(*)::int`,
+      })
+      .from(partUsageHistory)
+      .where(and(...conditions))
+      .groupBy(partUsageHistory.partId, partUsageHistory.partNumber, partUsageHistory.partName)
+      .orderBy(sql`COUNT(*) DESC`)
+      .limit(10);
+    
+    return results.filter(r => r.partId !== null).map(r => ({
+      partId: r.partId!,
+      partNumber: r.partNumber,
+      partName: r.partName,
+      usageCount: r.usageCount,
+    }));
   }
 }
 

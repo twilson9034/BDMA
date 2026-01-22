@@ -17,6 +17,7 @@ import {
   FileText,
   Calculator,
   ChevronDown,
+  Upload,
 } from "lucide-react";
 import {
   Sidebar,
@@ -63,6 +64,7 @@ const resourceItems = [
   { title: "Manuals", url: "/manuals", icon: BookOpen },
   { title: "Reports", url: "/reports", icon: BarChart3 },
   { title: "Feedback", url: "/feedback", icon: MessageSquare },
+  { title: "Data Import", url: "/import", icon: Upload },
 ];
 
 export function AppSidebar() {

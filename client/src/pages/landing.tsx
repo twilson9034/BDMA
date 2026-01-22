@@ -8,48 +8,87 @@ import {
   Clock, 
   Brain,
   ArrowRight,
-  CheckCircle2
+  CheckCircle2,
+  Upload,
+  Sparkles,
+  BookOpen,
+  Scan,
+  Package,
+  FileText,
+  DollarSign
 } from "lucide-react";
 
 const features = [
   {
     icon: Truck,
     title: "Asset Management",
-    description: "Track and manage all your vehicles, equipment, and facilities with intelligent status automation.",
+    description: "Track and manage all your vehicles, equipment, and facilities with intelligent status automation and telematics monitoring.",
   },
   {
     icon: Wrench,
     title: "Work Order Lifecycle",
-    description: "Complete work order management with task assignment, time tracking, and parts consumption.",
+    description: "Complete work order management with VMRS standardization, task assignment, time tracking, and smart part suggestions.",
   },
   {
     icon: Clock,
     title: "Preventive Maintenance",
-    description: "Smart PM scheduling with interval-based triggers and predictive rescheduling.",
+    description: "Smart PM scheduling with AI-generated checklists, interval-based triggers, and reusable templates.",
   },
   {
     icon: Brain,
     title: "AI-Powered Insights",
-    description: "Predictive maintenance using AI for failure prediction and root cause analysis.",
+    description: "Predictive maintenance analyzing telematics, fault codes, and service manuals for accurate failure prediction.",
+  },
+  {
+    icon: Sparkles,
+    title: "Smart Part Suggestions",
+    description: "AI recommends the right parts based on VMRS codes, vehicle history, and manufacturer specifications.",
+  },
+  {
+    icon: Upload,
+    title: "Seamless Data Migration",
+    description: "Bulk import your existing data - assets, parts, work history, PO records - for effortless system transition.",
   },
   {
     icon: BarChart3,
     title: "Advanced Analytics",
-    description: "Real-time dashboards with KPI tracking, cost analysis, and maintenance metrics.",
+    description: "Real-time dashboards with KPI tracking, cost analysis, fleet health scores, and maintenance metrics.",
   },
   {
     icon: Shield,
     title: "DVIR & Compliance",
     description: "Driver Vehicle Inspection Reports with defect tracking and automatic work order generation.",
   },
+  {
+    icon: Scan,
+    title: "Barcode & QR Scanning",
+    description: "Instant asset and part lookup with integrated barcode scanner for quick field access.",
+  },
+  {
+    icon: Package,
+    title: "Inventory & Procurement",
+    description: "Parts management with auto-reordering, vendor tracking, requisitions, and purchase order workflows.",
+  },
+  {
+    icon: BookOpen,
+    title: "Manual Integration",
+    description: "AI reads your service manuals to generate accurate maintenance tasks and part recommendations.",
+  },
+  {
+    icon: FileText,
+    title: "Checklist Templates",
+    description: "Reusable maintenance checklists with bulk assignment by make/model for fleet-wide consistency.",
+  },
 ];
 
 const benefits = [
   "Reduce equipment downtime by up to 45%",
   "Cut maintenance costs with predictive insights",
-  "Streamline procurement and inventory management",
+  "Seamlessly migrate from any existing system",
+  "AI-powered part suggestions save technician time",
   "Real-time visibility into fleet health",
   "Mobile-first design for field technicians",
+  "Service manual knowledge built into AI",
   "Comprehensive audit trail and compliance",
 ];
 
@@ -68,6 +107,9 @@ export default function LandingPage() {
             <div className="flex items-center gap-4">
               <a href="#features" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
                 Features
+              </a>
+              <a href="#pricing" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                Pricing
               </a>
               <a href="#benefits" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
                 Benefits
@@ -92,15 +134,15 @@ export default function LandingPage() {
                   Maintenance App
                 </h1>
                 <p className="text-lg text-muted-foreground max-w-lg">
-                  Enterprise-grade CMMS that goes beyond the competition. Intelligent asset management, 
-                  predictive maintenance, and unmatched efficiency for modern maintenance teams.
+                  Enterprise-grade CMMS with AI-powered predictive maintenance, smart part suggestions, 
+                  and seamless data migration. One flat rate, full access to everything.
                 </p>
               </div>
               
               <div className="flex flex-col sm:flex-row gap-4">
                 <Button size="lg" asChild className="gap-2" data-testid="button-get-started">
                   <a href="/api/login">
-                    Get Started Free
+                    Get Started
                     <ArrowRight className="h-4 w-4" />
                   </a>
                 </Button>
@@ -112,11 +154,11 @@ export default function LandingPage() {
               <div className="flex items-center gap-6 text-sm text-muted-foreground">
                 <span className="flex items-center gap-2">
                   <CheckCircle2 className="h-4 w-4 text-green-500" />
-                  No credit card required
+                  Full access included
                 </span>
                 <span className="flex items-center gap-2">
                   <CheckCircle2 className="h-4 w-4 text-green-500" />
-                  Free forever plan
+                  No hidden fees
                 </span>
               </div>
             </div>
@@ -160,13 +202,14 @@ export default function LandingPage() {
       <section id="features" className="py-20 px-4 bg-muted/30">
         <div className="max-w-7xl mx-auto">
           <div className="text-center mb-16">
-            <h2 className="text-3xl font-bold mb-4">Everything You Need</h2>
+            <h2 className="text-3xl font-bold mb-4">Everything You Need, Nothing You Don't</h2>
             <p className="text-muted-foreground max-w-2xl mx-auto">
-              A complete maintenance management solution designed for organizations that demand excellence.
+              A complete maintenance management solution with AI-powered intelligence. 
+              One subscription unlocks all features - no tiers, no add-ons, no surprises.
             </p>
           </div>
 
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
             {features.map((feature) => (
               <Card key={feature.title} className="hover-elevate transition-all duration-200">
                 <CardContent className="pt-6">
@@ -182,7 +225,73 @@ export default function LandingPage() {
         </div>
       </section>
 
-      <section id="benefits" className="py-20 px-4">
+      <section id="pricing" className="py-20 px-4">
+        <div className="max-w-4xl mx-auto">
+          <div className="text-center mb-12">
+            <h2 className="text-3xl font-bold mb-4">Simple, Transparent Pricing</h2>
+            <p className="text-muted-foreground max-w-xl mx-auto">
+              One flat rate. Full access to every feature. No nickel-and-diming, no feature gates, 
+              no surprise charges. Everything included from day one.
+            </p>
+          </div>
+
+          <Card className="relative overflow-hidden">
+            <div className="absolute top-0 right-0 bg-primary text-primary-foreground px-4 py-1 text-sm font-medium rounded-bl-lg">
+              All-Inclusive
+            </div>
+            <CardContent className="p-8">
+              <div className="grid md:grid-cols-2 gap-8 items-center">
+                <div className="space-y-6">
+                  <div className="flex items-center gap-3">
+                    <div className="h-14 w-14 rounded-xl bg-primary/10 flex items-center justify-center">
+                      <DollarSign className="h-7 w-7 text-primary" />
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Per user, per month</p>
+                      <p className="text-4xl font-bold">Contact Us</p>
+                    </div>
+                  </div>
+                  <p className="text-muted-foreground">
+                    Custom pricing based on your fleet size. Volume discounts available for larger organizations.
+                  </p>
+                  <Button size="lg" asChild className="w-full gap-2" data-testid="button-contact-sales">
+                    <a href="/api/login">
+                      Get Started
+                      <ArrowRight className="h-4 w-4" />
+                    </a>
+                  </Button>
+                </div>
+                <div className="space-y-3">
+                  <p className="font-semibold text-sm uppercase tracking-wide text-muted-foreground mb-4">
+                    Everything Included:
+                  </p>
+                  <ul className="space-y-3">
+                    {[
+                      "Unlimited assets & work orders",
+                      "AI predictive maintenance",
+                      "Smart part suggestions",
+                      "Bulk data import & migration",
+                      "Barcode & QR scanning",
+                      "Full inventory management",
+                      "Procurement & PO workflows",
+                      "Telematics integration",
+                      "Manual-powered AI intelligence",
+                      "Unlimited users & technicians",
+                    ].map((item) => (
+                      <li key={item} className="flex items-center gap-2 text-sm">
+                        <CheckCircle2 className="h-4 w-4 text-primary flex-shrink-0" />
+                        <span>{item}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </section>
+
+      <section id="benefits" className="py-20 px-4 bg-muted/30">
         <div className="max-w-7xl mx-auto">
           <div className="grid lg:grid-cols-2 gap-12 items-center">
             <div className="space-y-8">
@@ -201,8 +310,8 @@ export default function LandingPage() {
                   </li>
                 ))}
               </ul>
-              <Button size="lg" asChild data-testid="button-start-free">
-                <a href="/api/login">Start Free Today</a>
+              <Button size="lg" asChild data-testid="button-start-today">
+                <a href="/api/login">Start Today</a>
               </Button>
             </div>
 
@@ -225,6 +334,38 @@ export default function LandingPage() {
                   <p className="text-sm text-muted-foreground">User Satisfaction</p>
                 </Card>
               </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="py-20 px-4">
+        <div className="max-w-4xl mx-auto text-center">
+          <h2 className="text-3xl font-bold mb-4">Switching Systems? We Make It Easy.</h2>
+          <p className="text-muted-foreground max-w-2xl mx-auto mb-8">
+            Our bulk import tools let you bring your entire maintenance history with you. 
+            Assets, parts, work orders, purchase orders - import it all and hit the ground running.
+          </p>
+          <div className="flex flex-wrap justify-center gap-4">
+            <div className="flex items-center gap-2 bg-muted/50 px-4 py-2 rounded-full text-sm">
+              <Upload className="h-4 w-4 text-primary" />
+              <span>Asset Import</span>
+            </div>
+            <div className="flex items-center gap-2 bg-muted/50 px-4 py-2 rounded-full text-sm">
+              <Package className="h-4 w-4 text-primary" />
+              <span>Parts Inventory</span>
+            </div>
+            <div className="flex items-center gap-2 bg-muted/50 px-4 py-2 rounded-full text-sm">
+              <Wrench className="h-4 w-4 text-primary" />
+              <span>Work Order History</span>
+            </div>
+            <div className="flex items-center gap-2 bg-muted/50 px-4 py-2 rounded-full text-sm">
+              <FileText className="h-4 w-4 text-primary" />
+              <span>PO Records</span>
+            </div>
+            <div className="flex items-center gap-2 bg-muted/50 px-4 py-2 rounded-full text-sm">
+              <BarChart3 className="h-4 w-4 text-primary" />
+              <span>Usage History</span>
             </div>
           </div>
         </div>

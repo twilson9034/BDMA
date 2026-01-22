@@ -872,3 +872,66 @@ export const checklistMakeModelAssignmentsRelations = relations(checklistMakeMod
 export const insertChecklistMakeModelAssignmentSchema = createInsertSchema(checklistMakeModelAssignments).omit({ id: true, createdAt: true });
 export type InsertChecklistMakeModelAssignment = z.infer<typeof insertChecklistMakeModelAssignmentSchema>;
 export type ChecklistMakeModelAssignment = typeof checklistMakeModelAssignments.$inferSelect;
+
+// ============================================================
+// IMPORT JOBS (Bulk data import tracking)
+// ============================================================
+export const importJobStatusEnum = ["pending", "processing", "completed", "failed", "cancelled"] as const;
+export const importJobTypeEnum = ["assets", "parts", "work_orders", "purchase_orders", "part_usage", "vendors", "locations"] as const;
+
+export const importJobs = pgTable("import_jobs", {
+  id: serial("id").primaryKey(),
+  type: text("type").notNull().$type<typeof importJobTypeEnum[number]>(),
+  status: text("status").notNull().default("pending").$type<typeof importJobStatusEnum[number]>(),
+  fileName: text("file_name").notNull(),
+  totalRows: integer("total_rows").default(0),
+  processedRows: integer("processed_rows").default(0),
+  successRows: integer("success_rows").default(0),
+  errorRows: integer("error_rows").default(0),
+  errors: jsonb("errors").$type<{ row: number; message: string }[]>(),
+  mappings: jsonb("mappings").$type<Record<string, string>>(),
+  createdBy: text("created_by"),
+  startedAt: timestamp("started_at"),
+  completedAt: timestamp("completed_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_import_jobs_status").on(table.status),
+  index("idx_import_jobs_type").on(table.type),
+]);
+
+export const insertImportJobSchema = createInsertSchema(importJobs).omit({ id: true, createdAt: true });
+export type InsertImportJob = z.infer<typeof insertImportJobSchema>;
+export type ImportJob = typeof importJobs.$inferSelect;
+
+// ============================================================
+// PART USAGE HISTORY (For smart part suggestions)
+// ============================================================
+export const partUsageHistory = pgTable("part_usage_history", {
+  id: serial("id").primaryKey(),
+  partId: integer("part_id").references(() => parts.id),
+  partNumber: text("part_number").notNull(),
+  partName: text("part_name"),
+  vmrsCode: text("vmrs_code"),
+  manufacturer: text("manufacturer"),
+  model: text("model"),
+  year: integer("year"),
+  assetId: integer("asset_id").references(() => assets.id),
+  workOrderId: integer("work_order_id").references(() => workOrders.id),
+  quantity: decimal("quantity", { precision: 10, scale: 2 }).default("1"),
+  usedAt: timestamp("used_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_part_usage_vmrs").on(table.vmrsCode),
+  index("idx_part_usage_make_model").on(table.manufacturer, table.model),
+  index("idx_part_usage_part").on(table.partId),
+]);
+
+export const partUsageHistoryRelations = relations(partUsageHistory, ({ one }) => ({
+  part: one(parts, { fields: [partUsageHistory.partId], references: [parts.id] }),
+  asset: one(assets, { fields: [partUsageHistory.assetId], references: [assets.id] }),
+  workOrder: one(workOrders, { fields: [partUsageHistory.workOrderId], references: [workOrders.id] }),
+}));
+
+export const insertPartUsageHistorySchema = createInsertSchema(partUsageHistory).omit({ id: true, createdAt: true });
+export type InsertPartUsageHistory = z.infer<typeof insertPartUsageHistorySchema>;
+export type PartUsageHistory = typeof partUsageHistory.$inferSelect;

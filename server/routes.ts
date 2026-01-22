@@ -1831,5 +1831,246 @@ Example: ["Check engine oil level", "Inspect tire pressure and tread depth", "Te
     }
   });
 
+  // ============================================================
+  // IMPORT JOBS (Bulk Data Import)
+  // ============================================================
+  app.get("/api/import-jobs", async (req, res) => {
+    try {
+      const jobs = await storage.getImportJobs();
+      res.json(jobs);
+    } catch (error) {
+      console.error("Error fetching import jobs:", error);
+      res.status(500).json({ error: "Failed to fetch import jobs" });
+    }
+  });
+
+  app.get("/api/import-jobs/:id", async (req, res) => {
+    try {
+      const job = await storage.getImportJob(parseInt(req.params.id));
+      if (!job) {
+        return res.status(404).json({ error: "Import job not found" });
+      }
+      res.json(job);
+    } catch (error) {
+      console.error("Error fetching import job:", error);
+      res.status(500).json({ error: "Failed to fetch import job" });
+    }
+  });
+
+  app.post("/api/import-jobs", async (req, res) => {
+    try {
+      const { type, fileName, data, mappings } = req.body;
+      
+      // Create the import job
+      const job = await storage.createImportJob({
+        type,
+        fileName,
+        status: "processing",
+        totalRows: data?.length || 0,
+        processedRows: 0,
+        successRows: 0,
+        errorRows: 0,
+        errors: [],
+        mappings,
+        startedAt: new Date(),
+      });
+
+      // Process the import in the background
+      processImportJob(job.id, type, data, mappings);
+
+      res.status(201).json(job);
+    } catch (error) {
+      console.error("Error creating import job:", error);
+      res.status(500).json({ error: "Failed to create import job" });
+    }
+  });
+
+  async function processImportJob(jobId: number, type: string, data: any[], mappings: Record<string, string>) {
+    let successCount = 0;
+    let errorCount = 0;
+    const errors: { row: number; message: string }[] = [];
+
+    for (let i = 0; i < data.length; i++) {
+      try {
+        const row = data[i];
+        const mapped = mapRowToSchema(row, mappings);
+
+        switch (type) {
+          case "assets":
+            await storage.createAsset(mapped);
+            break;
+          case "parts":
+            await storage.createPart(mapped);
+            break;
+          case "vendors":
+            await storage.createVendor(mapped);
+            break;
+          case "work_orders":
+            const woNumber = await generateWorkOrderNumber();
+            await storage.createWorkOrder({ ...mapped, workOrderNumber: woNumber });
+            break;
+          case "purchase_orders":
+            const poNumber = await generatePONumber();
+            await storage.createPurchaseOrder({ ...mapped, poNumber });
+            break;
+          default:
+            throw new Error(`Unsupported import type: ${type}`);
+        }
+        successCount++;
+      } catch (error: any) {
+        errorCount++;
+        errors.push({ row: i + 1, message: error.message || "Unknown error" });
+      }
+
+      // Update progress every 10 rows
+      if ((i + 1) % 10 === 0 || i === data.length - 1) {
+        await storage.updateImportJob(jobId, {
+          processedRows: i + 1,
+          successRows: successCount,
+          errorRows: errorCount,
+          errors,
+        });
+      }
+    }
+
+    // Mark as completed
+    await storage.updateImportJob(jobId, {
+      status: errors.length > 0 && successCount === 0 ? "failed" : "completed",
+      processedRows: data.length,
+      successRows: successCount,
+      errorRows: errorCount,
+      errors,
+      completedAt: new Date(),
+    });
+  }
+
+  function mapRowToSchema(row: Record<string, any>, mappings: Record<string, string>) {
+    const mapped: Record<string, any> = {};
+    for (const [csvColumn, schemaField] of Object.entries(mappings)) {
+      if (row[csvColumn] !== undefined && row[csvColumn] !== "") {
+        mapped[schemaField] = row[csvColumn];
+      }
+    }
+    return mapped;
+  }
+
+  // ============================================================
+  // SMART PART SUGGESTIONS
+  // ============================================================
+  app.get("/api/smart-part-suggestions", async (req, res) => {
+    try {
+      const { vmrsCode, manufacturer, model, year } = req.query;
+      
+      if (!vmrsCode) {
+        return res.status(400).json({ error: "vmrsCode is required" });
+      }
+
+      // Get historical part suggestions based on usage
+      const historicalSuggestions = await storage.getSmartPartSuggestions(
+        vmrsCode as string,
+        manufacturer as string | undefined,
+        model as string | undefined,
+        year ? parseInt(year as string) : undefined
+      );
+
+      res.json({
+        historical: historicalSuggestions,
+        source: "usage_history"
+      });
+    } catch (error) {
+      console.error("Error fetching smart part suggestions:", error);
+      res.status(500).json({ error: "Failed to fetch part suggestions" });
+    }
+  });
+
+  app.post("/api/smart-part-suggestions/ai", async (req, res) => {
+    try {
+      const { vmrsCode, vmrsTitle, manufacturer, model, year } = req.body;
+
+      if (!process.env.AI_INTEGRATIONS_OPENAI_API_KEY) {
+        return res.status(503).json({ error: "AI service not configured" });
+      }
+
+      const openai = new OpenAI({
+        apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
+        baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+      });
+
+      // Fetch manuals for the make/model to get part recommendations
+      let manualContext = "";
+      if (manufacturer) {
+        try {
+          const manuals = await storage.getManualsByMakeModel(manufacturer, model);
+          if (manuals.length > 0) {
+            manualContext = "\n\nRelevant service manual information:\n";
+            for (const manual of manuals.slice(0, 2)) {
+              const sections = await storage.getManualSections(manual.id);
+              for (const section of sections.slice(0, 5)) {
+                if (section.content && section.content.toLowerCase().includes("part")) {
+                  manualContext += `- ${section.title}: ${section.content.substring(0, 300)}\n`;
+                }
+              }
+            }
+          }
+        } catch (error) {
+          console.warn("Failed to fetch manuals for part suggestions:", error);
+        }
+      }
+
+      // Get existing parts inventory
+      const allParts = await storage.getParts();
+      const partsContext = allParts.slice(0, 50).map(p => `${p.partNumber}: ${p.name}`).join("\n");
+
+      const prompt = `You are a fleet maintenance expert. Suggest the most appropriate parts for the following repair:
+
+VMRS Code: ${vmrsCode}${vmrsTitle ? ` (${vmrsTitle})` : ""}
+Vehicle: ${manufacturer || "Unknown"} ${model || ""} ${year || ""}
+${manualContext}
+
+Available parts in inventory:
+${partsContext}
+
+Based on the VMRS code and vehicle information, suggest 3-5 parts that would typically be needed for this repair. Return ONLY a JSON array with objects containing:
+- partNumber: The part number from the inventory (if applicable) or a generic description
+- reason: Brief explanation why this part is suggested
+
+Example: [{"partNumber": "BP-001", "reason": "Standard brake pads for this model"}]`;
+
+      const response = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [{ role: "user", content: prompt }],
+        max_completion_tokens: 500,
+      });
+
+      const content = response.choices[0]?.message?.content || "[]";
+      let suggestions: { partNumber: string; reason: string }[] = [];
+      
+      try {
+        const jsonMatch = content.match(/\[[\s\S]*\]/);
+        if (jsonMatch) {
+          suggestions = JSON.parse(jsonMatch[0]);
+        }
+      } catch {
+        console.error("Failed to parse AI suggestions:", content);
+      }
+
+      res.json({ suggestions, source: "ai" });
+    } catch (error) {
+      console.error("AI part suggestions error:", error);
+      res.status(500).json({ error: "Failed to get AI part suggestions" });
+    }
+  });
+
+  // Record part usage for future suggestions
+  app.post("/api/part-usage", async (req, res) => {
+    try {
+      const usage = await storage.createPartUsageHistory(req.body);
+      res.status(201).json(usage);
+    } catch (error) {
+      console.error("Error recording part usage:", error);
+      res.status(500).json({ error: "Failed to record part usage" });
+    }
+  });
+
   return httpServer;
 }

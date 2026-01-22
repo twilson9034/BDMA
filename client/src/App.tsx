@@ -50,6 +50,7 @@ import EstimateDetail from "@/pages/estimate-detail";
 import ChecklistTemplates from "@/pages/checklist-templates";
 import ChecklistTemplateNew from "@/pages/checklist-template-new";
 import ChecklistTemplateDetail from "@/pages/checklist-template-detail";
+import BulkImport from "@/pages/bulk-import";
 import NotFound from "@/pages/not-found";
 
 function AuthenticatedRouter() {
@@ -91,6 +92,7 @@ function AuthenticatedRouter() {
       <Route path="/checklist-templates" component={ChecklistTemplates} />
       <Route path="/checklist-templates/new" component={ChecklistTemplateNew} />
       <Route path="/checklist-templates/:id" component={ChecklistTemplateDetail} />
+      <Route path="/import" component={BulkImport} />
       <Route path="/settings" component={Settings} />
       <Route path="/settings/vmrs" component={VmrsSettings} />
       <Route component={NotFound} />
