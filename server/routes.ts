@@ -750,7 +750,13 @@ export async function registerRoutes(
       }
 
       await storage.updateRequisition(id, { status: "converted" });
-      res.status(201).json(po);
+      
+      // Ensure the client knows this is a PO with the correct properties
+      res.status(201).json({
+        ...po,
+        id: po.id,
+        poNumber: po.poNumber
+      });
     } catch (error) {
       console.error("Conversion error:", error);
       res.status(500).json({ error: "Failed to convert requisition to PO" });
@@ -898,11 +904,18 @@ export async function registerRoutes(
 
   app.post("/api/purchase-orders/:id/lines", requireAuth, async (req, res) => {
     try {
+      const poId = parseInt(req.params.id);
       const validated = insertPurchaseOrderLineSchema.parse({
         ...req.body,
-        poId: parseInt(req.params.id),
+        poId,
       });
       const line = await storage.createPurchaseOrderLine(validated);
+
+      // Recalculate PO total
+      const lines = await storage.getPurchaseOrderLines(poId);
+      const totalAmount = lines.reduce((sum, l) => sum + (parseFloat(l.totalCost || "0")), 0).toString();
+      await storage.updatePurchaseOrder(poId, { totalAmount });
+
       res.status(201).json(line);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -914,8 +927,15 @@ export async function registerRoutes(
 
   app.patch("/api/po-lines/:id", requireAuth, async (req, res) => {
     try {
-      const updated = await storage.updatePurchaseOrderLine(parseInt(req.params.id), req.body);
+      const lineId = parseInt(req.params.id);
+      const updated = await storage.updatePurchaseOrderLine(lineId, req.body);
       if (!updated) return res.status(404).json({ error: "PO line not found" });
+
+      // Recalculate PO total
+      const lines = await storage.getPurchaseOrderLines(updated.poId);
+      const totalAmount = lines.reduce((sum, l) => sum + (parseFloat(l.totalCost || "0")), 0).toString();
+      await storage.updatePurchaseOrder(updated.poId, { totalAmount });
+
       res.json(updated);
     } catch (error) {
       res.status(500).json({ error: "Failed to update PO line" });
@@ -924,7 +944,17 @@ export async function registerRoutes(
 
   app.delete("/api/po-lines/:id", requireAuth, async (req, res) => {
     try {
-      await storage.deletePurchaseOrderLine(parseInt(req.params.id));
+      const lineId = parseInt(req.params.id);
+      const line = await storage.getPurchaseOrderLine(lineId);
+      if (!line) return res.status(404).json({ error: "PO line not found" });
+
+      await storage.deletePurchaseOrderLine(lineId);
+
+      // Recalculate PO total
+      const lines = await storage.getPurchaseOrderLines(line.poId);
+      const totalAmount = lines.reduce((sum, l) => sum + (parseFloat(l.totalCost || "0")), 0).toString();
+      await storage.updatePurchaseOrder(line.poId, { totalAmount });
+
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete PO line" });
