@@ -142,6 +142,9 @@ export default function WorkOrderDetail() {
     queryKey: ["/api/parts"],
   });
 
+  // Compute linked asset early for smart suggestions
+  const linkedAsset = assets?.find(a => a.id === workOrder?.assetId);
+
   // Smart part suggestions based on VMRS code and asset make/model
   const suggestionsQueryParams = suggestionsVmrs ? new URLSearchParams({
     vmrsCode: suggestionsVmrs,
@@ -506,7 +509,6 @@ export default function WorkOrderDetail() {
     );
   }
 
-  const linkedAsset = assets?.find(a => a.id === workOrder.assetId);
   const autoTitle = `${workOrder.workOrderNumber} | ${linkedAsset?.assetNumber || 'No Asset'}`;
 
   return (
