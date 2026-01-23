@@ -38,9 +38,15 @@ const workOrderFormSchema = z.object({
   dueDate: z.string().optional(),
   estimatedHours: z.string().optional(),
   notes: z.string().optional(),
+  workOrderLines: z.array(z.object({
+    description: z.string().optional(),
+    quantity: z.number().optional(),
+    assetId: z.number().optional(),
+  })).optional(),
 });
 
 type WorkOrderFormValues = z.infer<typeof workOrderFormSchema>;
+type WorkOrderLine = Exclude<WorkOrderFormValues["workOrderLines"], undefined>[number];
 
 export default function WorkOrderNew() {
   const [, navigate] = useLocation();
@@ -61,6 +67,7 @@ export default function WorkOrderNew() {
       dueDate: "",
       estimatedHours: "",
       notes: "",
+      workOrderLines: [],
     },
   });
 
@@ -99,6 +106,16 @@ export default function WorkOrderNew() {
 
   const onSubmit = (data: WorkOrderFormValues) => {
     createMutation.mutate(data);
+  };
+
+  const [workOrderLines, setWorkOrderLines] = useState<WorkOrderLine[]>([]);
+
+  const addWorkOrderLine = () => {
+    setWorkOrderLines([...workOrderLines, { description: '', quantity: 1, assetId: undefined }]);
+  };
+
+  const removeWorkOrderLine = (index: number) => {
+    setWorkOrderLines(workOrderLines.filter((_, i) => i !== index));
   };
 
   return (
@@ -304,6 +321,68 @@ export default function WorkOrderNew() {
               </CardContent>
             </Card>
           </div>
+
+          <Card className="glass-card">
+            <CardHeader>
+              <CardTitle className="text-lg">Work Order Lines</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {workOrderLines.map((line, index) => (
+                  <div key={index} className="grid grid-cols-3 gap-4">
+                    <div>
+                      <Label htmlFor={`line-description-${index}`}>Description</Label>
+                      <Input
+                        id={`line-description-${index}`}
+                        value={line.description}
+                        onChange={(e) => {
+                          const newLines = [...workOrderLines];
+                          newLines[index].description = e.target.value;
+                          setWorkOrderLines(newLines);
+                        }}
+                        placeholder="Line description"
+                        data-testid={`input-line-description-${index}`}
+                      />
+                    </div>
+
+                    <div>
+                      <Label htmlFor={`line-quantity-${index}`}>Quantity</Label>
+                      <Input
+                        id={`line-quantity-${index}`}
+                        type="number"
+                        value={line.quantity}
+                        onChange={(e) => {
+                          const newLines = [...workOrderLines];
+                          newLines[index].quantity = Number(e.target.value);
+                          setWorkOrderLines(newLines);
+                        }}
+                        placeholder="1"
+                        data-testid={`input-line-quantity-${index}`}
+                      />
+                    </div>
+
+                    <div className="flex items-end">
+                      <Button
+                        variant="destructive"
+                        onClick={() => removeWorkOrderLine(index)}
+                        data-testid={`button-remove-line-${index}`}
+                      >
+                        Remove
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+
+                <Button 
+                  type="button" 
+                  onClick={addWorkOrderLine}
+                  data-testid="button-add-line"
+                >
+                  Add Work Order Line
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
 
           <div className="flex justify-end gap-4">
             <Button 
