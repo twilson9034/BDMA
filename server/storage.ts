@@ -292,6 +292,20 @@ export interface IStorage {
   getPartUsageHistory(vmrsCode?: string, manufacturer?: string, model?: string, year?: number): Promise<PartUsageHistory[]>;
   createPartUsageHistory(usage: InsertPartUsageHistory): Promise<PartUsageHistory>;
   getSmartPartSuggestions(vmrsCode: string, manufacturer?: string, model?: string, year?: number): Promise<{ partId: number; partNumber: string; partName: string | null; usageCount: number }[]>;
+
+  // Work Order Parts History Import
+  importWorkOrderPartsHistory(rows: Array<{
+    partNumber: string;
+    transactionDate: string;
+    description?: string;
+    workOrderNumber: string;
+    vehicleAsset: string;
+    vmrsCode?: string;
+    partType?: string;
+    quantity: string | number;
+    unitPrice: string | number;
+    totalCost?: string | number;
+  }>): Promise<{ successCount: number; errorCount: number; errors: Array<{ row: number; message: string }> }>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1208,6 +1222,109 @@ export class DatabaseStorage implements IStorage {
       partName: r.partName,
       usageCount: r.usageCount,
     }));
+  }
+
+  // Import Work Order Parts History
+  async importWorkOrderPartsHistory(rows: Array<{
+    partNumber: string;
+    transactionDate: string;
+    description?: string;
+    workOrderNumber: string;
+    vehicleAsset: string;
+    vmrsCode?: string;
+    partType?: string;
+    quantity: string | number;
+    unitPrice: string | number;
+    totalCost?: string | number;
+  }>): Promise<{ successCount: number; errorCount: number; errors: Array<{ row: number; message: string }> }> {
+    let successCount = 0;
+    let errorCount = 0;
+    const errors: Array<{ row: number; message: string }> = [];
+
+    for (let i = 0; i < rows.length; i++) {
+      try {
+        const row = rows[i];
+
+        // Find asset by name or assetNumber (case-insensitive)
+        const vehicleAsset = String(row.vehicleAsset).trim();
+        const assetList = await db.select().from(assets).where(
+          sql`LOWER(${assets.name}) = LOWER(${vehicleAsset}) OR LOWER(${assets.assetNumber}) = LOWER(${vehicleAsset})`
+        );
+        if (assetList.length === 0) {
+          throw new Error(`Asset "${vehicleAsset}" not found`);
+        }
+        const asset = assetList[0];
+
+        // Find or create part
+        let part = await this.getPartByNumber(row.partNumber);
+        if (!part) {
+          // Auto-create placeholder part
+          part = await this.createPart({
+            partNumber: row.partNumber,
+            name: row.partNumber,
+            category: "unknown",
+            unitCost: String(row.unitPrice),
+          });
+        }
+
+        // Find or create minimal work order
+        let workOrder = await this.getWorkOrderByNumber(row.workOrderNumber);
+        if (!workOrder) {
+          // Auto-create minimal work order
+          workOrder = await this.createWorkOrder({
+            workOrderNumber: row.workOrderNumber,
+            title: row.workOrderNumber,
+            type: "corrective",
+            priority: "medium",
+            status: "completed",
+            assetId: asset.id,
+          });
+        }
+
+        // Create or find work order line with VMRS code
+        let lineNumber = 1;
+        const existingLines = await this.getWorkOrderLines(workOrder.id);
+        if (existingLines.length > 0) {
+          lineNumber = Math.max(...existingLines.map(l => l.lineNumber)) + 1;
+        }
+
+        const workOrderLine = await this.createWorkOrderLine({
+          workOrderId: workOrder.id,
+          lineNumber,
+          description: row.description || `${row.partNumber} consumed`,
+          status: "completed",
+          vmrsCode: row.vmrsCode,
+          vmrsTitle: row.vmrsCode,
+        });
+
+        // Create work order transaction
+        const quantity = Number(row.quantity);
+        const unitPrice = Number(row.unitPrice);
+        const totalCost = row.totalCost ? Number(row.totalCost) : quantity * unitPrice;
+
+        await db.insert(workOrderTransactions).values({
+          workOrderId: workOrder.id,
+          workOrderLineId: workOrderLine.id,
+          type: "part_consumption",
+          partId: part.id,
+          quantity: String(quantity),
+          unitCost: String(unitPrice),
+          totalCost: String(totalCost),
+          description: row.description || `${row.partNumber} consumed`,
+          createdAt: new Date(row.transactionDate),
+        });
+
+        successCount++;
+      } catch (error: any) {
+        errorCount++;
+        errors.push({
+          row: i + 1,
+          message: error.message || "Unknown error",
+        });
+      }
+    }
+
+    return { successCount, errorCount, errors };
   }
 }
 

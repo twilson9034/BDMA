@@ -31,6 +31,8 @@ const IMPORT_TYPES = [
   { value: "assets", label: "Assets", icon: Truck, description: "Vehicles, equipment, facilities" },
   { value: "parts", label: "Parts Inventory", icon: Package, description: "Parts with stock levels and pricing" },
   { value: "work_orders", label: "Work Order History", icon: Wrench, description: "Historical work orders" },
+  { value: "work_order_parts", label: "Work Orders with Parts History", icon: Wrench, description: "Parts used by work order (with TRANS DATE)" },
+  { value: "vmrs_codes", label: "VMRS Codes", icon: Wrench, description: "Vehicle Maintenance Reporting Standards codes" },
   { value: "purchase_orders", label: "Purchase Orders", icon: ShoppingCart, description: "PO history and records" },
   { value: "vendors", label: "Vendors", icon: Building2, description: "Supplier information" },
   { value: "locations", label: "Locations", icon: MapPin, description: "Facilities and sites" },
@@ -48,6 +50,14 @@ const SCHEMA_MAPPINGS: Record<string, { required: string[]; optional: string[] }
   work_orders: {
     required: ["assetId", "type", "priority"],
     optional: ["title", "description", "status", "assignedTo", "scheduledDate", "completedDate", "notes"],
+  },
+  work_order_parts: {
+    required: ["partNumber", "transactionDate", "workOrderNumber", "vehicleAsset", "quantity", "unitPrice"],
+    optional: ["description", "vmrsCode", "partType", "totalCost"],
+  },
+  vmrs_codes: {
+    required: ["code", "title"],
+    optional: ["description", "systemCode", "assemblyCode", "componentCode", "isActive"],
   },
   purchase_orders: {
     required: ["vendorId"],

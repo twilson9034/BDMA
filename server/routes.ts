@@ -1890,48 +1890,83 @@ Example: ["Check engine oil level", "Inspect tire pressure and tread depth", "Te
     let errorCount = 0;
     const errors: { row: number; message: string }[] = [];
 
-    for (let i = 0; i < data.length; i++) {
+    // Special handling for work_order_parts import type
+    if (type === "work_order_parts") {
       try {
-        const row = data[i];
-        const mapped = mapRowToSchema(row, mappings);
-
-        switch (type) {
-          case "assets":
-            await storage.createAsset(mapped);
-            break;
-          case "parts":
-            await storage.createPart(mapped);
-            break;
-          case "vendors":
-            await storage.createVendor(mapped);
-            break;
-          case "work_orders":
-            const woNumber = await generateWorkOrderNumber();
-            await storage.createWorkOrder({ ...mapped, workOrderNumber: woNumber });
-            break;
-          case "purchase_orders":
-            const poNumber = await generatePONumber();
-            await storage.createPurchaseOrder({ ...mapped, poNumber });
-            break;
-          default:
-            throw new Error(`Unsupported import type: ${type}`);
-        }
-        successCount++;
-      } catch (error: any) {
-        errorCount++;
-        errors.push({ row: i + 1, message: error.message || "Unknown error" });
-      }
-
-      // Update progress every 10 rows
-      if ((i + 1) % 10 === 0 || i === data.length - 1) {
-        await storage.updateImportJob(jobId, {
-          processedRows: i + 1,
-          successRows: successCount,
-          errorRows: errorCount,
-          errors,
+        const rows = data.map(row => {
+          const mapped: any = {};
+          for (const [csvColumn, schemaField] of Object.entries(mappings)) {
+            if (row[csvColumn] !== undefined && row[csvColumn] !== "") {
+              mapped[schemaField] = row[csvColumn];
+            }
+          }
+          return mapped;
         });
+
+        const result = await storage.importWorkOrderPartsHistory(rows);
+        successCount = result.successCount;
+        errorCount = result.errorCount;
+        errors.push(...result.errors);
+      } catch (error: any) {
+        errorCount = data.length;
+        errors.push({ row: 1, message: error.message || "Failed to import work order parts" });
+      }
+    } else {
+      // Standard row-by-row processing for other import types
+      for (let i = 0; i < data.length; i++) {
+        try {
+          const row = data[i];
+          const mapped = mapRowToSchema(row, mappings);
+
+          switch (type) {
+            case "assets":
+              await storage.createAsset(mapped);
+              break;
+            case "parts":
+              await storage.createPart(mapped);
+              break;
+            case "vendors":
+              await storage.createVendor(mapped);
+              break;
+            case "work_orders":
+              const woNumber = await generateWorkOrderNumber();
+              await storage.createWorkOrder({ ...mapped, workOrderNumber: woNumber });
+              break;
+            case "vmrs_codes":
+              await storage.createVmrsCode(mapped);
+              break;
+            case "purchase_orders":
+              const poNumber = await generatePONumber();
+              await storage.createPurchaseOrder({ ...mapped, poNumber });
+              break;
+            default:
+              throw new Error(`Unsupported import type: ${type}`);
+          }
+          successCount++;
+        } catch (error: any) {
+          errorCount++;
+          errors.push({ row: i + 1, message: error.message || "Unknown error" });
+        }
+
+        // Update progress every 10 rows
+        if ((i + 1) % 10 === 0 || i === data.length - 1) {
+          await storage.updateImportJob(jobId, {
+            processedRows: i + 1,
+            successRows: successCount,
+            errorRows: errorCount,
+            errors,
+          });
+        }
       }
     }
+
+    // Final update after all rows processed
+    await storage.updateImportJob(jobId, {
+      processedRows: data.length,
+      successRows: successCount,
+      errorRows: errorCount,
+      errors,
+    });
 
     // Mark as completed
     await storage.updateImportJob(jobId, {
