@@ -3,7 +3,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { ArrowLeft, Save, Loader2 } from "lucide-react";
+import { ArrowLeft, Save, Loader2, Plus, X } from "lucide-react";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,11 +24,19 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { PageHeader } from "@/components/PageHeader";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import type { Asset, InsertWorkOrder } from "@shared/schema";
+import type { Asset, InsertWorkOrder, VmrsCode, WorkOrder } from "@shared/schema";
 
 const workOrderFormSchema = z.object({
   title: z.string().optional(),
@@ -39,22 +47,39 @@ const workOrderFormSchema = z.object({
   dueDate: z.string().optional(),
   estimatedHours: z.string().optional(),
   notes: z.string().optional(),
-  workOrderLines: z.array(z.object({
-    description: z.string().optional(),
-    quantity: z.number().optional(),
-    assetId: z.number().optional(),
-  })).optional(),
 });
 
 type WorkOrderFormValues = z.infer<typeof workOrderFormSchema>;
-type WorkOrderLine = Exclude<WorkOrderFormValues["workOrderLines"], undefined>[number];
+
+interface WorkOrderLineData {
+  description: string;
+  vmrsCode: string;
+  vmrsTitle: string;
+  complaint?: string;
+  cause?: string;
+  correction?: string;
+  notes?: string;
+}
 
 export default function WorkOrderNew() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
+  const [showAddLineDialog, setShowAddLineDialog] = useState(false);
+  const [selectedVmrsCodeId, setSelectedVmrsCodeId] = useState<string>("");
+  const [newLineDescription, setNewLineDescription] = useState("");
+  const [newLineComplaint, setNewLineComplaint] = useState("");
+  const [newLineCause, setNewLineCause] = useState("");
+  const [newLineCorrection, setNewLineCorrection] = useState("");
+  const [newLineNotes, setNewLineNotes] = useState("");
+  const [workOrderLines, setWorkOrderLines] = useState<WorkOrderLineData[]>([]);
+  const [createdWorkOrderId, setCreatedWorkOrderId] = useState<number | null>(null);
 
   const { data: assets } = useQuery<Asset[]>({
     queryKey: ["/api/assets"],
+  });
+
+  const { data: vmrsCodes = [] } = useQuery<VmrsCode[]>({
+    queryKey: ["/api/vmrs-codes"],
   });
 
   const form = useForm<WorkOrderFormValues>({
@@ -68,14 +93,13 @@ export default function WorkOrderNew() {
       dueDate: "",
       estimatedHours: "",
       notes: "",
-      workOrderLines: [],
     },
   });
 
   const createMutation = useMutation({
     mutationFn: async (data: WorkOrderFormValues) => {
       const payload: Partial<InsertWorkOrder> = {
-        title: data.title || undefined, // Auto-generated on backend if not provided
+        title: data.title || undefined,
         description: data.description || null,
         type: data.type,
         priority: data.priority,
@@ -85,16 +109,25 @@ export default function WorkOrderNew() {
         notes: data.notes || null,
         status: "open",
       };
-      return apiRequest("POST", "/api/work-orders", payload);
+      return apiRequest("POST", "/api/work-orders", payload) as unknown as WorkOrder;
     },
-    onSuccess: () => {
+    onSuccess: (response) => {
+      setCreatedWorkOrderId(response.id);
       queryClient.invalidateQueries({ queryKey: ["/api/work-orders"] });
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
-      toast({
-        title: "Work Order Created",
-        description: "The work order has been created successfully.",
-      });
-      navigate("/work-orders");
+      
+      if (workOrderLines.length > 0) {
+        toast({
+          title: "Work Order Created",
+          description: "Now add work order lines.",
+        });
+      } else {
+        toast({
+          title: "Work Order Created",
+          description: "The work order has been created successfully.",
+        });
+        navigate("/work-orders");
+      }
     },
     onError: () => {
       toast({
@@ -105,18 +138,81 @@ export default function WorkOrderNew() {
     },
   });
 
+  const createLineMutation = useMutation({
+    mutationFn: async (line: WorkOrderLineData) => {
+      return apiRequest("POST", `/api/work-orders/${createdWorkOrderId}/lines`, line);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/work-orders", createdWorkOrderId, "lines"] });
+      handleResetLineDialog();
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to add line.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleVmrsCodeSelect = (vmrsCodeId: string) => {
+    setSelectedVmrsCodeId(vmrsCodeId);
+    const selectedCode = vmrsCodes.find((code) => code.id.toString() === vmrsCodeId);
+    if (selectedCode) {
+      setNewLineDescription(selectedCode.description || selectedCode.title);
+    }
+  };
+
+  const handleResetLineDialog = () => {
+    setShowAddLineDialog(false);
+    setSelectedVmrsCodeId("");
+    setNewLineDescription("");
+    setNewLineComplaint("");
+    setNewLineCause("");
+    setNewLineCorrection("");
+    setNewLineNotes("");
+  };
+
+  const handleAddLine = async () => {
+    if (!selectedVmrsCodeId) {
+      toast({
+        title: "Error",
+        description: "Please select a VMRS code.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const selectedVmrs = vmrsCodes.find(code => code.id.toString() === selectedVmrsCodeId);
+    if (!selectedVmrs) {
+      toast({
+        title: "Error",
+        description: "Invalid VMRS code selected.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const line: WorkOrderLineData = {
+      description: newLineDescription,
+      vmrsCode: selectedVmrs.code,
+      vmrsTitle: selectedVmrs.title,
+      complaint: newLineComplaint || undefined,
+      cause: newLineCause || undefined,
+      correction: newLineCorrection || undefined,
+      notes: newLineNotes || undefined,
+    };
+
+    await createLineMutation.mutateAsync(line);
+    setWorkOrderLines([...workOrderLines, line]);
+  };
+
+  const handleRemoveLine = (index: number) => {
+    setWorkOrderLines(workOrderLines.filter((_, i) => i !== index));
+  };
+
   const onSubmit = (data: WorkOrderFormValues) => {
     createMutation.mutate(data);
-  };
-
-  const [workOrderLines, setWorkOrderLines] = useState<WorkOrderLine[]>([]);
-
-  const addWorkOrderLine = () => {
-    setWorkOrderLines([...workOrderLines, { description: '', quantity: 1, assetId: undefined }]);
-  };
-
-  const removeWorkOrderLine = (index: number) => {
-    setWorkOrderLines(workOrderLines.filter((_, i) => i !== index));
   };
 
   return (
@@ -327,61 +423,37 @@ export default function WorkOrderNew() {
             <CardHeader>
               <CardTitle className="text-lg">Work Order Lines</CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {workOrderLines.map((line, index) => (
-                  <div key={index} className="grid grid-cols-3 gap-4">
-                    <div>
-                      <Label htmlFor={`line-description-${index}`}>Description</Label>
-                      <Input
-                        id={`line-description-${index}`}
-                        value={line.description}
-                        onChange={(e) => {
-                          const newLines = [...workOrderLines];
-                          newLines[index].description = e.target.value;
-                          setWorkOrderLines(newLines);
-                        }}
-                        placeholder="Line description"
-                        data-testid={`input-line-description-${index}`}
-                      />
-                    </div>
-
-                    <div>
-                      <Label htmlFor={`line-quantity-${index}`}>Quantity</Label>
-                      <Input
-                        id={`line-quantity-${index}`}
-                        type="number"
-                        value={line.quantity}
-                        onChange={(e) => {
-                          const newLines = [...workOrderLines];
-                          newLines[index].quantity = Number(e.target.value);
-                          setWorkOrderLines(newLines);
-                        }}
-                        placeholder="1"
-                        data-testid={`input-line-quantity-${index}`}
-                      />
-                    </div>
-
-                    <div className="flex items-end">
+            <CardContent className="space-y-4">
+              {workOrderLines.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No work order lines added yet.</p>
+              ) : (
+                <div className="space-y-2">
+                  {workOrderLines.map((line, index) => (
+                    <div key={index} className="flex items-center justify-between p-3 border rounded-lg">
+                      <div className="flex-1">
+                        <p className="font-medium text-sm">{line.description}</p>
+                        {line.complaint && <p className="text-xs text-muted-foreground">Complaint: {line.complaint}</p>}
+                      </div>
                       <Button
-                        variant="destructive"
-                        onClick={() => removeWorkOrderLine(index)}
-                        data-testid={`button-remove-line-${index}`}
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleRemoveLine(index)}
                       >
-                        Remove
+                        <X className="h-4 w-4" />
                       </Button>
                     </div>
-                  </div>
-                ))}
-
-                <Button 
-                  type="button" 
-                  onClick={addWorkOrderLine}
-                  data-testid="button-add-line"
-                >
-                  Add Work Order Line
-                </Button>
-              </div>
+                  ))}
+                </div>
+              )}
+              <Button 
+                type="button" 
+                onClick={() => setShowAddLineDialog(true)}
+                disabled={!createdWorkOrderId}
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Add Work Order Line
+              </Button>
             </CardContent>
           </Card>
 
@@ -409,6 +481,105 @@ export default function WorkOrderNew() {
           </div>
         </form>
       </Form>
+
+      <Dialog open={showAddLineDialog} onOpenChange={setShowAddLineDialog}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Add Work Order Line</DialogTitle>
+            <DialogDescription>
+              Select a VMRS code to add a maintenance task. Description auto-fills from the code.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <label className="text-[10px] uppercase font-bold text-muted-foreground">VMRS Code *</label>
+              <Select value={selectedVmrsCodeId} onValueChange={handleVmrsCodeSelect}>
+                <SelectTrigger data-testid="select-vmrs-code">
+                  <SelectValue placeholder="Select a VMRS code..." />
+                </SelectTrigger>
+                <SelectContent className="max-h-[300px]">
+                  {vmrsCodes.length > 0 ? (
+                    vmrsCodes.map((code) => (
+                      <SelectItem key={code.id} value={code.id.toString()}>
+                        <span className="font-mono">{code.code}</span> - {code.title}
+                      </SelectItem>
+                    ))
+                  ) : (
+                    <SelectItem value="none" disabled>No VMRS codes available. Add them in Settings.</SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+            
+            {selectedVmrsCodeId && (
+              <div className="space-y-2">
+                <label className="text-[10px] uppercase font-bold text-muted-foreground">Description (auto-filled)</label>
+                <div className="p-3 bg-muted rounded-md text-sm">
+                  {newLineDescription || "No description available"}
+                </div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <label className="text-[10px] uppercase font-bold text-muted-foreground">Complaint</label>
+                <Textarea 
+                  placeholder="Reason for repair" 
+                  className="h-20"
+                  value={newLineComplaint} 
+                  onChange={(e) => setNewLineComplaint(e.target.value)} 
+                  data-testid="input-line-complaint"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] uppercase font-bold text-muted-foreground">Cause</label>
+                <Textarea 
+                  placeholder="Root cause found" 
+                  className="h-20"
+                  value={newLineCause} 
+                  onChange={(e) => setNewLineCause(e.target.value)} 
+                  data-testid="input-line-cause"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] uppercase font-bold text-muted-foreground">Correction</label>
+                <Textarea 
+                  placeholder="Steps taken to fix" 
+                  className="h-20"
+                  value={newLineCorrection} 
+                  onChange={(e) => setNewLineCorrection(e.target.value)} 
+                  data-testid="input-line-correction"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-[10px] uppercase font-bold text-muted-foreground">Notes</label>
+              <Textarea 
+                placeholder="General technician notes" 
+                value={newLineNotes} 
+                onChange={(e) => setNewLineNotes(e.target.value)} 
+                data-testid="input-line-notes"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={handleResetLineDialog}>Cancel</Button>
+            <Button 
+              onClick={handleAddLine}
+              disabled={!selectedVmrsCodeId || createLineMutation.isPending}
+              data-testid="button-confirm-add-line"
+            >
+              {createLineMutation.isPending ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Plus className="h-4 w-4 mr-2" />
+              )}
+              Add Line
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
