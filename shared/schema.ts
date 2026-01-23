@@ -145,6 +145,19 @@ export const parts = pgTable("parts", {
   vendorId: integer("vendor_id").references(() => vendors.id),
   vendorPartNumber: text("vendor_part_number"),
   barcode: text("barcode"),
+  bin: text("bin"),
+  vendor: text("vendor"),
+  vmrsCode: text("vmrs_code"),
+  type: text("type"),
+  altPartNum: text("alt_part_num"),
+  interVmrs: text("inter_vmrs"),
+  majorVmrs: text("major_vmrs"),
+  minorVmrs: text("minor_vmrs"),
+  prevPoFacility: text("prev_po_facility"),
+  tankFacility: text("tank_facility"),
+  orderPrice: decimal("order_price", { precision: 12, scale: 2 }),
+  lastOrderDate: timestamp("last_order_date"),
+  avgShipDays: integer("avg_ship_days"),
   imageUrl: text("image_url"),
   isActive: boolean("is_active").default(true),
   createdAt: timestamp("created_at").defaultNow(),
@@ -876,8 +889,23 @@ export type ChecklistMakeModelAssignment = typeof checklistMakeModelAssignments.
 // ============================================================
 // IMPORT JOBS (Bulk data import tracking)
 // ============================================================
-export const importJobStatusEnum = ["pending", "processing", "completed", "failed", "cancelled"] as const;
+export const importJobStatusEnum = ["pending", "processing", "completed", "completed_with_errors", "failed", "cancelled"] as const;
 export const importJobTypeEnum = ["assets", "parts", "work_orders", "purchase_orders", "part_usage", "vendors", "locations"] as const;
+
+export type ImportErrorDetail = {
+  row: number;
+  field?: string;
+  value?: string;
+  message: string;
+  errorType: string;
+};
+
+export type ImportErrorSummary = {
+  byType: Record<string, number>;
+  byField: Record<string, number>;
+  sampleErrors: Record<string, string[]>;
+  totalErrors: number;
+};
 
 export const importJobs = pgTable("import_jobs", {
   id: serial("id").primaryKey(),
@@ -888,7 +916,8 @@ export const importJobs = pgTable("import_jobs", {
   processedRows: integer("processed_rows").default(0),
   successRows: integer("success_rows").default(0),
   errorRows: integer("error_rows").default(0),
-  errors: jsonb("errors").$type<{ row: number; message: string }[]>(),
+  errors: jsonb("errors").$type<ImportErrorDetail[]>(),
+  errorSummary: jsonb("error_summary").$type<ImportErrorSummary>(),
   mappings: jsonb("mappings").$type<Record<string, string>>(),
   createdBy: text("created_by"),
   startedAt: timestamp("started_at"),

@@ -212,7 +212,10 @@ export default function Predictions() {
                             {formatType(prediction.predictionType)}
                           </Badge>
                           {prediction.acknowledged && (
-                            <Badge variant="outline" className="bg-muted">Acknowledged</Badge>
+                            <Badge variant="outline" className="bg-green-500/10 text-green-600 border-green-500/30">Acknowledged</Badge>
+                          )}
+                          {prediction.dismissedAt && (
+                            <Badge variant="outline" className="bg-muted">Dismissed</Badge>
                           )}
                         </div>
                         <p className="font-medium">{prediction.assetNumber} - {prediction.assetName}</p>
@@ -237,6 +240,13 @@ export default function Predictions() {
                         <span>{prediction.recommendedAction}</span>
                       </div>
                     </div>
+
+                    {prediction.reasoning && (
+                      <div className="bg-muted/30 p-3 rounded-lg text-sm mt-3">
+                        <p className="font-medium mb-1">AI Reasoning:</p>
+                        <p className="text-muted-foreground italic">{prediction.reasoning}</p>
+                      </div>
+                    )}
 
                     <div className="flex items-center justify-between pt-2 border-t border-border">
                       <div className="flex items-center gap-4 text-sm text-muted-foreground">

@@ -921,6 +921,38 @@ export class DatabaseStorage implements IStorage {
     );
   }
 
+  async getPredictions(): Promise<(Prediction & { assetName?: string; assetNumber?: string })[]> {
+    const results = await db
+      .select({
+        prediction: predictions,
+        assetName: assets.name,
+        assetNumber: assets.assetNumber,
+      })
+      .from(predictions)
+      .leftJoin(assets, eq(predictions.assetId, assets.id))
+      .orderBy(desc(predictions.createdAt));
+
+    return results.map(r => ({
+      ...r.prediction,
+      assetName: r.assetName || undefined,
+      assetNumber: r.assetNumber || undefined,
+    }));
+  }
+
+  async acknowledgePrediction(id: number): Promise<void> {
+    await db
+      .update(predictions)
+      .set({ acknowledged: true })
+      .where(eq(predictions.id, id));
+  }
+
+  async dismissPrediction(id: number): Promise<void> {
+    await db
+      .update(predictions)
+      .set({ dismissedAt: new Date() })
+      .where(eq(predictions.id, id));
+  }
+
   async getPredictionsByAsset(assetId: number): Promise<Prediction[]> {
     return db.select().from(predictions).where(eq(predictions.assetId, assetId)).orderBy(desc(predictions.createdAt));
   }
