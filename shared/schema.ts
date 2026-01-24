@@ -313,6 +313,47 @@ export type InsertWorkOrderTransaction = z.infer<typeof insertWorkOrderTransacti
 export type WorkOrderTransaction = typeof workOrderTransactions.$inferSelect;
 
 // ============================================================
+// LABOR ENTRIES (Multi-user Time Tracking)
+// ============================================================
+export const laborEntryStatusEnum = ["running", "paused", "completed"] as const;
+
+export const laborEntries = pgTable("labor_entries", {
+  id: serial("id").primaryKey(),
+  workOrderId: integer("work_order_id").notNull().references(() => workOrders.id, { onDelete: "cascade" }),
+  workOrderLineId: integer("work_order_line_id").references(() => workOrderLines.id),
+  userId: varchar("user_id").notNull(),
+  status: text("status").notNull().default("running").$type<typeof laborEntryStatusEnum[number]>(),
+  startTime: timestamp("start_time").notNull().defaultNow(),
+  endTime: timestamp("end_time"),
+  pausedDuration: integer("paused_duration").default(0), // Total paused time in seconds
+  hourlyRate: decimal("hourly_rate", { precision: 10, scale: 2 }),
+  calculatedHours: decimal("calculated_hours", { precision: 8, scale: 2 }),
+  laborCost: decimal("labor_cost", { precision: 12, scale: 2 }),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_labor_entries_work_order").on(table.workOrderId),
+  index("idx_labor_entries_user").on(table.userId),
+  index("idx_labor_entries_status").on(table.status),
+]);
+
+export const laborEntriesRelations = relations(laborEntries, ({ one }) => ({
+  workOrder: one(workOrders, { fields: [laborEntries.workOrderId], references: [workOrders.id] }),
+  workOrderLine: one(workOrderLines, { fields: [laborEntries.workOrderLineId], references: [workOrderLines.id] }),
+}));
+
+export const insertLaborEntrySchema = createInsertSchema(laborEntries).omit({ 
+  id: true, 
+  createdAt: true, 
+  updatedAt: true,
+  calculatedHours: true,
+  laborCost: true,
+});
+export type InsertLaborEntry = z.infer<typeof insertLaborEntrySchema>;
+export type LaborEntry = typeof laborEntries.$inferSelect;
+
+// ============================================================
 // PREVENTIVE MAINTENANCE SCHEDULES
 // ============================================================
 export const pmIntervalTypeEnum = ["days", "miles", "hours", "cycles"] as const;

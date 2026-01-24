@@ -479,10 +479,118 @@ export async function registerRoutes(
     }
   });
 
+  // Labor Entries (Multi-user Time Tracking)
+  app.get("/api/work-orders/:id/labor-entries", async (req, res) => {
+    try {
+      const entries = await storage.getLaborEntries(parseInt(req.params.id));
+      res.json(entries);
+    } catch (error) {
+      console.error("Error fetching labor entries:", error);
+      res.status(500).json({ error: "Failed to fetch labor entries" });
+    }
+  });
+
+  app.get("/api/labor-entries/active", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const userId = user?.claims?.sub || user?.id;
+      if (!userId) {
+        return res.status(401).json({ error: "User not authenticated" });
+      }
+      const entries = await storage.getActiveLaborEntries(userId);
+      res.json(entries);
+    } catch (error) {
+      console.error("Error fetching active labor entries:", error);
+      res.status(500).json({ error: "Failed to fetch active labor entries" });
+    }
+  });
+
+  app.post("/api/labor-entries", requireAuth, async (req, res) => {
+    try {
+      const reqUser = req.user as any;
+      const userId = reqUser?.claims?.sub || reqUser?.id;
+      if (!userId) {
+        return res.status(401).json({ error: "User not authenticated" });
+      }
+
+      // Get user's hourly rate if available
+      const user = await storage.getUser(userId);
+      const hourlyRate = user?.hourlyRate || null;
+
+      const entry = await storage.createLaborEntry({
+        ...req.body,
+        userId,
+        hourlyRate,
+        status: "running",
+        startTime: new Date(),
+      });
+      res.status(201).json(entry);
+    } catch (error) {
+      console.error("Error creating labor entry:", error);
+      res.status(500).json({ error: "Failed to create labor entry" });
+    }
+  });
+
+  app.patch("/api/labor-entries/:id", requireAuth, async (req, res) => {
+    try {
+      const entry = await storage.updateLaborEntry(parseInt(req.params.id), req.body);
+      if (!entry) {
+        return res.status(404).json({ error: "Labor entry not found" });
+      }
+      res.json(entry);
+    } catch (error) {
+      console.error("Error updating labor entry:", error);
+      res.status(500).json({ error: "Failed to update labor entry" });
+    }
+  });
+
+  app.post("/api/labor-entries/:id/complete", requireAuth, async (req, res) => {
+    try {
+      const entry = await storage.completeLaborEntry(parseInt(req.params.id));
+      if (!entry) {
+        return res.status(404).json({ error: "Labor entry not found" });
+      }
+      res.json(entry);
+    } catch (error) {
+      console.error("Error completing labor entry:", error);
+      res.status(500).json({ error: "Failed to complete labor entry" });
+    }
+  });
+
+  app.delete("/api/labor-entries/:id", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteLaborEntry(parseInt(req.params.id));
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting labor entry:", error);
+      res.status(500).json({ error: "Failed to delete labor entry" });
+    }
+  });
+
   // Work Order Lines
   app.get("/api/work-orders/:id/lines", async (req, res) => {
     const lines = await storage.getWorkOrderLines(parseInt(req.params.id));
     res.json(lines);
+  });
+
+  app.get("/api/work-orders/:id/deferred-lines", async (req, res) => {
+    try {
+      const lines = await storage.getRescheduledLinesToWorkOrder(parseInt(req.params.id));
+      res.json(lines);
+    } catch (error) {
+      console.error("Error fetching deferred lines:", error);
+      res.status(500).json({ error: "Failed to fetch deferred lines" });
+    }
+  });
+
+  app.get("/api/rescheduled-lines", async (req, res) => {
+    try {
+      const lines = await storage.getRescheduledLines();
+      res.json(lines);
+    } catch (error) {
+      console.error("Error fetching rescheduled lines:", error);
+      res.status(500).json({ error: "Failed to fetch rescheduled lines" });
+    }
   });
 
   app.post("/api/work-orders/:id/lines", requireAuth, async (req, res) => {

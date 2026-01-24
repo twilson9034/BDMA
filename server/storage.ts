@@ -108,6 +108,9 @@ import {
   partUsageHistory,
   type InsertPartUsageHistory,
   type PartUsageHistory,
+  laborEntries,
+  type InsertLaborEntry,
+  type LaborEntry,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -158,6 +161,8 @@ export interface IStorage {
   // Work Order Lines
   getWorkOrderLines(workOrderId: number): Promise<WorkOrderLine[]>;
   getWorkOrderLine(id: number): Promise<WorkOrderLine | undefined>;
+  getRescheduledLines(): Promise<WorkOrderLine[]>;
+  getRescheduledLinesToWorkOrder(workOrderId: number): Promise<WorkOrderLine[]>;
   createWorkOrderLine(line: InsertWorkOrderLine): Promise<WorkOrderLine>;
   updateWorkOrderLine(id: number, line: Partial<InsertWorkOrderLine>): Promise<WorkOrderLine | undefined>;
   deleteWorkOrderLine(id: number): Promise<void>;
@@ -314,6 +319,15 @@ export interface IStorage {
   addLineItem(lineId: number, data: { description: string; quantity: number; unitCost: number; partId?: number }): Promise<void>;
   getSimilarAssets(manufacturer: string, model: string, excludeAssetId: number): Promise<Asset[]>;
   getFleetPartReplacementPatterns(): Promise<{ partId: number; partNumber: string; partName: string; replacementCount: number; avgMeterReading: number }[]>;
+
+  // Labor Entries (Multi-user Time Tracking)
+  getLaborEntries(workOrderId: number): Promise<LaborEntry[]>;
+  getLaborEntry(id: number): Promise<LaborEntry | undefined>;
+  getActiveLaborEntries(userId: string): Promise<LaborEntry[]>;
+  createLaborEntry(entry: InsertLaborEntry): Promise<LaborEntry>;
+  updateLaborEntry(id: number, entry: Partial<InsertLaborEntry>): Promise<LaborEntry | undefined>;
+  completeLaborEntry(id: number): Promise<LaborEntry | undefined>;
+  deleteLaborEntry(id: number): Promise<void>;
 
   // Checklist Templates
   getChecklistTemplates(): Promise<ChecklistTemplate[]>;
@@ -558,6 +572,18 @@ export class DatabaseStorage implements IStorage {
   // Work Order Lines
   async getWorkOrderLines(workOrderId: number): Promise<WorkOrderLine[]> {
     return db.select().from(workOrderLines).where(eq(workOrderLines.workOrderId, workOrderId)).orderBy(workOrderLines.lineNumber);
+  }
+
+  async getRescheduledLines(): Promise<WorkOrderLine[]> {
+    return db.select().from(workOrderLines)
+      .where(eq(workOrderLines.status, "rescheduled"))
+      .orderBy(desc(workOrderLines.updatedAt));
+  }
+
+  async getRescheduledLinesToWorkOrder(workOrderId: number): Promise<WorkOrderLine[]> {
+    return db.select().from(workOrderLines)
+      .where(eq(workOrderLines.rescheduledTo, workOrderId))
+      .orderBy(workOrderLines.lineNumber);
   }
 
   async getWorkOrderLine(id: number): Promise<WorkOrderLine | undefined> {
@@ -1364,6 +1390,73 @@ export class DatabaseStorage implements IStorage {
       replacementCount: r.replacementCount,
       avgMeterReading: 0,
     }));
+  }
+
+  // Labor Entries (Multi-user Time Tracking)
+  async getLaborEntries(workOrderId: number): Promise<LaborEntry[]> {
+    return db.select().from(laborEntries)
+      .where(eq(laborEntries.workOrderId, workOrderId))
+      .orderBy(desc(laborEntries.startTime));
+  }
+
+  async getLaborEntry(id: number): Promise<LaborEntry | undefined> {
+    const [entry] = await db.select().from(laborEntries).where(eq(laborEntries.id, id));
+    return entry;
+  }
+
+  async getActiveLaborEntries(userId: string): Promise<LaborEntry[]> {
+    return db.select().from(laborEntries)
+      .where(and(
+        eq(laborEntries.userId, userId),
+        eq(laborEntries.status, "running")
+      ));
+  }
+
+  async createLaborEntry(entry: InsertLaborEntry): Promise<LaborEntry> {
+    const [created] = await db.insert(laborEntries).values(entry).returning();
+    return created;
+  }
+
+  async updateLaborEntry(id: number, entry: Partial<InsertLaborEntry>): Promise<LaborEntry | undefined> {
+    const [updated] = await db.update(laborEntries)
+      .set({ ...entry, updatedAt: new Date() })
+      .where(eq(laborEntries.id, id))
+      .returning();
+    return updated;
+  }
+
+  async completeLaborEntry(id: number): Promise<LaborEntry | undefined> {
+    const entry = await this.getLaborEntry(id);
+    if (!entry) return undefined;
+
+    const endTime = new Date();
+    const startTime = new Date(entry.startTime);
+    const pausedSeconds = entry.pausedDuration || 0;
+    
+    // Calculate actual working time in hours
+    const totalSeconds = (endTime.getTime() - startTime.getTime()) / 1000;
+    const workingSeconds = totalSeconds - pausedSeconds;
+    const calculatedHours = Math.max(0, workingSeconds / 3600);
+    
+    // Calculate labor cost if hourly rate is set
+    const hourlyRate = entry.hourlyRate ? parseFloat(entry.hourlyRate) : 0;
+    const laborCost = calculatedHours * hourlyRate;
+
+    const [updated] = await db.update(laborEntries)
+      .set({
+        status: "completed",
+        endTime,
+        calculatedHours: calculatedHours.toFixed(2),
+        laborCost: laborCost.toFixed(2),
+        updatedAt: new Date(),
+      })
+      .where(eq(laborEntries.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteLaborEntry(id: number): Promise<void> {
+    await db.delete(laborEntries).where(eq(laborEntries.id, id));
   }
 
   // Checklist Templates

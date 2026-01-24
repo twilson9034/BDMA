@@ -42,6 +42,8 @@ import { PageHeader } from "@/components/PageHeader";
 import { StatusBadge } from "@/components/StatusBadge";
 import { PriorityBadge } from "@/components/PriorityBadge";
 import { SignatureCapture, SignatureDisplay } from "@/components/SignatureCapture";
+import { LaborTracker } from "@/components/LaborTracker";
+import { DeferredLines } from "@/components/DeferredLines";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { WorkOrder, Asset, WorkOrderLine, Part, VmrsCode, WorkOrderTransaction } from "@shared/schema";
@@ -941,6 +943,12 @@ export default function WorkOrderDetail() {
               )}
             </CardContent>
           </Card>
+
+          {/* Labor Tracking Card */}
+          <LaborTracker workOrderId={workOrder.id} />
+
+          {/* Deferred Lines Card */}
+          <DeferredLines workOrderId={workOrder.id} />
 
           {/* Signatures Card */}
           {(workOrder.technicianSignature || workOrder.customerSignature || workOrder.status === "completed" || workOrder.status === "ready_for_review") && (
