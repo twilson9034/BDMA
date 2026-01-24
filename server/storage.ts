@@ -150,12 +150,14 @@ export interface IStorage {
   
   // Asset Images
   getAssetImages(assetId: number): Promise<AssetImage[]>;
+  getAssetImage(id: number): Promise<AssetImage | undefined>;
   createAssetImage(image: InsertAssetImage): Promise<AssetImage>;
   deleteAssetImage(id: number): Promise<void>;
   setPrimaryAssetImage(assetId: number, imageId: number): Promise<void>;
   
   // Asset Documents
   getAssetDocuments(assetId: number): Promise<AssetDocument[]>;
+  getAssetDocument(id: number): Promise<AssetDocument | undefined>;
   createAssetDocument(document: InsertAssetDocument): Promise<AssetDocument>;
   updateAssetDocument(id: number, document: Partial<InsertAssetDocument>): Promise<AssetDocument | undefined>;
   deleteAssetDocument(id: number): Promise<void>;
@@ -403,10 +405,13 @@ export interface IStorage {
 
   // Notifications
   getNotifications(userId: string): Promise<Notification[]>;
+  getNotification(id: number): Promise<Notification | undefined>;
   getUnreadNotificationCount(userId: string): Promise<number>;
+  getUnreadNotificationCountByOrg(userId: string, orgId: number): Promise<number>;
   createNotification(notification: InsertNotification): Promise<Notification>;
   markNotificationRead(id: number, userId: string): Promise<Notification | undefined>;
   markAllNotificationsRead(userId: string): Promise<number>;
+  markAllNotificationsReadByOrg(userId: string, orgId: number): Promise<number>;
   dismissNotification(id: number, userId: string): Promise<void>;
 }
 
@@ -525,6 +530,11 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(assetImages).where(eq(assetImages.assetId, assetId)).orderBy(desc(assetImages.isPrimary));
   }
 
+  async getAssetImage(id: number): Promise<AssetImage | undefined> {
+    const [image] = await db.select().from(assetImages).where(eq(assetImages.id, id));
+    return image;
+  }
+
   async createAssetImage(image: InsertAssetImage): Promise<AssetImage> {
     const [created] = await db.insert(assetImages).values(image).returning();
     return created;
@@ -548,6 +558,11 @@ export class DatabaseStorage implements IStorage {
   // Asset Documents
   async getAssetDocuments(assetId: number): Promise<AssetDocument[]> {
     return db.select().from(assetDocuments).where(eq(assetDocuments.assetId, assetId)).orderBy(desc(assetDocuments.createdAt));
+  }
+
+  async getAssetDocument(id: number): Promise<AssetDocument | undefined> {
+    const [doc] = await db.select().from(assetDocuments).where(eq(assetDocuments.id, id));
+    return doc;
   }
 
   async createAssetDocument(document: InsertAssetDocument): Promise<AssetDocument> {
@@ -2199,6 +2214,22 @@ export class DatabaseStorage implements IStorage {
       .limit(50);
   }
 
+  async getNotification(id: number): Promise<Notification | undefined> {
+    const [notification] = await db.select().from(notifications).where(eq(notifications.id, id));
+    return notification;
+  }
+
+  async getUnreadNotificationCountByOrg(userId: string, orgId: number): Promise<number> {
+    const result = await db.select({ count: sql<number>`count(*)` }).from(notifications)
+      .where(and(
+        eq(notifications.userId, userId),
+        eq(notifications.orgId, orgId),
+        eq(notifications.isRead, false),
+        isNull(notifications.dismissedAt)
+      ));
+    return result[0]?.count || 0;
+  }
+
   async getUnreadNotificationCount(userId: string): Promise<number> {
     const result = await db.select({ count: sql<number>`count(*)` }).from(notifications)
       .where(and(
@@ -2226,6 +2257,17 @@ export class DatabaseStorage implements IStorage {
     const result = await db.update(notifications)
       .set({ isRead: true, readAt: new Date() })
       .where(and(eq(notifications.userId, userId), eq(notifications.isRead, false)));
+    return result.rowCount || 0;
+  }
+
+  async markAllNotificationsReadByOrg(userId: string, orgId: number): Promise<number> {
+    const result = await db.update(notifications)
+      .set({ isRead: true, readAt: new Date() })
+      .where(and(
+        eq(notifications.userId, userId),
+        eq(notifications.orgId, orgId),
+        eq(notifications.isRead, false)
+      ));
     return result.rowCount || 0;
   }
 
@@ -2376,7 +2418,12 @@ export class DatabaseStorage implements IStorage {
 
   async getPartsAnalyticsByOrg(orgId: number) {
     const orgParts = await db.select().from(parts).where(eq(parts.orgId, orgId));
-    const orgTransactions = await db.select().from(inventoryTransactions).where(eq(inventoryTransactions.orgId, orgId));
+    const orgPartIds = new Set(orgParts.map(p => p.id));
+    
+    // Get all transactions and filter by org parts (since transactions don't have orgId)
+    const allTransactions = await db.select().from(inventoryTransactions);
+    const orgTransactions = allTransactions.filter(t => t.partId && orgPartIds.has(t.partId));
+    
     const partUsage: Record<number, { count: number; cost: number }> = {};
     orgTransactions
       .filter(t => t.type === "part_consumption" && t.partId)

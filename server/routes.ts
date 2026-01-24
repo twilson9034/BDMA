@@ -48,34 +48,34 @@ function requireAuth(req: Request, res: Response, next: NextFunction) {
   next();
 }
 
-async function generateWorkOrderNumber(): Promise<string> {
+async function generateWorkOrderNumber(orgId?: number): Promise<string> {
   const year = new Date().getFullYear();
-  const workOrders = await storage.getWorkOrders();
-  const thisYearOrders = workOrders.filter(w => w.workOrderNumber.startsWith(`WO-${year}`));
+  const workOrders = orgId ? await storage.getWorkOrdersByOrg(orgId) : await storage.getWorkOrders();
+  const thisYearOrders = workOrders.filter(w => w.workOrderNumber?.startsWith(`WO-${year}`));
   const nextNum = thisYearOrders.length + 1;
   return `WO-${year}-${String(nextNum).padStart(4, "0")}`;
 }
 
-async function generateRequisitionNumber(): Promise<string> {
+async function generateRequisitionNumber(orgId?: number): Promise<string> {
   const year = new Date().getFullYear();
-  const reqs = await storage.getRequisitions();
-  const thisYearReqs = reqs.filter(r => r.requisitionNumber.startsWith(`REQ-${year}`));
+  const reqs = orgId ? await storage.getRequisitionsByOrg(orgId) : await storage.getRequisitions();
+  const thisYearReqs = reqs.filter(r => r.requisitionNumber?.startsWith(`REQ-${year}`));
   const nextNum = thisYearReqs.length + 1;
   return `REQ-${year}-${String(nextNum).padStart(4, "0")}`;
 }
 
-async function generatePONumber(): Promise<string> {
+async function generatePONumber(orgId?: number): Promise<string> {
   const year = new Date().getFullYear();
-  const pos = await storage.getPurchaseOrders();
-  const thisYearPOs = pos.filter(p => p.poNumber.startsWith(`PO-${year}`));
+  const pos = orgId ? await storage.getPurchaseOrdersByOrg(orgId) : await storage.getPurchaseOrders();
+  const thisYearPOs = pos.filter(p => p.poNumber?.startsWith(`PO-${year}`));
   const nextNum = thisYearPOs.length + 1;
   return `PO-${year}-${String(nextNum).padStart(4, "0")}`;
 }
 
-async function generateEstimateNumber(): Promise<string> {
+async function generateEstimateNumber(orgId?: number): Promise<string> {
   const year = new Date().getFullYear();
-  const estimates = await storage.getEstimates();
-  const thisYearEstimates = estimates.filter(e => e.estimateNumber.startsWith(`EST-${year}`));
+  const estimates = orgId ? await storage.getEstimatesByOrg(orgId) : await storage.getEstimates();
+  const thisYearEstimates = estimates.filter(e => e.estimateNumber?.startsWith(`EST-${year}`));
   const nextNum = thisYearEstimates.length + 1;
   return `EST-${year}-${String(nextNum).padStart(4, "0")}`;
 }
@@ -422,9 +422,21 @@ export async function registerRoutes(
     })).min(1, "At least one update is required"),
   });
   
-  app.post("/api/assets/batch-meters", requireAuth, async (req, res) => {
+  app.post("/api/assets/batch-meters", requireAuth, tenantMiddleware({ required: false }), async (req, res) => {
     try {
+      const orgId = getOrgId(req);
       const validated = batchMeterUpdateSchema.parse(req.body);
+      
+      // Validate all assets belong to user's org
+      if (orgId) {
+        for (const update of validated.updates) {
+          const asset = await storage.getAsset(update.assetId);
+          if (!asset || asset.orgId !== orgId) {
+            return res.status(403).json({ error: `Access denied for asset ${update.assetId}` });
+          }
+        }
+      }
+      
       const updatedAssets = await storage.batchUpdateAssetMeters(validated.updates);
       res.json(updatedAssets);
     } catch (error) {
@@ -435,21 +447,37 @@ export async function registerRoutes(
     }
   });
 
-  // Asset Images
-  app.get("/api/assets/:assetId/images", requireAuth, async (req, res) => {
+  // Asset Images (tenant-scoped)
+  app.get("/api/assets/:assetId/images", requireAuth, tenantMiddleware({ required: false }), async (req, res) => {
     try {
-      const images = await storage.getAssetImages(parseInt(req.params.assetId));
+      const orgId = getOrgId(req);
+      const assetId = parseInt(req.params.assetId);
+      if (orgId) {
+        const asset = await storage.getAsset(assetId);
+        if (!asset || asset.orgId !== orgId) {
+          return res.status(403).json({ error: "Access denied" });
+        }
+      }
+      const images = await storage.getAssetImages(assetId);
       res.json(images);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch asset images" });
     }
   });
 
-  app.post("/api/assets/:assetId/images", requireAuth, async (req, res) => {
+  app.post("/api/assets/:assetId/images", requireAuth, tenantMiddleware({ required: false }), async (req, res) => {
     try {
+      const orgId = getOrgId(req);
+      const assetId = parseInt(req.params.assetId);
+      if (orgId) {
+        const asset = await storage.getAsset(assetId);
+        if (!asset || asset.orgId !== orgId) {
+          return res.status(403).json({ error: "Access denied" });
+        }
+      }
       const validated = insertAssetImageSchema.parse({
         ...req.body,
-        assetId: parseInt(req.params.assetId),
+        assetId,
       });
       const image = await storage.createAssetImage(validated);
       res.status(201).json(image);
@@ -461,8 +489,17 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/asset-images/:id", requireAuth, async (req, res) => {
+  app.delete("/api/asset-images/:id", requireAuth, tenantMiddleware({ required: false }), async (req, res) => {
     try {
+      const orgId = getOrgId(req);
+      const image = await storage.getAssetImage(parseInt(req.params.id));
+      if (!image) return res.status(404).json({ error: "Image not found" });
+      if (orgId) {
+        const asset = await storage.getAsset(image.assetId);
+        if (!asset || asset.orgId !== orgId) {
+          return res.status(403).json({ error: "Access denied" });
+        }
+      }
       await storage.deleteAssetImage(parseInt(req.params.id));
       res.status(204).send();
     } catch (error) {
@@ -470,33 +507,54 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/assets/:assetId/images/:imageId/primary", requireAuth, async (req, res) => {
+  app.post("/api/assets/:assetId/images/:imageId/primary", requireAuth, tenantMiddleware({ required: false }), async (req, res) => {
     try {
-      await storage.setPrimaryAssetImage(
-        parseInt(req.params.assetId),
-        parseInt(req.params.imageId)
-      );
+      const orgId = getOrgId(req);
+      const assetId = parseInt(req.params.assetId);
+      if (orgId) {
+        const asset = await storage.getAsset(assetId);
+        if (!asset || asset.orgId !== orgId) {
+          return res.status(403).json({ error: "Access denied" });
+        }
+      }
+      await storage.setPrimaryAssetImage(assetId, parseInt(req.params.imageId));
       res.status(200).json({ success: true });
     } catch (error) {
       res.status(500).json({ error: "Failed to set primary image" });
     }
   });
 
-  // Asset Documents
-  app.get("/api/assets/:assetId/documents", requireAuth, async (req, res) => {
+  // Asset Documents (tenant-scoped)
+  app.get("/api/assets/:assetId/documents", requireAuth, tenantMiddleware({ required: false }), async (req, res) => {
     try {
-      const documents = await storage.getAssetDocuments(parseInt(req.params.assetId));
+      const orgId = getOrgId(req);
+      const assetId = parseInt(req.params.assetId);
+      if (orgId) {
+        const asset = await storage.getAsset(assetId);
+        if (!asset || asset.orgId !== orgId) {
+          return res.status(403).json({ error: "Access denied" });
+        }
+      }
+      const documents = await storage.getAssetDocuments(assetId);
       res.json(documents);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch asset documents" });
     }
   });
 
-  app.post("/api/assets/:assetId/documents", requireAuth, async (req, res) => {
+  app.post("/api/assets/:assetId/documents", requireAuth, tenantMiddleware({ required: false }), async (req, res) => {
     try {
+      const orgId = getOrgId(req);
+      const assetId = parseInt(req.params.assetId);
+      if (orgId) {
+        const asset = await storage.getAsset(assetId);
+        if (!asset || asset.orgId !== orgId) {
+          return res.status(403).json({ error: "Access denied" });
+        }
+      }
       const validated = insertAssetDocumentSchema.parse({
         ...req.body,
-        assetId: parseInt(req.params.assetId),
+        assetId,
       });
       const document = await storage.createAssetDocument(validated);
       res.status(201).json(document);
@@ -508,8 +566,17 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/asset-documents/:id", requireAuth, async (req, res) => {
+  app.patch("/api/asset-documents/:id", requireAuth, tenantMiddleware({ required: false }), async (req, res) => {
     try {
+      const orgId = getOrgId(req);
+      const doc = await storage.getAssetDocument(parseInt(req.params.id));
+      if (!doc) return res.status(404).json({ error: "Document not found" });
+      if (orgId) {
+        const asset = await storage.getAsset(doc.assetId);
+        if (!asset || asset.orgId !== orgId) {
+          return res.status(403).json({ error: "Access denied" });
+        }
+      }
       const validated = insertAssetDocumentSchema.partial().parse(req.body);
       const document = await storage.updateAssetDocument(parseInt(req.params.id), validated);
       res.json(document);
@@ -521,8 +588,17 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/asset-documents/:id", requireAuth, async (req, res) => {
+  app.delete("/api/asset-documents/:id", requireAuth, tenantMiddleware({ required: false }), async (req, res) => {
     try {
+      const orgId = getOrgId(req);
+      const doc = await storage.getAssetDocument(parseInt(req.params.id));
+      if (!doc) return res.status(404).json({ error: "Document not found" });
+      if (orgId) {
+        const asset = await storage.getAsset(doc.assetId);
+        if (!asset || asset.orgId !== orgId) {
+          return res.status(403).json({ error: "Access denied" });
+        }
+      }
       await storage.deleteAssetDocument(parseInt(req.params.id));
       res.status(204).send();
     } catch (error) {
@@ -666,7 +742,7 @@ export async function registerRoutes(
   app.post("/api/work-orders", requireAuth, tenantMiddleware(), async (req, res) => {
     try {
       const orgId = getOrgId(req);
-      const workOrderNumber = await generateWorkOrderNumber();
+      const workOrderNumber = await generateWorkOrderNumber(orgId);
       
       // Auto-generate title: WO# | Asset#
       let autoTitle = workOrderNumber;
@@ -1188,7 +1264,7 @@ export async function registerRoutes(
   app.post("/api/requisitions", requireAuth, tenantMiddleware(), async (req, res) => {
     try {
       const orgId = getOrgId(req);
-      const requisitionNumber = await generateRequisitionNumber();
+      const requisitionNumber = await generateRequisitionNumber(orgId);
       const validated = insertPurchaseRequisitionSchema.parse({
         ...req.body,
         requisitionNumber,
@@ -1246,7 +1322,7 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Requisition has no lines" });
       }
 
-      const poNumber = await generatePONumber();
+      const poNumber = await generatePONumber(orgId);
       const po = await storage.createPurchaseOrder({
         poNumber,
         requisitionId: id,
@@ -1351,7 +1427,7 @@ export async function registerRoutes(
   app.post("/api/purchase-orders", requireAuth, tenantMiddleware(), async (req, res) => {
     try {
       const orgId = getOrgId(req);
-      const poNumber = await generatePONumber();
+      const poNumber = await generatePONumber(orgId);
       const data = { ...req.body };
       
       // Ensure vendorId is a number
@@ -1692,7 +1768,12 @@ export async function registerRoutes(
     try {
       const userId = (req as any).user?.claims?.sub;
       if (!userId) return res.status(401).json({ error: "Unauthorized" });
-      const count = await storage.getUnreadNotificationCount(userId);
+      
+      const orgId = getOrgId(req);
+      // Use org-scoped count if org is selected, otherwise fall back to user-level count
+      const count = orgId 
+        ? await storage.getUnreadNotificationCountByOrg(userId, orgId)
+        : await storage.getUnreadNotificationCount(userId);
       res.json({ count });
     } catch (error) {
       console.error("Error fetching unread count:", error);
@@ -1723,24 +1804,35 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/notifications/:id/read", requireAuth, async (req, res) => {
+  app.patch("/api/notifications/:id/read", requireAuth, tenantMiddleware({ required: false }), async (req, res) => {
     try {
       const userId = (req as any).user?.claims?.sub;
       if (!userId) return res.status(401).json({ error: "Unauthorized" });
-      const notification = await storage.markNotificationRead(parseInt(req.params.id), userId);
+      const orgId = getOrgId(req);
+      
+      // Validate notification belongs to user's org
+      const notification = await storage.getNotification(parseInt(req.params.id));
       if (!notification) return res.status(404).json({ error: "Notification not found" });
-      res.json(notification);
+      if (orgId && notification.orgId !== orgId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      
+      const updated = await storage.markNotificationRead(parseInt(req.params.id), userId);
+      res.json(updated);
     } catch (error) {
       console.error("Error marking notification read:", error);
       res.status(500).json({ error: "Failed to mark notification read" });
     }
   });
 
-  app.post("/api/notifications/mark-all-read", requireAuth, async (req, res) => {
+  app.post("/api/notifications/mark-all-read", requireAuth, tenantMiddleware({ required: false }), async (req, res) => {
     try {
       const userId = (req as any).user?.claims?.sub;
       if (!userId) return res.status(401).json({ error: "Unauthorized" });
-      const count = await storage.markAllNotificationsRead(userId);
+      const orgId = getOrgId(req);
+      const count = orgId 
+        ? await storage.markAllNotificationsReadByOrg(userId, orgId)
+        : await storage.markAllNotificationsRead(userId);
       res.json({ updated: count });
     } catch (error) {
       console.error("Error marking all notifications read:", error);
@@ -1748,10 +1840,19 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/notifications/:id", requireAuth, async (req, res) => {
+  app.delete("/api/notifications/:id", requireAuth, tenantMiddleware({ required: false }), async (req, res) => {
     try {
       const userId = (req as any).user?.claims?.sub;
       if (!userId) return res.status(401).json({ error: "Unauthorized" });
+      const orgId = getOrgId(req);
+      
+      // Validate notification belongs to user's org
+      const notification = await storage.getNotification(parseInt(req.params.id));
+      if (!notification) return res.status(404).json({ error: "Notification not found" });
+      if (orgId && notification.orgId !== orgId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      
       await storage.dismissNotification(parseInt(req.params.id), userId);
       res.json({ success: true });
     } catch (error) {
@@ -2050,7 +2151,7 @@ export async function registerRoutes(
       if (!parsed.success) {
         return res.status(400).json({ error: "Invalid estimate data", details: parsed.error.errors });
       }
-      const estimateNumber = await generateEstimateNumber();
+      const estimateNumber = await generateEstimateNumber(orgId);
       const estimate = await storage.createEstimate({
         ...parsed.data,
         orgId,
@@ -2685,8 +2786,9 @@ Example: ["Check engine oil level", "Inspect tire pressure and tread depth", "Te
     }
   });
 
-  app.post("/api/import-jobs", async (req, res) => {
+  app.post("/api/import-jobs", tenantMiddleware({ required: false }), async (req, res) => {
     try {
+      const orgId = getOrgId(req);
       const { type, fileName, data, mappings } = req.body;
       
       // Create the import job
@@ -2704,7 +2806,7 @@ Example: ["Check engine oil level", "Inspect tire pressure and tread depth", "Te
       });
 
       // Process the import in the background
-      processImportJob(job.id, type, data, mappings);
+      processImportJob(job.id, type, data, mappings, orgId);
 
       res.status(201).json(job);
     } catch (error) {
@@ -2713,7 +2815,7 @@ Example: ["Check engine oil level", "Inspect tire pressure and tread depth", "Te
     }
   });
 
-  async function processImportJob(jobId: number, type: string, data: any[], mappings: Record<string, string>) {
+  async function processImportJob(jobId: number, type: string, data: any[], mappings: Record<string, string>, orgId?: number) {
     let successCount = 0;
     let errorCount = 0;
     let skippedDuplicates = 0;
@@ -2724,9 +2826,9 @@ Example: ["Check engine oil level", "Inspect tire pressure and tread depth", "Te
     const seenBarcodes = new Set<string>();
     const seenAssetNumbers = new Set<string>();
     
-    // Pre-fetch existing records for duplicate checking
-    const existingParts = type === "parts" ? await storage.getParts() : [];
-    const existingAssets = type === "assets" ? await storage.getAssets() : [];
+    // Pre-fetch existing records for duplicate checking (org-scoped if available)
+    const existingParts = type === "parts" ? (orgId ? await storage.getPartsByOrg(orgId) : await storage.getParts()) : [];
+    const existingAssets = type === "assets" ? (orgId ? await storage.getAssetsByOrg(orgId) : await storage.getAssets()) : [];
     const existingPartNumbers = new Set(existingParts.map(p => p.partNumber?.toLowerCase()));
     const existingBarcodes = new Set(existingParts.filter(p => p.barcode).map(p => p.barcode!.toLowerCase()));
     const existingAssetNumbers = new Set(existingAssets.map(a => a.assetNumber?.toLowerCase()));
@@ -2783,7 +2885,7 @@ Example: ["Check engine oil level", "Inspect tire pressure and tread depth", "Te
               continue;
             }
             seenAssetNumbers.add(assetNum);
-            await storage.createAsset(mapped);
+            await storage.createAsset({ ...mapped, orgId });
             break;
           }
           
@@ -2823,7 +2925,7 @@ Example: ["Check engine oil level", "Inspect tire pressure and tread depth", "Te
             if (mapped.reorderQuantity) mapped.reorderQuantity = String(parseInt(String(mapped.reorderQuantity).replace(/[^0-9-]/g, "")) || 0);
             if (mapped.orderPrice) mapped.orderPrice = String(parseFloat(String(mapped.orderPrice).replace(/[^0-9.-]/g, "")) || 0);
             
-            await storage.createPart(mapped);
+            await storage.createPart({ ...mapped, orgId });
             break;
           }
           
@@ -2833,12 +2935,12 @@ Example: ["Check engine oil level", "Inspect tire pressure and tread depth", "Te
               errorCount++;
               continue;
             }
-            await storage.createVendor(mapped);
+            await storage.createVendor({ ...mapped, orgId });
             break;
             
           case "work_orders":
-            const woNumber = await generateWorkOrderNumber();
-            await storage.createWorkOrder({ ...mapped, workOrderNumber: woNumber });
+            const woNumber = await generateWorkOrderNumber(orgId);
+            await storage.createWorkOrder({ ...mapped, workOrderNumber: woNumber, orgId });
             break;
             
           case "vmrs_codes":
@@ -2846,8 +2948,8 @@ Example: ["Check engine oil level", "Inspect tire pressure and tread depth", "Te
             break;
             
           case "purchase_orders":
-            const poNumber = await generatePONumber();
-            await storage.createPurchaseOrder({ ...mapped, poNumber });
+            const poNumImport = await generatePONumber(orgId);
+            await storage.createPurchaseOrder({ ...mapped, poNumber: poNumImport, orgId });
             break;
             
           default:
@@ -3340,8 +3442,9 @@ Example: [{"partNumber": "BP-001", "reason": "Standard brake pads for this model
     }
   });
 
-  app.post("/api/pm-dues/batch-create-work-orders", requireAuth, async (req, res) => {
+  app.post("/api/pm-dues/batch-create-work-orders", requireAuth, tenantMiddleware(), async (req, res) => {
     try {
+      const orgId = getOrgId(req);
       const { instanceIds } = req.body;
       if (!Array.isArray(instanceIds) || instanceIds.length === 0) {
         return res.status(400).json({ error: "Instance IDs required" });
@@ -3354,7 +3457,7 @@ Example: [{"partNumber": "BP-001", "reason": "Standard brake pads for this model
         const instance = dues.find(d => d.id === instanceId);
         if (!instance || !instance.asset || !instance.pmSchedule) continue;
 
-        const workOrderNumber = await generateWorkOrderNumber();
+        const workOrderNumber = await generateWorkOrderNumber(orgId);
         const wo = await storage.createWorkOrder({
           workOrderNumber,
           title: `PM: ${instance.pmSchedule.name} - ${instance.asset.name}`,
