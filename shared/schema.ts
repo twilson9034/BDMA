@@ -8,10 +8,66 @@ export * from "./models/auth";
 export * from "./models/chat";
 
 // ============================================================
+// ORGANIZATIONS (Multi-tenant)
+// ============================================================
+export const organizationPlanEnum = ["starter", "professional", "enterprise"] as const;
+export const organizationStatusEnum = ["active", "suspended", "cancelled"] as const;
+
+export const organizations = pgTable("organizations", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  slug: text("slug").notNull().unique(),
+  plan: text("plan").default("starter").$type<typeof organizationPlanEnum[number]>(),
+  status: text("status").default("active").$type<typeof organizationStatusEnum[number]>(),
+  logoUrl: text("logo_url"),
+  address: text("address"),
+  city: text("city"),
+  state: text("state"),
+  zipCode: text("zip_code"),
+  phone: text("phone"),
+  email: text("email"),
+  maxAssets: integer("max_assets").default(25), // Fleet size limit based on plan
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertOrganizationSchema = createInsertSchema(organizations).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertOrganization = z.infer<typeof insertOrganizationSchema>;
+export type Organization = typeof organizations.$inferSelect;
+
+// ============================================================
+// ORGANIZATION MEMBERSHIPS
+// ============================================================
+export const orgRoleEnum = ["owner", "admin", "manager", "technician", "viewer"] as const;
+
+export const orgMemberships = pgTable("org_memberships", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull(),
+  orgId: integer("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  role: text("role").default("technician").$type<typeof orgRoleEnum[number]>(),
+  isActive: boolean("is_active").default(true),
+  isDefault: boolean("is_default").default(false), // User's default org
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_org_memberships_user").on(table.userId),
+  index("idx_org_memberships_org").on(table.orgId),
+]);
+
+export const orgMembershipsRelations = relations(orgMemberships, ({ one }) => ({
+  organization: one(organizations, { fields: [orgMemberships.orgId], references: [organizations.id] }),
+}));
+
+export const insertOrgMembershipSchema = createInsertSchema(orgMemberships).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertOrgMembership = z.infer<typeof insertOrgMembershipSchema>;
+export type OrgMembership = typeof orgMemberships.$inferSelect;
+
+// ============================================================
 // LOCATIONS
 // ============================================================
 export const locations = pgTable("locations", {
   id: serial("id").primaryKey(),
+  orgId: integer("org_id").references(() => organizations.id),
   name: text("name").notNull(),
   address: text("address"),
   city: text("city"),
@@ -22,7 +78,9 @@ export const locations = pgTable("locations", {
   isActive: boolean("is_active").default(true),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (table) => [
+  index("idx_locations_org").on(table.orgId),
+]);
 
 export const insertLocationSchema = createInsertSchema(locations).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertLocation = z.infer<typeof insertLocationSchema>;
@@ -33,7 +91,8 @@ export type Location = typeof locations.$inferSelect;
 // ============================================================
 export const vmrsCodes = pgTable("vmrs_codes", {
   id: serial("id").primaryKey(),
-  code: text("code").notNull().unique(),
+  orgId: integer("org_id").references(() => organizations.id),
+  code: text("code").notNull(),
   title: text("title").notNull(),
   description: text("description"),
   systemCode: text("system_code"),
@@ -42,7 +101,9 @@ export const vmrsCodes = pgTable("vmrs_codes", {
   isActive: boolean("is_active").default(true),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (table) => [
+  index("idx_vmrs_codes_org").on(table.orgId),
+]);
 
 export const insertVmrsCodeSchema = createInsertSchema(vmrsCodes).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertVmrsCode = z.infer<typeof insertVmrsCodeSchema>;
@@ -57,7 +118,8 @@ export const assetLifecycleStatusEnum = ["active", "disposed", "sold", "transfer
 
 export const assets = pgTable("assets", {
   id: serial("id").primaryKey(),
-  assetNumber: text("asset_number").notNull().unique(),
+  orgId: integer("org_id").references(() => organizations.id),
+  assetNumber: text("asset_number").notNull(),
   name: text("name").notNull(),
   description: text("description"),
   type: text("type").notNull().$type<typeof assetTypeEnum[number]>(),
@@ -88,6 +150,7 @@ export const assets = pgTable("assets", {
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [
+  index("idx_assets_org").on(table.orgId),
   index("idx_assets_status").on(table.status),
   index("idx_assets_location").on(table.locationId),
   index("idx_assets_type").on(table.type),
@@ -165,8 +228,9 @@ export type AssetDocument = typeof assetDocuments.$inferSelect;
 // ============================================================
 export const vendors = pgTable("vendors", {
   id: serial("id").primaryKey(),
+  orgId: integer("org_id").references(() => organizations.id),
   name: text("name").notNull(),
-  code: text("code").unique(),
+  code: text("code"),
   contactName: text("contact_name"),
   email: text("email"),
   phone: text("phone"),
@@ -180,7 +244,9 @@ export const vendors = pgTable("vendors", {
   isActive: boolean("is_active").default(true),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (table) => [
+  index("idx_vendors_org").on(table.orgId),
+]);
 
 export const insertVendorSchema = createInsertSchema(vendors).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertVendor = z.infer<typeof insertVendorSchema>;
@@ -194,7 +260,8 @@ export const abcClassEnum = ["A", "B", "C"] as const;
 
 export const parts = pgTable("parts", {
   id: serial("id").primaryKey(),
-  partNumber: text("part_number").notNull().unique(),
+  orgId: integer("org_id").references(() => organizations.id),
+  partNumber: text("part_number").notNull(),
   name: text("name").notNull(),
   description: text("description"),
   category: text("category").$type<typeof partCategoryEnum[number]>(),
@@ -235,6 +302,7 @@ export const parts = pgTable("parts", {
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [
+  index("idx_parts_org").on(table.orgId),
   index("idx_parts_category").on(table.category),
   index("idx_parts_location").on(table.locationId),
   index("idx_parts_critical").on(table.isCritical),
@@ -258,7 +326,8 @@ export const workOrderPriorityEnum = ["low", "medium", "high", "critical"] as co
 
 export const workOrders = pgTable("work_orders", {
   id: serial("id").primaryKey(),
-  workOrderNumber: text("work_order_number").notNull().unique(),
+  orgId: integer("org_id").references(() => organizations.id),
+  workOrderNumber: text("work_order_number").notNull(),
   title: text("title").notNull(),
   description: text("description"),
   type: text("type").notNull().$type<typeof workOrderTypeEnum[number]>(),
@@ -289,6 +358,7 @@ export const workOrders = pgTable("work_orders", {
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [
+  index("idx_work_orders_org").on(table.orgId),
   index("idx_work_orders_status").on(table.status),
   index("idx_work_orders_asset").on(table.assetId),
   index("idx_work_orders_priority").on(table.priority),
@@ -429,6 +499,7 @@ export const pmIntervalTypeEnum = ["days", "miles", "hours", "cycles"] as const;
 
 export const pmSchedules = pgTable("pm_schedules", {
   id: serial("id").primaryKey(),
+  orgId: integer("org_id").references(() => organizations.id),
   name: text("name").notNull(),
   description: text("description"),
   intervalType: text("interval_type").notNull().$type<typeof pmIntervalTypeEnum[number]>(),
@@ -443,7 +514,9 @@ export const pmSchedules = pgTable("pm_schedules", {
   isActive: boolean("is_active").default(true),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (table) => [
+  index("idx_pm_schedules_org").on(table.orgId),
+]);
 
 export const pmSchedulesRelations = relations(pmSchedules, ({ many }) => ({
   assetInstances: many(pmAssetInstances),
@@ -487,7 +560,8 @@ export const requisitionStatusEnum = ["draft", "submitted", "approved", "rejecte
 
 export const purchaseRequisitions = pgTable("purchase_requisitions", {
   id: serial("id").primaryKey(),
-  requisitionNumber: text("requisition_number").notNull().unique(),
+  orgId: integer("org_id").references(() => organizations.id),
+  requisitionNumber: text("requisition_number").notNull(),
   title: text("title").notNull(),
   description: text("description"),
   status: text("status").notNull().default("draft").$type<typeof requisitionStatusEnum[number]>(),
@@ -540,7 +614,8 @@ export const poStatusEnum = ["draft", "sent", "acknowledged", "partial", "receiv
 
 export const purchaseOrders = pgTable("purchase_orders", {
   id: serial("id").primaryKey(),
-  poNumber: text("po_number").notNull().unique(),
+  orgId: integer("org_id").references(() => organizations.id),
+  poNumber: text("po_number").notNull(),
   requisitionId: integer("requisition_id").references(() => purchaseRequisitions.id),
   vendorId: integer("vendor_id").notNull().references(() => vendors.id),
   status: text("status").notNull().default("draft").$type<typeof poStatusEnum[number]>(),
@@ -595,6 +670,7 @@ export const manualTypeEnum = ["maintenance", "parts", "service", "operator", "o
 
 export const manuals = pgTable("manuals", {
   id: serial("id").primaryKey(),
+  orgId: integer("org_id").references(() => organizations.id),
   title: text("title").notNull(),
   type: text("type").notNull().$type<typeof manualTypeEnum[number]>(),
   description: text("description"),
@@ -668,6 +744,7 @@ export const dvirStatusEnum = ["safe", "defects_noted", "unsafe"] as const;
 
 export const dvirs = pgTable("dvirs", {
   id: serial("id").primaryKey(),
+  orgId: integer("org_id").references(() => organizations.id),
   assetId: integer("asset_id").notNull().references(() => assets.id),
   inspectorId: varchar("inspector_id"),
   inspectionDate: timestamp("inspection_date").notNull().defaultNow(),
@@ -780,6 +857,7 @@ export const predictionSeverityEnum = ["low", "medium", "high", "critical"] as c
 
 export const predictions = pgTable("predictions", {
   id: serial("id").primaryKey(),
+  orgId: integer("org_id").references(() => organizations.id),
   assetId: integer("asset_id").notNull().references(() => assets.id),
   predictionType: text("prediction_type").notNull(),
   prediction: text("prediction").notNull(),
@@ -808,6 +886,7 @@ export type Prediction = typeof predictions.$inferSelect;
 // ============================================================
 export const activityLogs = pgTable("activity_logs", {
   id: serial("id").primaryKey(),
+  orgId: integer("org_id").references(() => organizations.id),
   userId: varchar("user_id"),
   action: text("action").notNull(),
   entityType: text("entity_type").notNull(),
@@ -830,7 +909,8 @@ export const estimateStatusEnum = ["draft", "pending_approval", "approved", "rej
 
 export const estimates = pgTable("estimates", {
   id: serial("id").primaryKey(),
-  estimateNumber: text("estimate_number").notNull().unique(),
+  orgId: integer("org_id").references(() => organizations.id),
+  estimateNumber: text("estimate_number").notNull(),
   assetId: integer("asset_id").notNull().references(() => assets.id),
   title: text("title"),
   description: text("description"),
@@ -848,6 +928,7 @@ export const estimates = pgTable("estimates", {
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [
+  index("idx_estimates_org").on(table.orgId),
   index("idx_estimates_asset").on(table.assetId),
   index("idx_estimates_status").on(table.status),
 ]);
@@ -971,6 +1052,7 @@ export const checklistCategoryEnum = ["pm_service", "inspection", "safety", "pre
 
 export const checklistTemplates = pgTable("checklist_templates", {
   id: serial("id").primaryKey(),
+  orgId: integer("org_id").references(() => organizations.id),
   name: text("name").notNull(),
   description: text("description"),
   category: text("category").notNull().default("pm_service").$type<typeof checklistCategoryEnum[number]>(),
@@ -1038,6 +1120,7 @@ export type ImportErrorSummary = {
 
 export const importJobs = pgTable("import_jobs", {
   id: serial("id").primaryKey(),
+  orgId: integer("org_id").references(() => organizations.id),
   type: text("type").notNull().$type<typeof importJobTypeEnum[number]>(),
   status: text("status").notNull().default("pending").$type<typeof importJobStatusEnum[number]>(),
   fileName: text("file_name").notNull(),
@@ -1130,7 +1213,8 @@ export const partRequestUrgencyEnum = ["standard", "urgent", "critical"] as cons
 
 export const partRequests = pgTable("part_requests", {
   id: serial("id").primaryKey(),
-  requestNumber: text("request_number").notNull().unique(),
+  orgId: integer("org_id").references(() => organizations.id),
+  requestNumber: text("request_number").notNull(),
   workOrderId: integer("work_order_id").references(() => workOrders.id),
   workOrderLineId: integer("work_order_line_id").references(() => workOrderLines.id),
   partId: integer("part_id").references(() => parts.id),
@@ -1168,7 +1252,8 @@ export const partKitCategoryEnum = ["pm", "repair", "inspection", "seasonal", "o
 
 export const partKits = pgTable("part_kits", {
   id: serial("id").primaryKey(),
-  kitNumber: text("kit_number").notNull().unique(),
+  orgId: integer("org_id").references(() => organizations.id),
+  kitNumber: text("kit_number").notNull(),
   name: text("name").notNull(),
   description: text("description"),
   category: text("category").notNull().$type<typeof partKitCategoryEnum[number]>(),
@@ -1235,7 +1320,8 @@ export const cycleCountStatusEnum = ["scheduled", "in_progress", "completed", "c
 
 export const cycleCounts = pgTable("cycle_counts", {
   id: serial("id").primaryKey(),
-  countNumber: text("count_number").notNull().unique(),
+  orgId: integer("org_id").references(() => organizations.id),
+  countNumber: text("count_number").notNull(),
   partId: integer("part_id").notNull().references(() => parts.id),
   locationId: integer("location_id").references(() => locations.id),
   status: text("status").notNull().default("scheduled").$type<typeof cycleCountStatusEnum[number]>(),
@@ -1287,6 +1373,7 @@ export const notificationPriorityEnum = ["low", "medium", "high", "critical"] as
 
 export const notifications = pgTable("notifications", {
   id: serial("id").primaryKey(),
+  orgId: integer("org_id").references(() => organizations.id),
   userId: varchar("user_id").notNull(),
   type: text("type").notNull().$type<typeof notificationTypeEnum[number]>(),
   priority: text("priority").notNull().default("medium").$type<typeof notificationPriorityEnum[number]>(),
