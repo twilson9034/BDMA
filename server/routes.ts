@@ -433,6 +433,52 @@ export async function registerRoutes(
     }
   });
 
+  // Work Order Batch Update
+  app.post("/api/work-orders/batch-update", requireAuth, async (req, res) => {
+    try {
+      const { ids, updates } = req.body;
+      
+      if (!Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({ error: "No work orders selected" });
+      }
+      
+      const results = await Promise.all(
+        ids.map(id => storage.updateWorkOrder(id, updates))
+      );
+      
+      res.json({ updated: results.length, workOrders: results });
+    } catch (error) {
+      console.error("Error batch updating work orders:", error);
+      res.status(500).json({ error: "Failed to batch update work orders" });
+    }
+  });
+
+  // Work Order Signature
+  app.post("/api/work-orders/:id/signature", requireAuth, async (req, res) => {
+    try {
+      const workOrderId = parseInt(req.params.id);
+      const { type, signature, signedBy } = req.body;
+      
+      const updateData: Record<string, any> = {};
+      const now = new Date();
+      
+      if (type === "technician") {
+        updateData.technicianSignature = signature;
+        updateData.technicianSignedAt = now;
+      } else if (type === "customer") {
+        updateData.customerSignature = signature;
+        updateData.customerSignedAt = now;
+        updateData.customerSignedBy = signedBy || null;
+      }
+      
+      const workOrder = await storage.updateWorkOrder(workOrderId, updateData);
+      res.json(workOrder);
+    } catch (error) {
+      console.error("Error saving signature:", error);
+      res.status(500).json({ error: "Failed to save signature" });
+    }
+  });
+
   // Work Order Lines
   app.get("/api/work-orders/:id/lines", async (req, res) => {
     const lines = await storage.getWorkOrderLines(parseInt(req.params.id));

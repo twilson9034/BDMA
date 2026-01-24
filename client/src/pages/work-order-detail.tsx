@@ -7,7 +7,7 @@ import {
   ArrowLeft, Save, Loader2, Edit, Trash2, Clock, 
   Calendar, User, Wrench, AlertTriangle, CheckCircle2,
   Plus, X, Play, Square, Timer, Package, CalendarClock,
-  Sparkles, Lightbulb
+  Sparkles, Lightbulb, PenLine
 } from "lucide-react";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
@@ -41,6 +41,7 @@ import {
 import { PageHeader } from "@/components/PageHeader";
 import { StatusBadge } from "@/components/StatusBadge";
 import { PriorityBadge } from "@/components/PriorityBadge";
+import { SignatureCapture, SignatureDisplay } from "@/components/SignatureCapture";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { WorkOrder, Asset, WorkOrderLine, Part, VmrsCode, WorkOrderTransaction } from "@shared/schema";
@@ -95,6 +96,9 @@ export default function WorkOrderDetail() {
   const [addItemUnitCost, setAddItemUnitCost] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [suggestionsVmrs, setSuggestionsVmrs] = useState<string | null>(null);
+  const [showSignatureDialog, setShowSignatureDialog] = useState(false);
+  const [signatureType, setSignatureType] = useState<"technician" | "customer">("technician");
+  const [pendingStatusChange, setPendingStatusChange] = useState<string | null>(null);
 
   const handleVmrsCodeSelect = (vmrsCodeId: string) => {
     setSelectedVmrsCodeId(vmrsCodeId);
@@ -251,6 +255,50 @@ export default function WorkOrderDetail() {
       });
     },
   });
+
+  const saveSignatureMutation = useMutation({
+    mutationFn: async (data: { type: "technician" | "customer"; signature: string; signedBy?: string }) => {
+      return apiRequest("POST", `/api/work-orders/${workOrderId}/signature`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/work-orders", workOrderId] });
+      toast({
+        title: "Signature Captured",
+        description: `${signatureType === "technician" ? "Technician" : "Customer"} signature has been saved.`,
+      });
+      setShowSignatureDialog(false);
+      
+      if (pendingStatusChange) {
+        form.setValue("status", pendingStatusChange as any);
+        setPendingStatusChange(null);
+      }
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to save signature.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleSignatureSave = (signatureData: string) => {
+    saveSignatureMutation.mutate({ 
+      type: signatureType, 
+      signature: signatureData,
+      signedBy: signatureType === "customer" ? "" : undefined
+    });
+  };
+
+  const handleStatusChange = (newStatus: string) => {
+    if (newStatus === "completed" && !workOrder?.technicianSignature) {
+      setSignatureType("technician");
+      setPendingStatusChange(newStatus);
+      setShowSignatureDialog(true);
+    } else {
+      form.setValue("status", newStatus as any);
+    }
+  };
 
   const createLineMutation = useMutation({
     mutationFn: async (data: { 
@@ -603,7 +651,7 @@ export default function WorkOrderDetail() {
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>Status</FormLabel>
-                          <Select onValueChange={field.onChange} value={field.value}>
+                          <Select onValueChange={handleStatusChange} value={field.value}>
                             <FormControl>
                               <SelectTrigger data-testid="select-status">
                                 <SelectValue />
@@ -893,6 +941,70 @@ export default function WorkOrderDetail() {
               )}
             </CardContent>
           </Card>
+
+          {/* Signatures Card */}
+          {(workOrder.technicianSignature || workOrder.customerSignature || workOrder.status === "completed" || workOrder.status === "ready_for_review") && (
+            <Card className="glass-card">
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <PenLine className="h-5 w-5" />
+                  Signatures
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {workOrder.technicianSignature ? (
+                    <SignatureDisplay
+                      signatureData={workOrder.technicianSignature}
+                      label="Technician"
+                      signedAt={workOrder.technicianSignedAt}
+                    />
+                  ) : (
+                    <div className="p-4 border border-dashed rounded-lg text-center">
+                      <p className="text-sm text-muted-foreground mb-2">Technician Signature</p>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setSignatureType("technician");
+                          setShowSignatureDialog(true);
+                        }}
+                        data-testid="button-capture-technician-signature"
+                      >
+                        <PenLine className="h-4 w-4 mr-1" />
+                        Capture Signature
+                      </Button>
+                    </div>
+                  )}
+                  
+                  {workOrder.customerSignature ? (
+                    <SignatureDisplay
+                      signatureData={workOrder.customerSignature}
+                      label="Customer"
+                      signedAt={workOrder.customerSignedAt}
+                      signedBy={workOrder.customerSignedBy}
+                    />
+                  ) : (
+                    <div className="p-4 border border-dashed rounded-lg text-center">
+                      <p className="text-sm text-muted-foreground mb-2">Customer Signature</p>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setSignatureType("customer");
+                          setShowSignatureDialog(true);
+                        }}
+                        data-testid="button-capture-customer-signature"
+                      >
+                        <PenLine className="h-4 w-4 mr-1" />
+                        Capture Signature
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           <Card className="glass-card lg:col-span-2">
             <CardHeader className="flex flex-row items-center justify-between gap-2">
@@ -1507,6 +1619,32 @@ export default function WorkOrderDetail() {
               Add Item
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Signature Capture Dialog */}
+      <Dialog open={showSignatureDialog} onOpenChange={setShowSignatureDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <PenLine className="h-5 w-5" />
+              {signatureType === "technician" ? "Technician Signature" : "Customer Signature"}
+            </DialogTitle>
+            <DialogDescription>
+              {signatureType === "technician" 
+                ? "Please sign below to confirm completion of this work order."
+                : "Customer signature to acknowledge work completion."
+              }
+            </DialogDescription>
+          </DialogHeader>
+          <SignatureCapture
+            onSave={handleSignatureSave}
+            onCancel={() => {
+              setShowSignatureDialog(false);
+              setPendingStatusChange(null);
+            }}
+            title={signatureType === "technician" ? "Technician Sign Here" : "Customer Sign Here"}
+          />
         </DialogContent>
       </Dialog>
     </div>

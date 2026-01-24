@@ -212,6 +212,11 @@ export const workOrders = pgTable("work_orders", {
   rootCause: text("root_cause"),
   resolution: text("resolution"),
   notes: text("notes"),
+  technicianSignature: text("technician_signature"),
+  technicianSignedAt: timestamp("technician_signed_at"),
+  customerSignature: text("customer_signature"),
+  customerSignedAt: timestamp("customer_signed_at"),
+  customerSignedBy: text("customer_signed_by"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [

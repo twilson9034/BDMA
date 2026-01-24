@@ -30,7 +30,7 @@ Preferred communication style: Simple, everyday language.
 
 ### Core Entities & Features
 - **Assets**: Tracking of physical items with status and hierarchy.
-- **Work Orders**: Management of maintenance tasks, time tracking, parts consumption, and a detailed line item system with status workflows, timer functionality, and auto-status updates.
+- **Work Orders**: Management of maintenance tasks, time tracking, parts consumption, and a detailed line item system with status workflows, timer functionality, auto-status updates, signature capture (technician and customer), and batch operations (bulk status updates).
 - **PM Schedules**: Interval-based preventive maintenance scheduling.
 - **Inventory/Parts**: Comprehensive parts management with reorder points.
 - **Procurement**: Purchase requisitions and orders with approval workflows.
@@ -50,6 +50,7 @@ Preferred communication style: Simple, everyday language.
 - **Part Kits**: Bundling of parts for common maintenance tasks with automatic consumption.
 - **ABC Classification & Cycle Counting**: Automatic ABC classification of parts for optimized cycle counting schedules and inventory reconciliation.
 - **PM Dues & Batch Work Order Creation**: Tracking PM due dates/meters and batch creation of work orders for multiple PM instances.
+- **Enhanced Dashboard**: KPI metrics (MTTR, MTBF, Asset Uptime %, PM Compliance, Avg Cost/WO), Procurement Overview widget, and Parts Analytics widget.
 
 ## External Dependencies
 

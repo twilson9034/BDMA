@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
-import { Plus, Search, Filter, Wrench } from "lucide-react";
+import { Plus, Search, Filter, Wrench, X, Check, Users, CheckSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import { 
   Select,
   SelectContent,
@@ -16,6 +17,8 @@ import { DataTable, Column } from "@/components/DataTable";
 import { StatusBadge } from "@/components/StatusBadge";
 import { PriorityBadge } from "@/components/PriorityBadge";
 import { EmptyState } from "@/components/EmptyState";
+import { useToast } from "@/hooks/use-toast";
+import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { WorkOrder } from "@shared/schema";
 
 interface WorkOrderWithAsset extends WorkOrder {
@@ -28,10 +31,63 @@ export default function WorkOrders() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [priorityFilter, setPriorityFilter] = useState<string>("all");
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [bulkStatus, setBulkStatus] = useState<string>("");
+  const { toast } = useToast();
 
   const { data: workOrders, isLoading } = useQuery<WorkOrderWithAsset[]>({
     queryKey: ["/api/work-orders"],
   });
+
+  const batchUpdateMutation = useMutation({
+    mutationFn: async (data: { ids: number[]; updates: Record<string, any> }) => {
+      return apiRequest("POST", "/api/work-orders/batch-update", data);
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/work-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
+      toast({
+        title: "Work Orders Updated",
+        description: `${variables.ids.length} work order(s) have been updated.`,
+      });
+      setSelectedIds(new Set());
+      setBulkStatus("");
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to update work orders.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedIds(new Set(displayData.map(wo => wo.id)));
+    } else {
+      setSelectedIds(new Set());
+    }
+  };
+
+  const handleSelectOne = (id: number, checked: boolean) => {
+    const newSet = new Set(selectedIds);
+    if (checked) {
+      newSet.add(id);
+    } else {
+      newSet.delete(id);
+    }
+    setSelectedIds(newSet);
+  };
+
+  const handleBulkStatusChange = () => {
+    if (bulkStatus && selectedIds.size > 0) {
+      batchUpdateMutation.mutate({
+        ids: Array.from(selectedIds),
+        updates: { status: bulkStatus },
+      });
+    }
+  };
 
   const filteredWorkOrders = (workOrders || []).filter((wo) => {
     const matchesSearch = 
@@ -43,6 +99,25 @@ export default function WorkOrders() {
   });
 
   const columns: Column<WorkOrderWithAsset>[] = [
+    {
+      key: "select",
+      header: () => (
+        <Checkbox
+          checked={displayData.length > 0 && selectedIds.size === displayData.length}
+          onCheckedChange={handleSelectAll}
+          data-testid="checkbox-select-all"
+          onClick={(e) => e.stopPropagation()}
+        />
+      ),
+      cell: (wo) => (
+        <Checkbox
+          checked={selectedIds.has(wo.id)}
+          onCheckedChange={(checked) => handleSelectOne(wo.id, checked as boolean)}
+          onClick={(e) => e.stopPropagation()}
+          data-testid={`checkbox-select-${wo.id}`}
+        />
+      ),
+    },
     {
       key: "workOrderNumber",
       header: "WO Number",
@@ -127,6 +202,11 @@ export default function WorkOrders() {
       rootCause: null,
       resolution: null,
       notes: null,
+      technicianSignature: null,
+      technicianSignedAt: null,
+      customerSignature: null,
+      customerSignedAt: null,
+      customerSignedBy: null,
       createdAt: new Date("2024-01-15"),
       updatedAt: new Date("2024-01-15"),
     },
@@ -156,6 +236,11 @@ export default function WorkOrders() {
       rootCause: null,
       resolution: null,
       notes: null,
+      technicianSignature: null,
+      technicianSignedAt: null,
+      customerSignature: null,
+      customerSignedAt: null,
+      customerSignedBy: null,
       createdAt: new Date("2024-01-15"),
       updatedAt: new Date("2024-01-15"),
     },
@@ -185,6 +270,11 @@ export default function WorkOrders() {
       rootCause: null,
       resolution: null,
       notes: null,
+      technicianSignature: null,
+      technicianSignedAt: null,
+      customerSignature: null,
+      customerSignedAt: null,
+      customerSignedBy: null,
       createdAt: new Date("2024-01-14"),
       updatedAt: new Date("2024-01-15"),
     },
@@ -213,6 +303,49 @@ export default function WorkOrders() {
           </Button>
         }
       />
+
+      {/* Bulk Actions Bar */}
+      {selectedIds.size > 0 && (
+        <div className="flex items-center gap-4 p-3 bg-primary/10 border border-primary/20 rounded-lg" data-testid="bulk-actions-bar">
+          <div className="flex items-center gap-2">
+            <CheckSquare className="h-4 w-4 text-primary" />
+            <span className="text-sm font-medium">{selectedIds.size} selected</span>
+          </div>
+          <div className="flex-1" />
+          <div className="flex items-center gap-2">
+            <Select value={bulkStatus} onValueChange={setBulkStatus}>
+              <SelectTrigger className="w-[160px]" data-testid="select-bulk-status">
+                <SelectValue placeholder="Change status to..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="open">Open</SelectItem>
+                <SelectItem value="in_progress">In Progress</SelectItem>
+                <SelectItem value="on_hold">On Hold</SelectItem>
+                <SelectItem value="ready_for_review">Ready for Review</SelectItem>
+                <SelectItem value="completed">Completed</SelectItem>
+                <SelectItem value="cancelled">Cancelled</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button
+              size="sm"
+              onClick={handleBulkStatusChange}
+              disabled={!bulkStatus || batchUpdateMutation.isPending}
+              data-testid="button-bulk-update"
+            >
+              <Check className="h-4 w-4 mr-1" />
+              Apply
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setSelectedIds(new Set())}
+              data-testid="button-clear-selection"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-col sm:flex-row gap-4">
         <div className="relative flex-1">
