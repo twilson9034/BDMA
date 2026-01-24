@@ -2234,6 +2234,127 @@ export class DatabaseStorage implements IStorage {
       .set({ dismissedAt: new Date() })
       .where(and(eq(notifications.id, id), eq(notifications.userId, userId)));
   }
+
+  // ============================================================
+  // TENANT-SCOPED METHODS
+  // These methods filter data by organization ID for multi-tenancy
+  // ============================================================
+
+  async getAssetsByOrg(orgId: number): Promise<Asset[]> {
+    return db.select().from(assets).where(eq(assets.orgId, orgId)).orderBy(desc(assets.createdAt));
+  }
+
+  async getPartsByOrg(orgId: number): Promise<Part[]> {
+    return db.select().from(parts).where(eq(parts.orgId, orgId)).orderBy(parts.partNumber);
+  }
+
+  async getWorkOrdersByOrg(orgId: number): Promise<WorkOrder[]> {
+    return db.select().from(workOrders).where(eq(workOrders.orgId, orgId)).orderBy(desc(workOrders.createdAt));
+  }
+
+  async getLocationsByOrg(orgId: number): Promise<Location[]> {
+    return db.select().from(locations).where(eq(locations.orgId, orgId)).orderBy(locations.name);
+  }
+
+  async getVendorsByOrg(orgId: number): Promise<Vendor[]> {
+    return db.select().from(vendors).where(eq(vendors.orgId, orgId)).orderBy(vendors.name);
+  }
+
+  async getPmSchedulesByOrg(orgId: number): Promise<PmSchedule[]> {
+    return db.select().from(pmSchedules).where(eq(pmSchedules.orgId, orgId)).orderBy(pmSchedules.name);
+  }
+
+  async getRequisitionsByOrg(orgId: number): Promise<PurchaseRequisition[]> {
+    return db.select().from(purchaseRequisitions).where(eq(purchaseRequisitions.orgId, orgId)).orderBy(desc(purchaseRequisitions.createdAt));
+  }
+
+  async getPurchaseOrdersByOrg(orgId: number): Promise<PurchaseOrder[]> {
+    return db.select().from(purchaseOrders).where(eq(purchaseOrders.orgId, orgId)).orderBy(desc(purchaseOrders.createdAt));
+  }
+
+  async getEstimatesByOrg(orgId: number): Promise<Estimate[]> {
+    return db.select().from(estimates).where(eq(estimates.orgId, orgId)).orderBy(desc(estimates.createdAt));
+  }
+
+  async getDvirsByOrg(orgId: number): Promise<Dvir[]> {
+    return db.select().from(dvirs).where(eq(dvirs.orgId, orgId)).orderBy(desc(dvirs.inspectionDate));
+  }
+
+  async getPartKitsByOrg(orgId: number): Promise<PartKit[]> {
+    return db.select().from(partKits).where(eq(partKits.orgId, orgId)).orderBy(partKits.name);
+  }
+
+  async getCycleCountsByOrg(orgId: number): Promise<CycleCount[]> {
+    return db.select().from(cycleCounts).where(eq(cycleCounts.orgId, orgId)).orderBy(desc(cycleCounts.scheduledDate));
+  }
+
+  async getChecklistTemplatesByOrg(orgId: number): Promise<ChecklistTemplate[]> {
+    return db.select().from(checklistTemplates).where(eq(checklistTemplates.orgId, orgId)).orderBy(checklistTemplates.name);
+  }
+
+  async getPartRequestsByOrg(orgId: number, status?: string): Promise<PartRequest[]> {
+    if (status) {
+      return db.select().from(partRequests)
+        .where(and(eq(partRequests.orgId, orgId), eq(partRequests.status, status)))
+        .orderBy(desc(partRequests.createdAt));
+    }
+    return db.select().from(partRequests).where(eq(partRequests.orgId, orgId)).orderBy(desc(partRequests.createdAt));
+  }
+
+  async getNotificationsByOrg(orgId: number, userId: string): Promise<Notification[]> {
+    return db.select().from(notifications)
+      .where(and(eq(notifications.orgId, orgId), eq(notifications.userId, userId), isNull(notifications.dismissedAt)))
+      .orderBy(desc(notifications.createdAt));
+  }
+
+  async getDashboardStatsByOrg(orgId: number): Promise<{
+    totalAssets: number;
+    operationalAssets: number;
+    inMaintenanceAssets: number;
+    downAssets: number;
+    openWorkOrders: number;
+    overdueWorkOrders: number;
+    partsLowStock: number;
+    pmDueThisWeek: number;
+  }> {
+    const orgAssets = await db.select().from(assets).where(eq(assets.orgId, orgId));
+    const orgWorkOrders = await db.select().from(workOrders).where(eq(workOrders.orgId, orgId));
+    const orgParts = await db.select().from(parts).where(eq(parts.orgId, orgId));
+
+    const operational = orgAssets.filter(a => a.status === "operational").length;
+    const inMaintenance = orgAssets.filter(a => a.status === "in_maintenance").length;
+    const down = orgAssets.filter(a => a.status === "down").length;
+    const openWos = orgWorkOrders.filter(w => w.status === "open" || w.status === "in_progress").length;
+    const overdueWos = orgWorkOrders.filter(w => w.dueDate && new Date(w.dueDate) < new Date() && w.status !== "completed" && w.status !== "cancelled").length;
+    const lowStock = orgParts.filter(p => p.reorderPoint && p.quantityOnHand && parseFloat(p.quantityOnHand) <= parseFloat(p.reorderPoint)).length;
+
+    return {
+      totalAssets: orgAssets.length,
+      operationalAssets: operational,
+      inMaintenanceAssets: inMaintenance,
+      downAssets: down,
+      openWorkOrders: openWos,
+      overdueWorkOrders: overdueWos,
+      partsLowStock: lowStock,
+      pmDueThisWeek: 0, // TODO: Calculate based on PM instances
+    };
+  }
+
+  // Validate entity belongs to org
+  async validateAssetOrg(assetId: number, orgId: number): Promise<boolean> {
+    const [asset] = await db.select().from(assets).where(and(eq(assets.id, assetId), eq(assets.orgId, orgId)));
+    return !!asset;
+  }
+
+  async validateWorkOrderOrg(workOrderId: number, orgId: number): Promise<boolean> {
+    const [wo] = await db.select().from(workOrders).where(and(eq(workOrders.id, workOrderId), eq(workOrders.orgId, orgId)));
+    return !!wo;
+  }
+
+  async validatePartOrg(partId: number, orgId: number): Promise<boolean> {
+    const [part] = await db.select().from(parts).where(and(eq(parts.id, partId), eq(parts.orgId, orgId)));
+    return !!part;
+  }
 }
 
 export const storage = new DatabaseStorage();
