@@ -282,8 +282,8 @@ export default function Assets() {
             <Truck className="h-5 w-5 text-primary" />
           </div>
           <div>
-            <p className="font-medium">{asset.assetNumber}</p>
-            <p className="text-xs text-muted-foreground">{asset.name}</p>
+            <p className="font-medium" data-testid={`text-asset-number-${asset.id}`}>{asset.assetNumber}</p>
+            <p className="text-xs text-muted-foreground" data-testid={`text-asset-name-${asset.id}`}>{asset.name}</p>
           </div>
         </div>
       ),
@@ -292,7 +292,7 @@ export default function Assets() {
       key: "type",
       header: "Type",
       cell: (asset) => (
-        <Badge variant="outline" className="capitalize">
+        <Badge variant="outline" className="capitalize" data-testid={`badge-asset-type-${asset.id}`}>
           {asset.type}
         </Badge>
       ),
@@ -320,7 +320,7 @@ export default function Assets() {
       key: "location",
       header: "Location",
       cell: (asset) => (
-        <span className="text-sm">{asset.locationName || "-"}</span>
+        <span className="text-sm" data-testid={`text-asset-location-${asset.id}`}>{asset.locationName || "-"}</span>
       ),
     },
     {
@@ -341,7 +341,7 @@ export default function Assets() {
       key: "meterReading",
       header: "Meter",
       cell: (asset) => (
-        <div className="text-sm">
+        <div className="text-sm" data-testid={`text-asset-meter-${asset.id}`}>
           {asset.currentMeterReading ? (
             <>
               <span className="font-medium">{Number(asset.currentMeterReading).toLocaleString()}</span>
@@ -357,7 +357,7 @@ export default function Assets() {
       key: "manufacturer",
       header: "Make/Model",
       cell: (asset) => (
-        <div className="text-sm">
+        <div className="text-sm" data-testid={`text-asset-makemodel-${asset.id}`}>
           <p>{asset.manufacturer || "-"}</p>
           <p className="text-muted-foreground">{asset.model || ""}</p>
         </div>

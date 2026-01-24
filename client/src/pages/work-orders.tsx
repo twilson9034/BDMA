@@ -211,8 +211,8 @@ export default function WorkOrders() {
             <Wrench className="h-4 w-4 text-primary" />
           </div>
           <div>
-            <p className="font-medium">{wo.workOrderNumber}</p>
-            <p className="text-xs text-muted-foreground">{wo.type}</p>
+            <p className="font-medium" data-testid={`text-wo-number-${wo.id}`}>{wo.workOrderNumber}</p>
+            <p className="text-xs text-muted-foreground" data-testid={`text-wo-type-${wo.id}`}>{wo.type}</p>
           </div>
         </div>
       ),
@@ -222,9 +222,9 @@ export default function WorkOrders() {
       header: "Title",
       cell: (wo) => (
         <div className="max-w-xs">
-          <p className="truncate">{wo.title}</p>
+          <p className="truncate" data-testid={`text-wo-title-${wo.id}`}>{wo.title}</p>
           {wo.assetName && (
-            <p className="text-xs text-muted-foreground truncate">{wo.assetName}</p>
+            <p className="text-xs text-muted-foreground truncate" data-testid={`text-wo-asset-${wo.id}`}>{wo.assetName}</p>
           )}
         </div>
       ),
@@ -243,7 +243,7 @@ export default function WorkOrders() {
       key: "dueDate",
       header: "Due Date",
       cell: (wo) => (
-        <span className="text-sm">
+        <span className="text-sm" data-testid={`text-wo-due-${wo.id}`}>
           {wo.dueDate ? new Date(wo.dueDate).toLocaleDateString() : "-"}
         </span>
       ),
@@ -252,7 +252,7 @@ export default function WorkOrders() {
       key: "createdAt",
       header: "Created",
       cell: (wo) => (
-        <span className="text-sm text-muted-foreground">
+        <span className="text-sm text-muted-foreground" data-testid={`text-wo-created-${wo.id}`}>
           {wo.createdAt ? new Date(wo.createdAt).toLocaleDateString() : "-"}
         </span>
       ),
