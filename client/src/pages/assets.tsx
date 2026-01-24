@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { Plus, Search, Truck, Filter, Gauge, Download, MapPin } from "lucide-react";
 import { BatchMeterUpdate } from "@/components/BatchMeterUpdate";
 import { useToast } from "@/hooks/use-toast";
+import { useMembership } from "@/hooks/use-membership";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -40,9 +41,11 @@ export default function Assets() {
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [lifecycleFilter, setLifecycleFilter] = useState<string>("all");
   const [locationFilter, setLocationFilter] = useState<string>("all");
+  const [locationFilterInitialized, setLocationFilterInitialized] = useState(false);
   const [viewMode, setViewMode] = useState<"table" | "grid">("table");
   const [showBatchMeter, setShowBatchMeter] = useState(false);
   const { toast } = useToast();
+  const { primaryLocationId, isLoading: membershipLoading } = useMembership();
 
   const { data: assets, isLoading } = useQuery<AssetWithLocation[]>({
     queryKey: ["/api/assets"],
@@ -51,6 +54,15 @@ export default function Assets() {
   const { data: locations } = useQuery<Location[]>({
     queryKey: ["/api/locations"],
   });
+
+  useEffect(() => {
+    if (!locationFilterInitialized && !membershipLoading && primaryLocationId) {
+      setLocationFilter(primaryLocationId.toString());
+      setLocationFilterInitialized(true);
+    } else if (!locationFilterInitialized && !membershipLoading && !primaryLocationId) {
+      setLocationFilterInitialized(true);
+    }
+  }, [primaryLocationId, membershipLoading, locationFilterInitialized]);
 
   const mockAssets: AssetWithLocation[] = [
     {

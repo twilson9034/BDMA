@@ -122,6 +122,7 @@ import {
   type Notification,
   organizations,
   orgMemberships,
+  memberLocations,
   tires,
   conversations,
   messages,
@@ -131,6 +132,8 @@ import {
   publicAssetTokens,
   type Organization,
   type OrgMembership,
+  type MemberLocation,
+  type InsertMemberLocation,
   type Tire,
   type InsertTire,
   type Conversation,
@@ -154,6 +157,10 @@ export interface IStorage {
 
   // Organizations
   getOrganization(id: number): Promise<Organization | undefined>;
+  getOrganizationBySlug(slug: string): Promise<Organization | undefined>;
+  createOrganization(data: { name: string; slug: string; plan?: string }): Promise<Organization>;
+  createOrgMembership(data: { userId: string; orgId: number; role: string; isDefault?: boolean; primaryLocationId?: number | null }): Promise<OrgMembership>;
+  getUserOrganizations(userId: string): Promise<Array<{ org: Organization; membership: OrgMembership }>>;
   updateOrganization(id: number, data: Partial<{ name: string; slug: string }>): Promise<Organization | undefined>;
   getOrgMembers(orgId: number): Promise<Array<{
     id: number;
@@ -167,6 +174,10 @@ export interface IStorage {
   }>>;
   getOrgMembership(orgId: number, userId: string): Promise<OrgMembership | undefined>;
   updateOrgMemberRole(memberId: number, role: string): Promise<OrgMembership | undefined>;
+  updateMemberPrimaryLocation(memberId: number, primaryLocationId: number | null): Promise<OrgMembership | undefined>;
+  getMemberLocations(membershipId: number): Promise<MemberLocation[]>;
+  addMemberLocation(data: InsertMemberLocation): Promise<MemberLocation>;
+  removeMemberLocation(membershipId: number, locationId: number): Promise<void>;
   countOrgOwners(orgId: number): Promise<number>;
   
   // Locations
@@ -526,6 +537,43 @@ export class DatabaseStorage implements IStorage {
     return org;
   }
 
+  async getOrganizationBySlug(slug: string): Promise<Organization | undefined> {
+    const [org] = await db.select().from(organizations).where(eq(organizations.slug, slug));
+    return org;
+  }
+
+  async createOrganization(data: { name: string; slug: string; plan?: string }): Promise<Organization> {
+    const [org] = await db.insert(organizations).values({
+      name: data.name,
+      slug: data.slug,
+      plan: data.plan || "starter",
+    }).returning();
+    return org;
+  }
+
+  async createOrgMembership(data: { userId: string; orgId: number; role: string; isDefault?: boolean; primaryLocationId?: number | null }): Promise<OrgMembership> {
+    const [membership] = await db.insert(orgMemberships).values({
+      userId: data.userId,
+      orgId: data.orgId,
+      role: data.role,
+      isDefault: data.isDefault ?? false,
+      primaryLocationId: data.primaryLocationId ?? null,
+    }).returning();
+    return membership;
+  }
+
+  async getUserOrganizations(userId: string): Promise<Array<{ org: Organization; membership: OrgMembership }>> {
+    const results = await db.select()
+      .from(orgMemberships)
+      .innerJoin(organizations, eq(orgMemberships.orgId, organizations.id))
+      .where(eq(orgMemberships.userId, userId));
+    
+    return results.map(row => ({
+      org: row.organizations,
+      membership: row.org_memberships,
+    }));
+  }
+
   async updateOrganization(id: number, data: Partial<{ name: string; slug: string }>): Promise<Organization | undefined> {
     const [updated] = await db.update(organizations)
       .set({ ...data, updatedAt: new Date() })
@@ -578,6 +626,32 @@ export class DatabaseStorage implements IStorage {
     const owners = await db.select().from(orgMemberships)
       .where(and(eq(orgMemberships.orgId, orgId), eq(orgMemberships.role, "owner")));
     return owners.length;
+  }
+
+  async updateMemberPrimaryLocation(memberId: number, primaryLocationId: number | null): Promise<OrgMembership | undefined> {
+    const [updated] = await db.update(orgMemberships)
+      .set({ primaryLocationId })
+      .where(eq(orgMemberships.id, memberId))
+      .returning();
+    return updated;
+  }
+
+  async getMemberLocations(membershipId: number): Promise<MemberLocation[]> {
+    return db.select().from(memberLocations)
+      .where(eq(memberLocations.membershipId, membershipId));
+  }
+
+  async addMemberLocation(data: InsertMemberLocation): Promise<MemberLocation> {
+    const [created] = await db.insert(memberLocations).values(data).returning();
+    return created;
+  }
+
+  async removeMemberLocation(membershipId: number, locationId: number): Promise<void> {
+    await db.delete(memberLocations)
+      .where(and(
+        eq(memberLocations.membershipId, membershipId),
+        eq(memberLocations.locationId, locationId)
+      ));
   }
 
   // Locations

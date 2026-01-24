@@ -27,6 +27,7 @@ export const organizations = pgTable("organizations", {
   phone: text("phone"),
   email: text("email"),
   maxAssets: integer("max_assets").default(25), // Fleet size limit based on plan
+  allowMultiLocationTechs: boolean("allow_multi_location_techs").default(false), // Allow technicians at multiple locations
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -47,6 +48,7 @@ export const orgMemberships = pgTable("org_memberships", {
   userId: varchar("user_id").notNull(),
   orgId: integer("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
   role: text("role").default("technician").$type<typeof orgRoleEnum[number]>(),
+  primaryLocationId: integer("primary_location_id"), // Technician's primary/default location for filtering
   isActive: boolean("is_active").default(true),
   isDefault: boolean("is_default").default(false), // User's default org
   createdAt: timestamp("created_at").defaultNow(),
@@ -64,9 +66,30 @@ export const insertOrgMembershipSchema = createInsertSchema(orgMemberships).omit
 export const updateOrgMemberRoleSchema = z.object({
   role: z.enum(["owner", "admin", "manager", "technician", "viewer"]),
 });
+export const updateMemberLocationSchema = z.object({
+  primaryLocationId: z.number().nullable(),
+});
 export type InsertOrgMembership = z.infer<typeof insertOrgMembershipSchema>;
 export type UpdateOrgMemberRole = z.infer<typeof updateOrgMemberRoleSchema>;
+export type UpdateMemberLocation = z.infer<typeof updateMemberLocationSchema>;
 export type OrgMembership = typeof orgMemberships.$inferSelect;
+
+// ============================================================
+// MEMBER LOCATION ASSIGNMENTS (for multi-location technicians)
+// ============================================================
+export const memberLocations = pgTable("member_locations", {
+  id: serial("id").primaryKey(),
+  membershipId: integer("membership_id").notNull().references(() => orgMemberships.id, { onDelete: "cascade" }),
+  locationId: integer("location_id").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_member_locations_membership").on(table.membershipId),
+  index("idx_member_locations_location").on(table.locationId),
+]);
+
+export const insertMemberLocationSchema = createInsertSchema(memberLocations).omit({ id: true, createdAt: true });
+export type InsertMemberLocation = z.infer<typeof insertMemberLocationSchema>;
+export type MemberLocation = typeof memberLocations.$inferSelect;
 
 // ============================================================
 // LOCATIONS

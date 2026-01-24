@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { Plus, Search, ClipboardList, CheckCircle2, AlertTriangle, XCircle, MapPin } from "lucide-react";
@@ -16,6 +16,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { DataTable, Column } from "@/components/DataTable";
 import { StatusBadge } from "@/components/StatusBadge";
 import { EmptyState } from "@/components/EmptyState";
+import { useMembership } from "@/hooks/use-membership";
 import type { Dvir, Location } from "@shared/schema";
 
 interface DvirWithAsset extends Dvir {
@@ -33,6 +34,8 @@ export default function DVIRs() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [locationFilter, setLocationFilter] = useState<string>("all");
+  const [locationFilterInitialized, setLocationFilterInitialized] = useState(false);
+  const { primaryLocationId, isLoading: membershipLoading } = useMembership();
 
   const { data: dvirs, isLoading } = useQuery<DvirWithLocation[]>({
     queryKey: ["/api/dvirs"],
@@ -41,6 +44,15 @@ export default function DVIRs() {
   const { data: locations } = useQuery<Location[]>({
     queryKey: ["/api/locations"],
   });
+
+  useEffect(() => {
+    if (!locationFilterInitialized && !membershipLoading && primaryLocationId) {
+      setLocationFilter(primaryLocationId.toString());
+      setLocationFilterInitialized(true);
+    } else if (!locationFilterInitialized && !membershipLoading && !primaryLocationId) {
+      setLocationFilterInitialized(true);
+    }
+  }, [primaryLocationId, membershipLoading, locationFilterInitialized]);
 
   const mockDvirs: DvirWithAsset[] = [
     {

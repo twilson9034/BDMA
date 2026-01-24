@@ -32,7 +32,8 @@ import {
   Tags,
   Settings2,
   Plus,
-  Trash2
+  Trash2,
+  MapPin
 } from "lucide-react";
 import { Link } from "wouter";
 
@@ -43,6 +44,7 @@ interface Organization {
   plan: string;
   status: string;
   maxAssets: number;
+  allowMultiLocationTechs?: boolean;
 }
 
 interface OrgMember {
@@ -54,6 +56,7 @@ interface OrgMember {
   lastName: string | null;
   email: string | null;
   profileImageUrl: string | null;
+  primaryLocationId?: number | null;
 }
 
 interface Location {
@@ -128,6 +131,23 @@ export default function Settings() {
       toast({ 
         title: "Error", 
         description: error?.message || "Failed to update member role.", 
+        variant: "destructive" 
+      });
+    },
+  });
+
+  const updateMemberLocationMutation = useMutation({
+    mutationFn: async ({ memberId, primaryLocationId }: { memberId: number; primaryLocationId: number | null }) => {
+      return apiRequest("PATCH", `/api/organizations/current/members/${memberId}/location`, { primaryLocationId });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/organizations/current/members"] });
+      toast({ title: "Location updated", description: "Member location has been updated." });
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Error", 
+        description: error?.message || "Failed to update member location.", 
         variant: "destructive" 
       });
     },
@@ -489,54 +509,85 @@ export default function Settings() {
                             <p className="text-sm text-muted-foreground">{member.email}</p>
                           </div>
                         </div>
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-3 flex-wrap">
                           {canManageOrg && !isCurrentUser ? (
-                            <Select
-                              value={member.role}
-                              onValueChange={(value) => updateRoleMutation.mutate({ memberId: member.id, role: value })}
-                              disabled={updateRoleMutation.isPending}
-                            >
-                              <SelectTrigger className="w-[140px]" data-testid={`select-role-${member.id}`}>
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="owner">
-                                  <div className="flex items-center gap-2">
-                                    <Crown className="h-4 w-4" />
-                                    Owner
-                                  </div>
-                                </SelectItem>
-                                <SelectItem value="admin">
-                                  <div className="flex items-center gap-2">
-                                    <Shield className="h-4 w-4" />
-                                    Admin
-                                  </div>
-                                </SelectItem>
-                                <SelectItem value="manager">
-                                  <div className="flex items-center gap-2">
-                                    <Users className="h-4 w-4" />
-                                    Manager
-                                  </div>
-                                </SelectItem>
-                                <SelectItem value="technician">
-                                  <div className="flex items-center gap-2">
-                                    <Wrench className="h-4 w-4" />
-                                    Technician
-                                  </div>
-                                </SelectItem>
-                                <SelectItem value="viewer">
-                                  <div className="flex items-center gap-2">
-                                    <Eye className="h-4 w-4" />
-                                    Viewer
-                                  </div>
-                                </SelectItem>
-                              </SelectContent>
-                            </Select>
+                            <>
+                              <Select
+                                value={member.role}
+                                onValueChange={(value) => updateRoleMutation.mutate({ memberId: member.id, role: value })}
+                                disabled={updateRoleMutation.isPending}
+                              >
+                                <SelectTrigger className="w-[140px]" data-testid={`select-role-${member.id}`}>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="owner">
+                                    <div className="flex items-center gap-2">
+                                      <Crown className="h-4 w-4" />
+                                      Owner
+                                    </div>
+                                  </SelectItem>
+                                  <SelectItem value="admin">
+                                    <div className="flex items-center gap-2">
+                                      <Shield className="h-4 w-4" />
+                                      Admin
+                                    </div>
+                                  </SelectItem>
+                                  <SelectItem value="manager">
+                                    <div className="flex items-center gap-2">
+                                      <Users className="h-4 w-4" />
+                                      Manager
+                                    </div>
+                                  </SelectItem>
+                                  <SelectItem value="technician">
+                                    <div className="flex items-center gap-2">
+                                      <Wrench className="h-4 w-4" />
+                                      Technician
+                                    </div>
+                                  </SelectItem>
+                                  <SelectItem value="viewer">
+                                    <div className="flex items-center gap-2">
+                                      <Eye className="h-4 w-4" />
+                                      Viewer
+                                    </div>
+                                  </SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <Select
+                                value={member.primaryLocationId?.toString() || "none"}
+                                onValueChange={(value) => updateMemberLocationMutation.mutate({ 
+                                  memberId: member.id, 
+                                  primaryLocationId: value === "none" ? null : parseInt(value) 
+                                })}
+                                disabled={updateMemberLocationMutation.isPending}
+                              >
+                                <SelectTrigger className="w-[160px]" data-testid={`select-location-${member.id}`}>
+                                  <MapPin className="h-4 w-4 mr-2 text-muted-foreground" />
+                                  <SelectValue placeholder="No location" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="none">No location</SelectItem>
+                                  {locations.map((loc) => (
+                                    <SelectItem key={loc.id} value={loc.id.toString()}>
+                                      {loc.name}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </>
                           ) : (
-                            <Badge variant={roleBadgeVariants[member.role] || "secondary"} className="flex items-center gap-1">
-                              <RoleIcon className="h-3 w-3" />
-                              {roleLabels[member.role] || member.role}
-                            </Badge>
+                            <div className="flex items-center gap-2">
+                              <Badge variant={roleBadgeVariants[member.role] || "secondary"} className="flex items-center gap-1">
+                                <RoleIcon className="h-3 w-3" />
+                                {roleLabels[member.role] || member.role}
+                              </Badge>
+                              {member.primaryLocationId && locations.find(l => l.id === member.primaryLocationId) && (
+                                <Badge variant="outline" className="flex items-center gap-1">
+                                  <MapPin className="h-3 w-3" />
+                                  {locations.find(l => l.id === member.primaryLocationId)?.name}
+                                </Badge>
+                              )}
+                            </div>
                           )}
                         </div>
                       </div>

@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { Plus, Search, Package, AlertTriangle, BarChart3, Download, Barcode, ChevronLeft, ChevronRight, MapPin } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useMembership } from "@/hooks/use-membership";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -38,13 +39,24 @@ export default function Inventory() {
   const [stockFilter, setStockFilter] = useState<string>("all");
   const [abcFilter, setAbcFilter] = useState<string>("all");
   const [locationFilter, setLocationFilter] = useState<string>("all");
+  const [locationFilterInitialized, setLocationFilterInitialized] = useState(false);
   const [page, setPage] = useState(1);
   const [limit] = useState(50);
   const { toast } = useToast();
+  const { primaryLocationId, isLoading: membershipLoading } = useMembership();
 
   const { data: locations } = useQuery<Location[]>({
     queryKey: ["/api/locations"],
   });
+
+  useEffect(() => {
+    if (!locationFilterInitialized && !membershipLoading && primaryLocationId) {
+      setLocationFilter(primaryLocationId.toString());
+      setLocationFilterInitialized(true);
+    } else if (!locationFilterInitialized && !membershipLoading && !primaryLocationId) {
+      setLocationFilterInitialized(true);
+    }
+  }, [primaryLocationId, membershipLoading, locationFilterInitialized]);
 
   // Debounce search input
   useEffect(() => {

@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { Plus, Search, Wrench, X, Check, CheckSquare, Download, ArrowUpDown, MapPin } from "lucide-react";
@@ -18,6 +18,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { PriorityBadge } from "@/components/PriorityBadge";
 import { EmptyState } from "@/components/EmptyState";
 import { useToast } from "@/hooks/use-toast";
+import { useMembership } from "@/hooks/use-membership";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { WorkOrder, Location } from "@shared/schema";
 
@@ -42,11 +43,13 @@ export default function WorkOrders() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [priorityFilter, setPriorityFilter] = useState<string>("all");
   const [locationFilter, setLocationFilter] = useState<string>("all");
+  const [locationFilterInitialized, setLocationFilterInitialized] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [bulkStatus, setBulkStatus] = useState<string>("");
   const [sortField, setSortField] = useState<SortField>("createdAt");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
   const { toast } = useToast();
+  const { primaryLocationId, isLoading: membershipLoading } = useMembership();
 
   const { data: workOrders, isLoading } = useQuery<WorkOrderWithAsset[]>({
     queryKey: ["/api/work-orders"],
@@ -55,6 +58,15 @@ export default function WorkOrders() {
   const { data: locations } = useQuery<Location[]>({
     queryKey: ["/api/locations"],
   });
+
+  useEffect(() => {
+    if (!locationFilterInitialized && !membershipLoading && primaryLocationId) {
+      setLocationFilter(primaryLocationId.toString());
+      setLocationFilterInitialized(true);
+    } else if (!locationFilterInitialized && !membershipLoading && !primaryLocationId) {
+      setLocationFilterInitialized(true);
+    }
+  }, [primaryLocationId, membershipLoading, locationFilterInitialized]);
 
   const batchUpdateMutation = useMutation({
     mutationFn: async (data: { ids: number[]; updates: Record<string, any> }) => {

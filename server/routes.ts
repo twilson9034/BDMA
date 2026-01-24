@@ -329,6 +329,156 @@ export async function registerRoutes(
     }
   });
 
+  // Update member primary location (only owner/admin can update)
+  app.patch("/api/organizations/current/members/:memberId/location", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const userId = (req.user as any)?.claims?.sub;
+      if (!userId) return res.status(401).json({ error: "User not found" });
+      
+      const orgId = getOrgId(req);
+      if (!orgId) return res.status(403).json({ error: "No organization context" });
+      
+      const memberId = parseInt(req.params.memberId);
+      const { primaryLocationId } = req.body;
+      
+      // Check user has owner or admin role using storage
+      const membership = await storage.getOrgMembership(orgId, userId);
+      if (!membership || !["owner", "admin"].includes(membership.role)) {
+        return res.status(403).json({ error: "Only owners and admins can update member locations" });
+      }
+      
+      // Verify the target member belongs to this org
+      const orgMembers = await storage.getOrgMembers(orgId);
+      const targetMember = orgMembers.find(m => m.id === memberId);
+      if (!targetMember) {
+        return res.status(404).json({ error: "Member not found" });
+      }
+      
+      // Verify the location belongs to this org (if specified)
+      if (primaryLocationId !== null && primaryLocationId !== undefined) {
+        const location = await storage.getLocation(primaryLocationId);
+        if (!location || location.orgId !== orgId) {
+          return res.status(400).json({ error: "Invalid location" });
+        }
+      }
+      
+      const updated = await storage.updateMemberPrimaryLocation(memberId, primaryLocationId ?? null);
+      res.json(updated);
+    } catch (error) {
+      console.error("Update member location error:", error);
+      res.status(500).json({ error: "Failed to update member location" });
+    }
+  });
+
+  // Get member location assignments (for multi-location mode)
+  app.get("/api/organizations/current/members/:memberId/locations", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      if (!orgId) return res.status(403).json({ error: "No organization context" });
+      
+      const memberId = parseInt(req.params.memberId);
+      
+      // Verify the member belongs to this org
+      const orgMembers = await storage.getOrgMembers(orgId);
+      if (!orgMembers.find(m => m.id === memberId)) {
+        return res.status(404).json({ error: "Member not found" });
+      }
+      
+      const memberLocs = await storage.getMemberLocations(memberId);
+      res.json(memberLocs);
+    } catch (error) {
+      console.error("Get member locations error:", error);
+      res.status(500).json({ error: "Failed to get member locations" });
+    }
+  });
+
+  // Add member to location (for multi-location mode)
+  app.post("/api/organizations/current/members/:memberId/locations", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const userId = (req.user as any)?.claims?.sub;
+      if (!userId) return res.status(401).json({ error: "User not found" });
+      
+      const orgId = getOrgId(req);
+      if (!orgId) return res.status(403).json({ error: "No organization context" });
+      
+      const memberId = parseInt(req.params.memberId);
+      const { locationId } = req.body;
+      
+      // Check user has owner or admin role
+      const membership = await storage.getOrgMembership(orgId, userId);
+      if (!membership || !["owner", "admin"].includes(membership.role)) {
+        return res.status(403).json({ error: "Only owners and admins can manage member locations" });
+      }
+      
+      // Verify the target member belongs to this org
+      const orgMembers = await storage.getOrgMembers(orgId);
+      if (!orgMembers.find(m => m.id === memberId)) {
+        return res.status(404).json({ error: "Member not found" });
+      }
+      
+      // Verify the location belongs to this org
+      const location = await storage.getLocation(locationId);
+      if (!location || location.orgId !== orgId) {
+        return res.status(400).json({ error: "Invalid location" });
+      }
+      
+      const memberLoc = await storage.addMemberLocation({ membershipId: memberId, locationId });
+      res.json(memberLoc);
+    } catch (error) {
+      console.error("Add member location error:", error);
+      res.status(500).json({ error: "Failed to add member location" });
+    }
+  });
+
+  // Remove member from location (for multi-location mode)
+  app.delete("/api/organizations/current/members/:memberId/locations/:locationId", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const userId = (req.user as any)?.claims?.sub;
+      if (!userId) return res.status(401).json({ error: "User not found" });
+      
+      const orgId = getOrgId(req);
+      if (!orgId) return res.status(403).json({ error: "No organization context" });
+      
+      const memberId = parseInt(req.params.memberId);
+      const locationId = parseInt(req.params.locationId);
+      
+      // Check user has owner or admin role
+      const membership = await storage.getOrgMembership(orgId, userId);
+      if (!membership || !["owner", "admin"].includes(membership.role)) {
+        return res.status(403).json({ error: "Only owners and admins can manage member locations" });
+      }
+      
+      // Verify the target member belongs to this org
+      const orgMembers = await storage.getOrgMembers(orgId);
+      if (!orgMembers.find(m => m.id === memberId)) {
+        return res.status(404).json({ error: "Member not found" });
+      }
+      
+      await storage.removeMemberLocation(memberId, locationId);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Remove member location error:", error);
+      res.status(500).json({ error: "Failed to remove member location" });
+    }
+  });
+
+  // Get current user's membership (for getting primary location for filtering)
+  app.get("/api/organizations/current/my-membership", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const userId = (req.user as any)?.claims?.sub;
+      if (!userId) return res.status(401).json({ error: "User not found" });
+      
+      const orgId = getOrgId(req);
+      if (!orgId) return res.status(403).json({ error: "No organization context" });
+      
+      const membership = await storage.getOrgMembership(orgId, userId);
+      res.json(membership);
+    } catch (error) {
+      console.error("Get my membership error:", error);
+      res.status(500).json({ error: "Failed to get membership" });
+    }
+  });
+
   // Dashboard stats (tenant-scoped)
   app.get("/api/dashboard/stats", tenantMiddleware({ required: false }), async (req, res) => {
     try {
