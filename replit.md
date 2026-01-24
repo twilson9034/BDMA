@@ -69,6 +69,18 @@ Preferred communication style: Simple, everyday language.
 - **Organization Switcher**: UI component in the header for switching between organizations.
 - **Data Isolation**: Routes validate orgId on entity access to prevent cross-tenant data leakage.
 
+#### Multi-Tenant Implementation Status (January 2026)
+**Completed:**
+- Database schema with 30+ tenant-scoped tables (all have orgId column)
+- Tenant middleware pattern: `tenantMiddleware()` for writes, `tenantMiddleware({ required: false })` for reads
+- Major routes tenant-scoped: assets, parts, work orders, locations, vendors, requisitions, POs, estimates, DVIRs, PM schedules, manuals, notifications, predictions, feedback, dashboard
+- Org-scoped storage methods for all major entities including dashboard analytics
+
+**Remaining Work for Complete Isolation:**
+- Helper generators (work order/PO/requisition/estimate numbers) still use unscoped storage
+- Some nested asset routes (images, documents, batch meter updates) need org validation
+- Notification read/dismiss/unread-count endpoints need org membership validation
+
 ## External Dependencies
 
 ### Database
