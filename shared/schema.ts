@@ -964,3 +964,70 @@ export const partUsageHistoryRelations = relations(partUsageHistory, ({ one }) =
 export const insertPartUsageHistorySchema = createInsertSchema(partUsageHistory).omit({ id: true, createdAt: true });
 export type InsertPartUsageHistory = z.infer<typeof insertPartUsageHistorySchema>;
 export type PartUsageHistory = typeof partUsageHistory.$inferSelect;
+
+// ============================================================
+// RECEIVING TRANSACTIONS
+// ============================================================
+export const receivingTransactions = pgTable("receiving_transactions", {
+  id: serial("id").primaryKey(),
+  poId: integer("po_id").notNull().references(() => purchaseOrders.id),
+  poLineId: integer("po_line_id").notNull().references(() => purchaseOrderLines.id),
+  partId: integer("part_id").references(() => parts.id),
+  quantityReceived: decimal("quantity_received", { precision: 12, scale: 2 }).notNull(),
+  receivedById: varchar("received_by_id"),
+  receivedByName: text("received_by_name"),
+  receivedDate: timestamp("received_date").notNull().defaultNow(),
+  notes: text("notes"),
+  discrepancyType: text("discrepancy_type").$type<"none" | "over" | "under" | "damaged" | "wrong_item">().default("none"),
+  discrepancyNotes: text("discrepancy_notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const receivingTransactionsRelations = relations(receivingTransactions, ({ one }) => ({
+  purchaseOrder: one(purchaseOrders, { fields: [receivingTransactions.poId], references: [purchaseOrders.id] }),
+  poLine: one(purchaseOrderLines, { fields: [receivingTransactions.poLineId], references: [purchaseOrderLines.id] }),
+  part: one(parts, { fields: [receivingTransactions.partId], references: [parts.id] }),
+}));
+
+export const insertReceivingTransactionSchema = createInsertSchema(receivingTransactions).omit({ id: true, createdAt: true });
+export type InsertReceivingTransaction = z.infer<typeof insertReceivingTransactionSchema>;
+export type ReceivingTransaction = typeof receivingTransactions.$inferSelect;
+
+// ============================================================
+// PART REQUESTS (Standalone requests from technicians)
+// ============================================================
+export const standalonePartRequestStatusEnum = ["pending", "approved", "ordered", "received", "fulfilled", "cancelled"] as const;
+export const partRequestUrgencyEnum = ["standard", "urgent", "critical"] as const;
+
+export const partRequests = pgTable("part_requests", {
+  id: serial("id").primaryKey(),
+  requestNumber: text("request_number").notNull().unique(),
+  workOrderId: integer("work_order_id").references(() => workOrders.id),
+  workOrderLineId: integer("work_order_line_id").references(() => workOrderLines.id),
+  partId: integer("part_id").references(() => parts.id),
+  partNumber: text("part_number"),
+  partName: text("part_name").notNull(),
+  quantityRequested: decimal("quantity_requested", { precision: 12, scale: 2 }).notNull(),
+  quantityFulfilled: decimal("quantity_fulfilled", { precision: 12, scale: 2 }).default("0"),
+  urgency: text("urgency").notNull().default("standard").$type<typeof partRequestUrgencyEnum[number]>(),
+  status: text("status").notNull().default("pending").$type<typeof standalonePartRequestStatusEnum[number]>(),
+  notes: text("notes"),
+  requestedById: varchar("requested_by_id"),
+  requestedByName: text("requested_by_name"),
+  requisitionId: integer("requisition_id").references(() => purchaseRequisitions.id),
+  poId: integer("po_id").references(() => purchaseOrders.id),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const partRequestsRelations = relations(partRequests, ({ one }) => ({
+  workOrder: one(workOrders, { fields: [partRequests.workOrderId], references: [workOrders.id] }),
+  workOrderLine: one(workOrderLines, { fields: [partRequests.workOrderLineId], references: [workOrderLines.id] }),
+  part: one(parts, { fields: [partRequests.partId], references: [parts.id] }),
+  requisition: one(purchaseRequisitions, { fields: [partRequests.requisitionId], references: [purchaseRequisitions.id] }),
+  purchaseOrder: one(purchaseOrders, { fields: [partRequests.poId], references: [purchaseOrders.id] }),
+}));
+
+export const insertPartRequestSchema = createInsertSchema(partRequests).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertPartRequest = z.infer<typeof insertPartRequestSchema>;
+export type PartRequest = typeof partRequests.$inferSelect;

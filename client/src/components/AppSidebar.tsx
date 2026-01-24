@@ -18,6 +18,9 @@ import {
   Calculator,
   ChevronDown,
   Upload,
+  PackageCheck,
+  PackageSearch,
+  ListChecks,
 } from "lucide-react";
 import {
   Sidebar,
@@ -50,6 +53,7 @@ const operationsItems = [
   { title: "PM Schedules", url: "/pm-schedules", icon: Calendar },
   { title: "Checklists", url: "/checklist-templates", icon: ClipboardCheck },
   { title: "DVIRs", url: "/dvirs", icon: ClipboardList },
+  { title: "Ready for Review", url: "/ready-for-review", icon: ListChecks },
   { title: "Predictions", url: "/predictions", icon: AlertTriangle },
   { title: "Estimates", url: "/estimates", icon: Calculator },
 ];
@@ -57,6 +61,8 @@ const operationsItems = [
 const procurementItems = [
   { title: "Requisitions", url: "/requisitions", icon: FileText },
   { title: "Purchase Orders", url: "/purchase-orders", icon: ShoppingCart },
+  { title: "Receiving", url: "/receiving", icon: PackageCheck },
+  { title: "Part Requests", url: "/part-requests", icon: PackageSearch },
   { title: "Vendors", url: "/vendors", icon: Users },
 ];
 

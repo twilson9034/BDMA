@@ -23,6 +23,8 @@ import {
   insertVmrsCodeSchema,
   insertChecklistTemplateSchema,
   insertChecklistMakeModelAssignmentSchema,
+  insertReceivingTransactionSchema,
+  insertPartRequestSchema,
   type ImportErrorSummary,
 } from "@shared/schema";
 import OpenAI from "openai";
@@ -991,13 +993,24 @@ export async function registerRoutes(
   app.post("/api/po-lines/:id/receive", requireAuth, async (req, res) => {
     try {
       const lineId = parseInt(req.params.id);
-      const { quantityReceived } = req.body;
-
-      // Validate input - must be a positive number
-      const qtyToReceive = parseFloat(quantityReceived);
-      if (!quantityReceived || isNaN(qtyToReceive) || qtyToReceive <= 0) {
-        return res.status(400).json({ error: "Quantity must be a positive number" });
+      
+      // Validate input with Zod schema
+      const receiveSchema = z.object({
+        quantityReceived: z.string().refine(val => !isNaN(parseFloat(val)) && parseFloat(val) > 0, {
+          message: "Quantity must be a positive number"
+        }),
+        notes: z.string().optional(),
+        discrepancyType: z.enum(["none", "damaged", "wrong_item", "over", "under"]).optional(),
+        discrepancyNotes: z.string().optional(),
+      });
+      
+      const validatedInput = receiveSchema.safeParse(req.body);
+      if (!validatedInput.success) {
+        return res.status(400).json({ error: validatedInput.error.errors[0]?.message || "Invalid input" });
       }
+      
+      const { quantityReceived, notes, discrepancyType, discrepancyNotes } = validatedInput.data;
+      const qtyToReceive = parseFloat(quantityReceived);
 
       // Get the line
       const line = await storage.getPurchaseOrderLine(lineId);
@@ -1056,10 +1069,91 @@ export async function registerRoutes(
         await storage.updatePurchaseOrder(line.poId, updateData);
       }
 
+      // Create receiving transaction for audit trail
+      const user = (req as any).user;
+      await storage.createReceivingTransaction({
+        poId: line.poId,
+        poLineId: lineId,
+        partId: line.partId || undefined,
+        quantityReceived: qtyToReceive.toString(),
+        receivedById: user?.id,
+        receivedByName: user?.firstName ? `${user.firstName} ${user.lastName || ''}`.trim() : user?.email,
+        receivedDate: new Date(),
+        notes: notes,
+        discrepancyType: discrepancyType || "none",
+        discrepancyNotes: discrepancyNotes,
+      });
+
       res.json(updatedLine);
     } catch (error) {
       console.error("Receive PO line error:", error);
       res.status(500).json({ error: "Failed to receive PO line" });
+    }
+  });
+
+  // Receiving Transactions
+  app.get("/api/receiving-transactions", async (req, res) => {
+    const poId = req.query.poId ? parseInt(req.query.poId as string) : undefined;
+    const transactions = await storage.getReceivingTransactions(poId);
+    res.json(transactions);
+  });
+
+  // Part Requests
+  app.get("/api/part-requests", async (req, res) => {
+    const status = req.query.status as string | undefined;
+    const requests = await storage.getPartRequests(status);
+    res.json(requests);
+  });
+
+  app.get("/api/part-requests/:id", async (req, res) => {
+    const request = await storage.getPartRequest(parseInt(req.params.id));
+    if (!request) return res.status(404).json({ error: "Part request not found" });
+    res.json(request);
+  });
+
+  app.post("/api/part-requests", requireAuth, async (req, res) => {
+    try {
+      const requestNumber = await storage.getNextPartRequestNumber();
+      const user = (req as any).user;
+      const validated = insertPartRequestSchema.parse({
+        ...req.body,
+        requestNumber,
+        requestedById: user?.id,
+        requestedByName: user?.firstName ? `${user.firstName} ${user.lastName || ''}`.trim() : user?.email,
+      });
+      const request = await storage.createPartRequest(validated);
+      res.status(201).json(request);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      console.error("Create part request error:", error);
+      res.status(500).json({ error: "Failed to create part request" });
+    }
+  });
+
+  app.patch("/api/part-requests/:id", requireAuth, async (req, res) => {
+    try {
+      // Validate partial update with allowed fields (using coercion for flexible input types)
+      const updateSchema = z.object({
+        status: z.enum(["pending", "approved", "ordered", "received", "fulfilled", "cancelled"]).optional(),
+        notes: z.string().optional().nullable(),
+        quantityFulfilled: z.string().optional(),
+        fulfilledDate: z.coerce.date().optional(),
+        fulfilledById: z.string().optional(),
+        fulfilledByName: z.string().optional(),
+        poId: z.coerce.number().optional(),
+      });
+      const validatedData = updateSchema.parse(req.body);
+      const updated = await storage.updatePartRequest(parseInt(req.params.id), validatedData);
+      if (!updated) return res.status(404).json({ error: "Part request not found" });
+      res.json(updated);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      console.error("Update part request error:", error);
+      res.status(500).json({ error: "Failed to update part request" });
     }
   });
 

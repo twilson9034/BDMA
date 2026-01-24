@@ -31,6 +31,8 @@ import {
   faultCodes,
   checklistTemplates,
   checklistMakeModelAssignments,
+  receivingTransactions,
+  partRequests,
   type User,
   type UpsertUser,
   type InsertLocation,
@@ -84,6 +86,10 @@ import {
   type ChecklistTemplate,
   type InsertChecklistMakeModelAssignment,
   type ChecklistMakeModelAssignment,
+  type InsertReceivingTransaction,
+  type ReceivingTransaction,
+  type InsertPartRequest,
+  type PartRequest,
   importJobs,
   type InsertImportJob,
   type ImportJob,
@@ -306,6 +312,17 @@ export interface IStorage {
     unitPrice: string | number;
     totalCost?: string | number;
   }>): Promise<{ successCount: number; errorCount: number; errors: Array<{ row: number; message: string }> }>;
+
+  // Receiving Transactions
+  getReceivingTransactions(poId?: number): Promise<ReceivingTransaction[]>;
+  createReceivingTransaction(transaction: InsertReceivingTransaction): Promise<ReceivingTransaction>;
+  
+  // Part Requests
+  getPartRequests(status?: string): Promise<PartRequest[]>;
+  getPartRequest(id: number): Promise<PartRequest | undefined>;
+  createPartRequest(request: InsertPartRequest): Promise<PartRequest>;
+  updatePartRequest(id: number, request: Partial<InsertPartRequest>): Promise<PartRequest | undefined>;
+  getNextPartRequestNumber(): Promise<string>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1357,6 +1374,62 @@ export class DatabaseStorage implements IStorage {
     }
 
     return { successCount, errorCount, errors };
+  }
+
+  // Receiving Transactions
+  async getReceivingTransactions(poId?: number): Promise<ReceivingTransaction[]> {
+    if (poId) {
+      return await db.select().from(receivingTransactions).where(eq(receivingTransactions.poId, poId)).orderBy(desc(receivingTransactions.receivedDate));
+    }
+    return await db.select().from(receivingTransactions).orderBy(desc(receivingTransactions.receivedDate));
+  }
+
+  async createReceivingTransaction(transaction: InsertReceivingTransaction): Promise<ReceivingTransaction> {
+    const [result] = await db.insert(receivingTransactions).values(transaction).returning();
+    return result;
+  }
+
+  // Part Requests
+  async getPartRequests(status?: string): Promise<PartRequest[]> {
+    if (status) {
+      return await db.select().from(partRequests).where(eq(partRequests.status, status as any)).orderBy(desc(partRequests.createdAt));
+    }
+    return await db.select().from(partRequests).orderBy(desc(partRequests.createdAt));
+  }
+
+  async getPartRequest(id: number): Promise<PartRequest | undefined> {
+    const [result] = await db.select().from(partRequests).where(eq(partRequests.id, id));
+    return result;
+  }
+
+  async createPartRequest(request: InsertPartRequest): Promise<PartRequest> {
+    const [result] = await db.insert(partRequests).values(request).returning();
+    return result;
+  }
+
+  async updatePartRequest(id: number, request: Partial<InsertPartRequest>): Promise<PartRequest | undefined> {
+    const [result] = await db.update(partRequests).set({ ...request, updatedAt: new Date() }).where(eq(partRequests.id, id)).returning();
+    return result;
+  }
+
+  async getNextPartRequestNumber(): Promise<string> {
+    const year = new Date().getFullYear();
+    const [latest] = await db
+      .select({ requestNumber: partRequests.requestNumber })
+      .from(partRequests)
+      .where(sql`${partRequests.requestNumber} LIKE ${'PR-' + year + '-%'}`)
+      .orderBy(desc(partRequests.requestNumber))
+      .limit(1);
+    
+    let nextNum = 1;
+    if (latest?.requestNumber) {
+      const parts = latest.requestNumber.split('-');
+      const lastNum = parseInt(parts[2], 10);
+      if (!isNaN(lastNum)) {
+        nextNum = lastNum + 1;
+      }
+    }
+    return `PR-${year}-${String(nextNum).padStart(4, '0')}`;
   }
 }
 
