@@ -154,3 +154,15 @@ Key backend patterns:
 - **AI Manual Scanning**: POST /api/smart-part-suggestions/ai endpoint uses OpenAI to recommend parts based on service manuals
 - **Usage Recording**: Part usage is recorded for future suggestions when parts are consumed
 - **API Routes**: GET /api/smart-part-suggestions, POST /api/smart-part-suggestions/ai, POST /api/part-usage
+
+### Workflow Management Pages
+- **Receiving**: Line-by-line receiving for purchase orders with quantity tracking and history. Navigation: Sidebar → Procurement → Receiving. API routes: POST /api/purchase-order-lines/:id/receive, GET /api/purchase-orders/:id/receiving-history
+- **Part Requests**: Dedicated view for parts clerks to manage part fulfillment requests from work orders. Status workflow: pending → approved/rejected → fulfilled/cancelled. Navigation: Sidebar → Procurement → Part Requests. API routes: GET/POST /api/part-requests, PATCH /api/part-requests/:id
+- **Ready for Review**: Approval queue for completed work orders awaiting supervisor sign-off. Batch approve/reject capabilities. Navigation: Sidebar → Operations → Ready for Review. Uses GET /api/work-orders with status=ready_for_review filter
+- **Reorder Alerts**: Low stock detection with bulk requisition creation. Shows parts below reorder point with shortage quantities. Supports selecting multiple parts and creating requisitions with all items. Navigation: Sidebar → Procurement → Reorder Alerts. API: GET /api/parts/low-stock
+
+### Transaction Reversals
+- **Schema**: Transaction types include part_return, time_adjustment, reversal. Fields: isReversed (boolean), reversedTransactionId (link to original)
+- **Atomicity**: Wrapped in db.transaction() for atomic updates across inventory, labor hours, and transaction records
+- **API Routes**: GET /api/transactions/:id, POST /api/transactions/:id/reverse
+- **Effects**: Returns parts to inventory, adjusts labor hours, creates reversal transaction with negative values
