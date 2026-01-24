@@ -229,38 +229,62 @@ export async function registerRoutes(
     }
   });
 
-  // Dashboard stats
-  app.get("/api/dashboard/stats", async (req, res) => {
+  // Dashboard stats (tenant-scoped)
+  app.get("/api/dashboard/stats", tenantMiddleware({ required: false }), async (req, res) => {
     try {
-      const stats = await storage.getDashboardStats();
-      res.json(stats);
+      const orgId = getOrgId(req);
+      if (orgId) {
+        const stats = await storage.getDashboardStatsByOrg(orgId);
+        res.json(stats);
+      } else {
+        const stats = await storage.getDashboardStats();
+        res.json(stats);
+      }
     } catch (error) {
       res.status(500).json({ error: "Failed to get dashboard stats" });
     }
   });
 
-  app.get("/api/dashboard/kpis", async (req, res) => {
+  app.get("/api/dashboard/kpis", tenantMiddleware({ required: false }), async (req, res) => {
     try {
-      const kpis = await storage.getKpiMetrics();
-      res.json(kpis);
+      const orgId = getOrgId(req);
+      if (orgId) {
+        const kpis = await storage.getKpiMetricsByOrg(orgId);
+        res.json(kpis);
+      } else {
+        const kpis = await storage.getKpiMetrics();
+        res.json(kpis);
+      }
     } catch (error) {
       res.status(500).json({ error: "Failed to get KPI metrics" });
     }
   });
 
-  app.get("/api/dashboard/procurement", async (req, res) => {
+  app.get("/api/dashboard/procurement", tenantMiddleware({ required: false }), async (req, res) => {
     try {
-      const overview = await storage.getProcurementOverview();
-      res.json(overview);
+      const orgId = getOrgId(req);
+      if (orgId) {
+        const overview = await storage.getProcurementOverviewByOrg(orgId);
+        res.json(overview);
+      } else {
+        const overview = await storage.getProcurementOverview();
+        res.json(overview);
+      }
     } catch (error) {
       res.status(500).json({ error: "Failed to get procurement overview" });
     }
   });
 
-  app.get("/api/dashboard/parts-analytics", async (req, res) => {
+  app.get("/api/dashboard/parts-analytics", tenantMiddleware({ required: false }), async (req, res) => {
     try {
-      const analytics = await storage.getPartsAnalytics();
-      res.json(analytics);
+      const orgId = getOrgId(req);
+      if (orgId) {
+        const analytics = await storage.getPartsAnalyticsByOrg(orgId);
+        res.json(analytics);
+      } else {
+        const analytics = await storage.getPartsAnalytics();
+        res.json(analytics);
+      }
     } catch (error) {
       res.status(500).json({ error: "Failed to get parts analytics" });
     }
@@ -506,22 +530,33 @@ export async function registerRoutes(
     }
   });
 
-  // Vendors
-  app.get("/api/vendors", async (req, res) => {
-    const vendors = await storage.getVendors();
-    res.json(vendors);
+  // Vendors (tenant-scoped)
+  app.get("/api/vendors", tenantMiddleware({ required: false }), async (req, res) => {
+    const orgId = getOrgId(req);
+    if (orgId) {
+      const vendors = await storage.getVendorsByOrg(orgId);
+      res.json(vendors);
+    } else {
+      const vendors = await storage.getVendors();
+      res.json(vendors);
+    }
   });
 
-  app.get("/api/vendors/:id", async (req, res) => {
+  app.get("/api/vendors/:id", tenantMiddleware({ required: false }), async (req, res) => {
     const vendor = await storage.getVendor(parseInt(req.params.id));
     if (!vendor) return res.status(404).json({ error: "Vendor not found" });
+    const orgId = getOrgId(req);
+    if (orgId && vendor.orgId !== orgId) {
+      return res.status(403).json({ error: "Access denied" });
+    }
     res.json(vendor);
   });
 
-  app.post("/api/vendors", requireAuth, async (req, res) => {
+  app.post("/api/vendors", requireAuth, tenantMiddleware(), async (req, res) => {
     try {
+      const orgId = getOrgId(req);
       const validated = insertVendorSchema.parse(req.body);
-      const vendor = await storage.createVendor(validated);
+      const vendor = await storage.createVendor({ ...validated, orgId });
       res.status(201).json(vendor);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -531,10 +566,15 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/vendors/:id", requireAuth, async (req, res) => {
+  app.patch("/api/vendors/:id", requireAuth, tenantMiddleware(), async (req, res) => {
     try {
+      const vendor = await storage.getVendor(parseInt(req.params.id));
+      if (!vendor) return res.status(404).json({ error: "Vendor not found" });
+      const orgId = getOrgId(req);
+      if (orgId && vendor.orgId !== orgId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
       const updated = await storage.updateVendor(parseInt(req.params.id), req.body);
-      if (!updated) return res.status(404).json({ error: "Vendor not found" });
       res.json(updated);
     } catch (error) {
       res.status(500).json({ error: "Failed to update vendor" });
@@ -1067,22 +1107,33 @@ export async function registerRoutes(
     res.json({ success: true });
   });
 
-  // PM Schedules
-  app.get("/api/pm-schedules", async (req, res) => {
-    const schedules = await storage.getPmSchedules();
-    res.json(schedules);
+  // PM Schedules (tenant-scoped)
+  app.get("/api/pm-schedules", tenantMiddleware({ required: false }), async (req, res) => {
+    const orgId = getOrgId(req);
+    if (orgId) {
+      const schedules = await storage.getPmSchedulesByOrg(orgId);
+      res.json(schedules);
+    } else {
+      const schedules = await storage.getPmSchedules();
+      res.json(schedules);
+    }
   });
 
-  app.get("/api/pm-schedules/:id", async (req, res) => {
+  app.get("/api/pm-schedules/:id", tenantMiddleware({ required: false }), async (req, res) => {
     const schedule = await storage.getPmSchedule(parseInt(req.params.id));
     if (!schedule) return res.status(404).json({ error: "PM schedule not found" });
+    const orgId = getOrgId(req);
+    if (orgId && schedule.orgId !== orgId) {
+      return res.status(403).json({ error: "Access denied" });
+    }
     res.json(schedule);
   });
 
-  app.post("/api/pm-schedules", requireAuth, async (req, res) => {
+  app.post("/api/pm-schedules", requireAuth, tenantMiddleware(), async (req, res) => {
     try {
+      const orgId = getOrgId(req);
       const validated = insertPmScheduleSchema.parse(req.body);
-      const schedule = await storage.createPmSchedule(validated);
+      const schedule = await storage.createPmSchedule({ ...validated, orgId });
       res.status(201).json(schedule);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -1092,12 +1143,17 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/pm-schedules/:id", requireAuth, async (req, res) => {
+  app.patch("/api/pm-schedules/:id", requireAuth, tenantMiddleware(), async (req, res) => {
     try {
+      const schedule = await storage.getPmSchedule(parseInt(req.params.id));
+      if (!schedule) return res.status(404).json({ error: "PM schedule not found" });
+      const orgId = getOrgId(req);
+      if (orgId && schedule.orgId !== orgId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
       const partialSchema = insertPmScheduleSchema.partial();
       const validated = partialSchema.parse(req.body);
       const updated = await storage.updatePmSchedule(parseInt(req.params.id), validated);
-      if (!updated) return res.status(404).json({ error: "PM schedule not found" });
       res.json(updated);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -1107,20 +1163,31 @@ export async function registerRoutes(
     }
   });
 
-  // Requisitions
-  app.get("/api/requisitions", async (req, res) => {
-    const requisitions = await storage.getRequisitions();
-    res.json(requisitions);
+  // Requisitions (tenant-scoped)
+  app.get("/api/requisitions", tenantMiddleware({ required: false }), async (req, res) => {
+    const orgId = getOrgId(req);
+    if (orgId) {
+      const requisitions = await storage.getRequisitionsByOrg(orgId);
+      res.json(requisitions);
+    } else {
+      const requisitions = await storage.getRequisitions();
+      res.json(requisitions);
+    }
   });
 
-  app.get("/api/requisitions/:id", async (req, res) => {
+  app.get("/api/requisitions/:id", tenantMiddleware({ required: false }), async (req, res) => {
     const req_ = await storage.getRequisition(parseInt(req.params.id));
     if (!req_) return res.status(404).json({ error: "Requisition not found" });
+    const orgId = getOrgId(req);
+    if (orgId && req_.orgId !== orgId) {
+      return res.status(403).json({ error: "Access denied" });
+    }
     res.json(req_);
   });
 
-  app.post("/api/requisitions", requireAuth, async (req, res) => {
+  app.post("/api/requisitions", requireAuth, tenantMiddleware(), async (req, res) => {
     try {
+      const orgId = getOrgId(req);
       const requisitionNumber = await generateRequisitionNumber();
       const validated = insertPurchaseRequisitionSchema.parse({
         ...req.body,
@@ -1128,6 +1195,7 @@ export async function registerRoutes(
       });
       const requisition = await storage.createRequisition({
         ...validated,
+        orgId,
         requestedById: (req.user as any)?.id || null,
       });
       res.status(201).json(requisition);
@@ -1140,11 +1208,15 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/requisitions/:id", requireAuth, async (req, res) => {
+  app.patch("/api/requisitions/:id", requireAuth, tenantMiddleware(), async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const req_ = await storage.getRequisition(id);
       if (!req_) return res.status(404).json({ error: "Requisition not found" });
+      const orgId = getOrgId(req);
+      if (orgId && req_.orgId !== orgId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
 
       const data = { ...req.body };
       if (data.approvedAt && typeof data.approvedAt === 'string') {
@@ -1254,20 +1326,31 @@ export async function registerRoutes(
     }
   });
 
-  // Purchase Orders
-  app.get("/api/purchase-orders", async (req, res) => {
-    const orders = await storage.getPurchaseOrders();
-    res.json(orders);
+  // Purchase Orders (tenant-scoped)
+  app.get("/api/purchase-orders", tenantMiddleware({ required: false }), async (req, res) => {
+    const orgId = getOrgId(req);
+    if (orgId) {
+      const orders = await storage.getPurchaseOrdersByOrg(orgId);
+      res.json(orders);
+    } else {
+      const orders = await storage.getPurchaseOrders();
+      res.json(orders);
+    }
   });
 
-  app.get("/api/purchase-orders/:id", async (req, res) => {
+  app.get("/api/purchase-orders/:id", tenantMiddleware({ required: false }), async (req, res) => {
     const po = await storage.getPurchaseOrder(parseInt(req.params.id));
     if (!po) return res.status(404).json({ error: "Purchase order not found" });
+    const orgId = getOrgId(req);
+    if (orgId && po.orgId !== orgId) {
+      return res.status(403).json({ error: "Access denied" });
+    }
     res.json(po);
   });
 
-  app.post("/api/purchase-orders", requireAuth, async (req, res) => {
+  app.post("/api/purchase-orders", requireAuth, tenantMiddleware(), async (req, res) => {
     try {
+      const orgId = getOrgId(req);
       const poNumber = await generatePONumber();
       const data = { ...req.body };
       
@@ -1303,6 +1386,7 @@ export async function registerRoutes(
       });
       const po = await storage.createPurchaseOrder({
         ...validated,
+        orgId,
         createdById: (req.user as any)?.id || null,
       });
       res.status(201).json(po);
@@ -1315,8 +1399,15 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/purchase-orders/:id", requireAuth, async (req, res) => {
+  app.patch("/api/purchase-orders/:id", requireAuth, tenantMiddleware(), async (req, res) => {
     try {
+      const po = await storage.getPurchaseOrder(parseInt(req.params.id));
+      if (!po) return res.status(404).json({ error: "Purchase order not found" });
+      const orgId = getOrgId(req);
+      if (orgId && po.orgId !== orgId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      
       const data = { ...req.body };
       if (data.vendorId && typeof data.vendorId === 'string') {
         data.vendorId = parseInt(data.vendorId);
@@ -1338,7 +1429,6 @@ export async function registerRoutes(
       }
       
       const updated = await storage.updatePurchaseOrder(parseInt(req.params.id), data);
-      if (!updated) return res.status(404).json({ error: "Purchase order not found" });
       res.json(updated);
     } catch (error) {
       console.error("Update PO error:", error);
@@ -1579,20 +1669,26 @@ export async function registerRoutes(
     }
   });
 
-  // Notifications
-  app.get("/api/notifications", requireAuth, async (req, res) => {
+  // Notifications (tenant-scoped)
+  app.get("/api/notifications", requireAuth, tenantMiddleware({ required: false }), async (req, res) => {
     try {
       const userId = (req as any).user?.claims?.sub;
       if (!userId) return res.status(401).json({ error: "Unauthorized" });
-      const notificationsList = await storage.getNotifications(userId);
-      res.json(notificationsList);
+      const orgId = getOrgId(req);
+      if (orgId) {
+        const notificationsList = await storage.getNotificationsByOrg(orgId, userId);
+        res.json(notificationsList);
+      } else {
+        const notificationsList = await storage.getNotifications(userId);
+        res.json(notificationsList);
+      }
     } catch (error) {
       console.error("Error fetching notifications:", error);
       res.status(500).json({ error: "Failed to fetch notifications" });
     }
   });
 
-  app.get("/api/notifications/unread-count", requireAuth, async (req, res) => {
+  app.get("/api/notifications/unread-count", requireAuth, tenantMiddleware({ required: false }), async (req, res) => {
     try {
       const userId = (req as any).user?.claims?.sub;
       if (!userId) return res.status(401).json({ error: "Unauthorized" });
@@ -1604,10 +1700,11 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/notifications", requireAuth, async (req, res) => {
+  app.post("/api/notifications", requireAuth, tenantMiddleware(), async (req, res) => {
     try {
       const userId = (req as any).user?.claims?.sub;
       if (!userId) return res.status(401).json({ error: "Unauthorized" });
+      const orgId = getOrgId(req);
       
       // Validate with schema and force userId from authenticated user
       const validated = insertNotificationSchema.parse({
@@ -1615,7 +1712,7 @@ export async function registerRoutes(
         userId, // Override any userId in body with authenticated user
       });
       
-      const notification = await storage.createNotification(validated);
+      const notification = await storage.createNotification({ ...validated, orgId });
       res.status(201).json(notification);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -1663,22 +1760,33 @@ export async function registerRoutes(
     }
   });
 
-  // Manuals
-  app.get("/api/manuals", async (req, res) => {
-    const manuals = await storage.getManuals();
-    res.json(manuals);
+  // Manuals (tenant-scoped)
+  app.get("/api/manuals", tenantMiddleware({ required: false }), async (req, res) => {
+    const orgId = getOrgId(req);
+    if (orgId) {
+      const manuals = await storage.getManualsByOrg(orgId);
+      res.json(manuals);
+    } else {
+      const manuals = await storage.getManuals();
+      res.json(manuals);
+    }
   });
 
-  app.get("/api/manuals/:id", async (req, res) => {
+  app.get("/api/manuals/:id", tenantMiddleware({ required: false }), async (req, res) => {
     const manual = await storage.getManual(parseInt(req.params.id));
     if (!manual) return res.status(404).json({ error: "Manual not found" });
+    const orgId = getOrgId(req);
+    if (orgId && manual.orgId !== orgId) {
+      return res.status(403).json({ error: "Access denied" });
+    }
     res.json(manual);
   });
 
-  app.post("/api/manuals", requireAuth, async (req, res) => {
+  app.post("/api/manuals", requireAuth, tenantMiddleware(), async (req, res) => {
     try {
+      const orgId = getOrgId(req);
       const validated = insertManualSchema.parse(req.body);
-      const manual = await storage.createManual(validated);
+      const manual = await storage.createManual({ ...validated, orgId });
       res.status(201).json(manual);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -1688,32 +1796,48 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/manuals/:id", requireAuth, async (req, res) => {
+  app.patch("/api/manuals/:id", requireAuth, tenantMiddleware(), async (req, res) => {
     try {
+      const manual = await storage.getManual(parseInt(req.params.id));
+      if (!manual) return res.status(404).json({ error: "Manual not found" });
+      const orgId = getOrgId(req);
+      if (orgId && manual.orgId !== orgId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
       const updated = await storage.updateManual(parseInt(req.params.id), req.body);
-      if (!updated) return res.status(404).json({ error: "Manual not found" });
       res.json(updated);
     } catch (error) {
       res.status(500).json({ error: "Failed to update manual" });
     }
   });
 
-  // DVIRs
-  app.get("/api/dvirs", async (req, res) => {
-    const dvirs = await storage.getDvirs();
-    res.json(dvirs);
+  // DVIRs (tenant-scoped)
+  app.get("/api/dvirs", tenantMiddleware({ required: false }), async (req, res) => {
+    const orgId = getOrgId(req);
+    if (orgId) {
+      const dvirs = await storage.getDvirsByOrg(orgId);
+      res.json(dvirs);
+    } else {
+      const dvirs = await storage.getDvirs();
+      res.json(dvirs);
+    }
   });
 
-  app.get("/api/dvirs/:id", async (req, res) => {
+  app.get("/api/dvirs/:id", tenantMiddleware({ required: false }), async (req, res) => {
     const dvir = await storage.getDvir(parseInt(req.params.id));
     if (!dvir) return res.status(404).json({ error: "DVIR not found" });
+    const orgId = getOrgId(req);
+    if (orgId && dvir.orgId !== orgId) {
+      return res.status(403).json({ error: "Access denied" });
+    }
     res.json(dvir);
   });
 
-  app.post("/api/dvirs", requireAuth, async (req, res) => {
+  app.post("/api/dvirs", requireAuth, tenantMiddleware(), async (req, res) => {
     try {
+      const orgId = getOrgId(req);
       const validated = insertDvirSchema.parse(req.body);
-      const dvir = await storage.createDvir(validated);
+      const dvir = await storage.createDvir({ ...validated, orgId });
       res.status(201).json(dvir);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -1745,26 +1869,37 @@ export async function registerRoutes(
     }
   });
 
-  // Feedback
-  app.get("/api/feedback", async (req, res) => {
-    const feedback = await storage.getFeedback();
-    res.json(feedback);
+  // Feedback (tenant-scoped)
+  app.get("/api/feedback", tenantMiddleware({ required: false }), async (req, res) => {
+    const orgId = getOrgId(req);
+    if (orgId) {
+      const feedbackList = await storage.getFeedbackByOrg(orgId);
+      res.json(feedbackList);
+    } else {
+      const feedbackList = await storage.getFeedback();
+      res.json(feedbackList);
+    }
   });
 
-  app.get("/api/feedback/:id", async (req, res) => {
+  app.get("/api/feedback/:id", tenantMiddleware({ required: false }), async (req, res) => {
     const item = await storage.getFeedbackItem(parseInt(req.params.id));
     if (!item) return res.status(404).json({ error: "Feedback not found" });
+    const orgId = getOrgId(req);
+    if (orgId && item.orgId !== orgId) {
+      return res.status(403).json({ error: "Access denied" });
+    }
     res.json(item);
   });
 
-  app.post("/api/feedback", requireAuth, async (req, res) => {
+  app.post("/api/feedback", requireAuth, tenantMiddleware(), async (req, res) => {
     try {
+      const orgId = getOrgId(req);
       const userId = (req.user as any)?.id;
       const validated = insertFeedbackSchema.parse({
         ...req.body,
         userId,
       });
-      const item = await storage.createFeedback(validated);
+      const item = await storage.createFeedback({ ...validated, orgId });
       res.status(201).json(item);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -1784,10 +1919,16 @@ export async function registerRoutes(
     }
   });
 
-  // Predictions
-  app.get("/api/predictions", async (req, res) => {
-    const predictions = await storage.getPredictions();
-    res.json(predictions);
+  // Predictions (tenant-scoped)
+  app.get("/api/predictions", tenantMiddleware({ required: false }), async (req, res) => {
+    const orgId = getOrgId(req);
+    if (orgId) {
+      const predictionsList = await storage.getPredictionsByOrg(orgId);
+      res.json(predictionsList);
+    } else {
+      const predictionsList = await storage.getPredictions();
+      res.json(predictionsList);
+    }
   });
 
   app.patch("/api/predictions/:id", requireAuth, async (req, res) => {
@@ -1868,10 +2009,16 @@ export async function registerRoutes(
     }
   });
 
-  // Estimates
-  app.get("/api/estimates", async (req, res) => {
-    const estimates = await storage.getEstimates();
-    res.json(estimates);
+  // Estimates (tenant-scoped)
+  app.get("/api/estimates", tenantMiddleware({ required: false }), async (req, res) => {
+    const orgId = getOrgId(req);
+    if (orgId) {
+      const estimates = await storage.getEstimatesByOrg(orgId);
+      res.json(estimates);
+    } else {
+      const estimates = await storage.getEstimates();
+      res.json(estimates);
+    }
   });
 
   // Unfulfilled Parts Widget - must be before :id route
@@ -1880,14 +2027,19 @@ export async function registerRoutes(
     res.json(lines);
   });
 
-  app.get("/api/estimates/:id", async (req, res) => {
+  app.get("/api/estimates/:id", tenantMiddleware({ required: false }), async (req, res) => {
     const estimate = await storage.getEstimate(parseInt(req.params.id));
     if (!estimate) return res.status(404).json({ error: "Estimate not found" });
+    const orgId = getOrgId(req);
+    if (orgId && estimate.orgId !== orgId) {
+      return res.status(403).json({ error: "Access denied" });
+    }
     res.json(estimate);
   });
 
-  app.post("/api/estimates", requireAuth, async (req, res) => {
+  app.post("/api/estimates", requireAuth, tenantMiddleware(), async (req, res) => {
     try {
+      const orgId = getOrgId(req);
       const createSchema = insertEstimateSchema.omit({ 
         estimateNumber: true, 
         partsTotal: true,
@@ -1901,6 +2053,7 @@ export async function registerRoutes(
       const estimateNumber = await generateEstimateNumber();
       const estimate = await storage.createEstimate({
         ...parsed.data,
+        orgId,
         estimateNumber,
         partsTotal: "0",
         laborTotal: "0",
@@ -1912,8 +2065,15 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/estimates/:id", requireAuth, async (req, res) => {
+  app.patch("/api/estimates/:id", requireAuth, tenantMiddleware(), async (req, res) => {
     try {
+      const estimate = await storage.getEstimate(parseInt(req.params.id));
+      if (!estimate) return res.status(404).json({ error: "Estimate not found" });
+      const orgId = getOrgId(req);
+      if (orgId && estimate.orgId !== orgId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      
       const updateSchema = insertEstimateSchema.omit({ 
         estimateNumber: true,
         partsTotal: true,
@@ -1926,15 +2086,20 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Invalid estimate data", details: parsed.error.errors });
       }
       const updated = await storage.updateEstimate(parseInt(req.params.id), parsed.data);
-      if (!updated) return res.status(404).json({ error: "Estimate not found" });
       res.json(updated);
     } catch (error) {
       res.status(500).json({ error: "Failed to update estimate" });
     }
   });
 
-  app.delete("/api/estimates/:id", requireAuth, async (req, res) => {
+  app.delete("/api/estimates/:id", requireAuth, tenantMiddleware(), async (req, res) => {
     try {
+      const estimate = await storage.getEstimate(parseInt(req.params.id));
+      if (!estimate) return res.status(404).json({ error: "Estimate not found" });
+      const orgId = getOrgId(req);
+      if (orgId && estimate.orgId !== orgId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
       await storage.deleteEstimate(parseInt(req.params.id));
       res.status(204).send();
     } catch (error) {
@@ -2042,19 +2207,15 @@ export async function registerRoutes(
     }
   });
 
-  // All predictions (for dashboard)
-  app.get("/api/predictions", async (req, res) => {
+  // Predictions acknowledge/dismiss (tenant-scoped) - duplicate GET removed, handled earlier
+  app.patch("/api/predictions/:id/acknowledge", requireAuth, tenantMiddleware(), async (req, res) => {
     try {
-      const predictions = await storage.getPredictions();
-      res.json(predictions);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to get predictions" });
-    }
-  });
-
-  // Acknowledge/dismiss prediction
-  app.patch("/api/predictions/:id/acknowledge", requireAuth, async (req, res) => {
-    try {
+      const prediction = await storage.getPrediction(parseInt(req.params.id));
+      if (!prediction) return res.status(404).json({ error: "Prediction not found" });
+      const orgId = getOrgId(req);
+      if (orgId && prediction.orgId !== orgId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
       const updated = await storage.updatePrediction(parseInt(req.params.id), {
         acknowledged: true,
       });
@@ -2064,8 +2225,14 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/predictions/:id/dismiss", requireAuth, async (req, res) => {
+  app.patch("/api/predictions/:id/dismiss", requireAuth, tenantMiddleware(), async (req, res) => {
     try {
+      const prediction = await storage.getPrediction(parseInt(req.params.id));
+      if (!prediction) return res.status(404).json({ error: "Prediction not found" });
+      const orgId = getOrgId(req);
+      if (orgId && prediction.orgId !== orgId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
       const updated = await storage.updatePrediction(parseInt(req.params.id), {
         dismissedAt: new Date(),
       });

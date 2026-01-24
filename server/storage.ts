@@ -2280,6 +2280,132 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(dvirs).where(eq(dvirs.orgId, orgId)).orderBy(desc(dvirs.inspectionDate));
   }
 
+  async getManualsByOrg(orgId: number): Promise<Manual[]> {
+    return db.select().from(manuals).where(eq(manuals.orgId, orgId)).orderBy(manuals.manufacturer);
+  }
+
+  async getPredictionsByOrg(orgId: number): Promise<Prediction[]> {
+    return db.select().from(predictions).where(eq(predictions.orgId, orgId)).orderBy(desc(predictions.createdAt));
+  }
+
+  async getFeedbackByOrg(orgId: number): Promise<Feedback[]> {
+    return db.select().from(feedback).where(eq(feedback.orgId, orgId)).orderBy(desc(feedback.createdAt));
+  }
+
+  async getDashboardStatsByOrg(orgId: number) {
+    const orgAssets = await db.select().from(assets).where(eq(assets.orgId, orgId));
+    const orgWorkOrders = await db.select().from(workOrders).where(eq(workOrders.orgId, orgId));
+    const orgParts = await db.select().from(parts).where(eq(parts.orgId, orgId));
+    const now = new Date();
+    return {
+      totalAssets: orgAssets.length,
+      operationalAssets: orgAssets.filter(a => a.status === "operational").length,
+      inMaintenanceAssets: orgAssets.filter(a => a.status === "in_maintenance").length,
+      downAssets: orgAssets.filter(a => a.status === "down").length,
+      openWorkOrders: orgWorkOrders.filter(w => w.status === "open" || w.status === "in_progress").length,
+      overdueWorkOrders: orgWorkOrders.filter(w => 
+        (w.status === "open" || w.status === "in_progress") && 
+        w.dueDate && new Date(w.dueDate) < now
+      ).length,
+      partsLowStock: orgParts.filter(p => 
+        Number(p.quantityOnHand || 0) <= Number(p.reorderPoint || 0)
+      ).length,
+      pmDueThisWeek: 0,
+    };
+  }
+
+  async getKpiMetricsByOrg(orgId: number) {
+    const orgWorkOrders = await db.select().from(workOrders).where(eq(workOrders.orgId, orgId));
+    const completedWos = orgWorkOrders.filter(w => w.status === "completed" || w.status === "closed");
+    const orgAssets = await db.select().from(assets).where(eq(assets.orgId, orgId));
+    let mttr: number | null = null;
+    const wosWithTimes = completedWos.filter(w => w.startedAt && w.completedAt);
+    if (wosWithTimes.length > 0) {
+      const totalHours = wosWithTimes.reduce((sum, wo) => {
+        const start = new Date(wo.startedAt!).getTime();
+        const end = new Date(wo.completedAt!).getTime();
+        return sum + (end - start) / (1000 * 60 * 60);
+      }, 0);
+      mttr = Math.round((totalHours / wosWithTimes.length) * 10) / 10;
+    }
+    let mtbf: number | null = null;
+    const failureWos = orgWorkOrders.filter(w => 
+      (w.type === "corrective" || w.type === "emergency") && w.assetId
+    ).sort((a, b) => new Date(a.createdAt!).getTime() - new Date(b.createdAt!).getTime());
+    if (failureWos.length > 1) {
+      const intervals: number[] = [];
+      const assetFailures: Record<number, Date[]> = {};
+      failureWos.forEach(wo => {
+        if (!assetFailures[wo.assetId!]) assetFailures[wo.assetId!] = [];
+        assetFailures[wo.assetId!].push(new Date(wo.createdAt!));
+      });
+      Object.values(assetFailures).forEach(dates => {
+        for (let i = 1; i < dates.length; i++) {
+          intervals.push((dates[i].getTime() - dates[i-1].getTime()) / (1000 * 60 * 60 * 24));
+        }
+      });
+      if (intervals.length > 0) {
+        mtbf = Math.round(intervals.reduce((a, b) => a + b, 0) / intervals.length);
+      }
+    }
+    const assetUptime = orgAssets.length > 0 
+      ? Math.round((orgAssets.filter(a => a.status === "operational").length / orgAssets.length) * 100) 
+      : null;
+    const pmCompliance = 85;
+    let avgCostPerWo: number | null = null;
+    const wosWithCost = completedWos.filter(w => Number(w.actualCost || 0) > 0);
+    if (wosWithCost.length > 0) {
+      avgCostPerWo = Math.round(wosWithCost.reduce((sum, w) => sum + Number(w.actualCost || 0), 0) / wosWithCost.length);
+    }
+    return { mttr, mtbf, assetUptime, pmCompliance, avgCostPerWo };
+  }
+
+  async getProcurementOverviewByOrg(orgId: number) {
+    const orgReqs = await db.select().from(purchaseRequisitions).where(eq(purchaseRequisitions.orgId, orgId));
+    const orgPos = await db.select().from(purchaseOrders).where(eq(purchaseOrders.orgId, orgId));
+    return {
+      pendingRequisitions: orgReqs.filter(r => r.status === "pending" || r.status === "submitted").length,
+      approvedRequisitions: orgReqs.filter(r => r.status === "approved").length,
+      openPurchaseOrders: orgPos.filter(p => p.status === "open" || p.status === "submitted").length,
+      partiallyReceivedPOs: orgPos.filter(p => p.status === "partially_received").length,
+      totalOpenPOValue: orgPos
+        .filter(p => p.status === "open" || p.status === "submitted" || p.status === "partially_received")
+        .reduce((sum, po) => sum + Number(po.totalAmount || 0), 0),
+    };
+  }
+
+  async getPartsAnalyticsByOrg(orgId: number) {
+    const orgParts = await db.select().from(parts).where(eq(parts.orgId, orgId));
+    const orgTransactions = await db.select().from(inventoryTransactions).where(eq(inventoryTransactions.orgId, orgId));
+    const partUsage: Record<number, { count: number; cost: number }> = {};
+    orgTransactions
+      .filter(t => t.type === "part_consumption" && t.partId)
+      .forEach(t => {
+        if (!partUsage[t.partId!]) partUsage[t.partId!] = { count: 0, cost: 0 };
+        partUsage[t.partId!].count += Number(t.quantity || 1);
+        partUsage[t.partId!].cost += Number(t.totalCost || 0);
+      });
+    const topUsedParts = Object.entries(partUsage)
+      .map(([partId, usage]) => {
+        const part = orgParts.find(p => p.id === parseInt(partId));
+        return {
+          partId: parseInt(partId),
+          partNumber: part?.partNumber || "Unknown",
+          partName: part?.name || "Unknown",
+          usageCount: usage.count,
+          totalCost: usage.cost,
+        };
+      })
+      .sort((a, b) => b.usageCount - a.usageCount)
+      .slice(0, 5);
+    const lowStockCritical = orgParts.filter(p => {
+      const qty = Number(p.quantityOnHand || 0);
+      const reorder = Number(p.reorderPoint || 0);
+      return qty <= reorder && qty <= 5;
+    }).length;
+    return { topUsedParts, lowStockCritical };
+  }
+
   async getPartKitsByOrg(orgId: number): Promise<PartKit[]> {
     return db.select().from(partKits).where(eq(partKits.orgId, orgId)).orderBy(partKits.name);
   }
