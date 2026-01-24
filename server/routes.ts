@@ -162,6 +162,33 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/dashboard/kpis", async (req, res) => {
+    try {
+      const kpis = await storage.getKpiMetrics();
+      res.json(kpis);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get KPI metrics" });
+    }
+  });
+
+  app.get("/api/dashboard/procurement", async (req, res) => {
+    try {
+      const overview = await storage.getProcurementOverview();
+      res.json(overview);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get procurement overview" });
+    }
+  });
+
+  app.get("/api/dashboard/parts-analytics", async (req, res) => {
+    try {
+      const analytics = await storage.getPartsAnalytics();
+      res.json(analytics);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get parts analytics" });
+    }
+  });
+
   // Locations
   app.get("/api/locations", async (req, res) => {
     const locations = await storage.getLocations();

@@ -11,7 +11,13 @@ import {
   CheckCircle2,
   ArrowRight,
   Calculator,
-  ShoppingCart
+  ShoppingCart,
+  Timer,
+  Activity,
+  Target,
+  DollarSign,
+  FileText,
+  Bell
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -66,6 +72,33 @@ interface UnfulfilledPart {
   lineType: string;
 }
 
+interface KpiMetrics {
+  mttr: number | null;
+  mtbf: number | null;
+  assetUptime: number;
+  pmCompliance: number;
+  emergencyWoRatio: number;
+  avgCostPerWo: number;
+}
+
+interface ProcurementOverview {
+  pendingRequisitions: number;
+  activePurchaseOrders: number;
+  reorderAlerts: number;
+  pendingPartRequests: number;
+}
+
+interface PartsAnalytics {
+  topUsedParts: Array<{
+    partId: number;
+    partNumber: string;
+    partName: string;
+    usageCount: number;
+    totalCost: number;
+  }>;
+  lowStockCritical: number;
+}
+
 const workOrderTrendData = [
   { month: "Jan", completed: 45, opened: 52 },
   { month: "Feb", completed: 52, opened: 48 },
@@ -92,6 +125,18 @@ export default function Dashboard() {
 
   const { data: unfulfilledParts } = useQuery<UnfulfilledPart[]>({
     queryKey: ["/api/estimates/unfulfilled-parts"],
+  });
+
+  const { data: kpis } = useQuery<KpiMetrics>({
+    queryKey: ["/api/dashboard/kpis"],
+  });
+
+  const { data: procurement } = useQuery<ProcurementOverview>({
+    queryKey: ["/api/dashboard/procurement"],
+  });
+
+  const { data: partsAnalytics } = useQuery<PartsAnalytics>({
+    queryKey: ["/api/dashboard/parts-analytics"],
   });
 
   if (statsLoading) {
@@ -158,6 +203,33 @@ export default function Dashboard() {
           title="PM Due This Week"
           value={displayStats.pmDueThisWeek}
           icon={<Calendar className="h-4 w-4" />}
+        />
+      </div>
+
+      {/* KPI Metrics Row */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <KPICard
+          title="MTTR"
+          value={kpis?.mttr !== null ? `${kpis?.mttr}h` : "N/A"}
+          icon={<Timer className="h-4 w-4" />}
+          changeLabel="Mean Time To Repair"
+        />
+        <KPICard
+          title="Asset Uptime"
+          value={`${kpis?.assetUptime || 0}%`}
+          icon={<Activity className="h-4 w-4" />}
+          change={kpis?.assetUptime && kpis.assetUptime >= 90 ? 0 : undefined}
+        />
+        <KPICard
+          title="PM Compliance"
+          value={`${kpis?.pmCompliance || 0}%`}
+          icon={<Target className="h-4 w-4" />}
+          className={kpis?.pmCompliance && kpis.pmCompliance < 80 ? "border-amber-500/50" : ""}
+        />
+        <KPICard
+          title="Avg Cost/WO"
+          value={`$${kpis?.avgCostPerWo?.toLocaleString() || 0}`}
+          icon={<DollarSign className="h-4 w-4" />}
         />
       </div>
 
@@ -405,6 +477,80 @@ export default function Dashboard() {
         <FleetHealthWidget />
 
         <PredictionsWidget />
+
+        {/* Procurement Overview Widget */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between gap-2">
+            <CardTitle className="text-base font-medium flex items-center gap-2">
+              <FileText className="h-4 w-4" />
+              Procurement Overview
+            </CardTitle>
+            <Button variant="ghost" size="sm" asChild>
+              <Link href="/requisitions">View All</Link>
+            </Button>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 gap-4">
+              <Link href="/requisitions" className="p-3 rounded-lg border border-border hover-elevate text-center" data-testid="link-pending-requisitions">
+                <p className="text-2xl font-bold">{procurement?.pendingRequisitions || 0}</p>
+                <p className="text-xs text-muted-foreground">Pending Requisitions</p>
+              </Link>
+              <Link href="/purchase-orders" className="p-3 rounded-lg border border-border hover-elevate text-center" data-testid="link-active-pos">
+                <p className="text-2xl font-bold">{procurement?.activePurchaseOrders || 0}</p>
+                <p className="text-xs text-muted-foreground">Active POs</p>
+              </Link>
+              <Link href="/reorder-alerts" className="p-3 rounded-lg border border-border hover-elevate text-center" data-testid="link-reorder-alerts">
+                <p className="text-2xl font-bold text-amber-600 dark:text-amber-400">{procurement?.reorderAlerts || 0}</p>
+                <p className="text-xs text-muted-foreground">Reorder Alerts</p>
+              </Link>
+              <Link href="/part-requests" className="p-3 rounded-lg border border-border hover-elevate text-center" data-testid="link-part-requests">
+                <p className="text-2xl font-bold">{procurement?.pendingPartRequests || 0}</p>
+                <p className="text-xs text-muted-foreground">Part Requests</p>
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Parts Analytics Widget */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between gap-2">
+            <CardTitle className="text-base font-medium flex items-center gap-2">
+              <Package className="h-4 w-4" />
+              Top Used Parts
+            </CardTitle>
+            <Button variant="ghost" size="sm" asChild>
+              <Link href="/inventory">View Inventory</Link>
+            </Button>
+          </CardHeader>
+          <CardContent>
+            {(!partsAnalytics?.topUsedParts || partsAnalytics.topUsedParts.length === 0) ? (
+              <div className="flex flex-col items-center justify-center py-6 text-muted-foreground">
+                <Package className="h-8 w-8 mb-2" />
+                <p className="text-sm">No usage data yet</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {partsAnalytics.topUsedParts.map((part, index) => (
+                  <div key={part.partId} className="flex items-center justify-between p-2 rounded-lg border border-border">
+                    <div className="flex items-center gap-3">
+                      <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-sm font-medium">
+                        {index + 1}
+                      </div>
+                      <div>
+                        <p className="font-medium text-sm">{part.partNumber}</p>
+                        <p className="text-xs text-muted-foreground truncate max-w-[150px]">{part.partName}</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-medium text-sm">{part.usageCount} used</p>
+                      <p className="text-xs text-muted-foreground">${part.totalCost.toLocaleString()}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-2">

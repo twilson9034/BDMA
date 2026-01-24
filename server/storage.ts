@@ -270,6 +270,33 @@ export interface IStorage {
     partsLowStock: number;
     pmDueThisWeek: number;
   }>;
+
+  getKpiMetrics(): Promise<{
+    mttr: number | null; // Mean Time To Repair in hours
+    mtbf: number | null; // Mean Time Between Failures in days
+    assetUptime: number; // Percentage
+    pmCompliance: number; // Percentage
+    emergencyWoRatio: number; // Percentage
+    avgCostPerWo: number;
+  }>;
+
+  getProcurementOverview(): Promise<{
+    pendingRequisitions: number;
+    activePurchaseOrders: number;
+    reorderAlerts: number;
+    pendingPartRequests: number;
+  }>;
+
+  getPartsAnalytics(): Promise<{
+    topUsedParts: Array<{
+      partId: number;
+      partNumber: string;
+      partName: string;
+      usageCount: number;
+      totalCost: number;
+    }>;
+    lowStockCritical: number;
+  }>;
   
   // Additional methods for Phase 3
   getWorkOrdersByAsset(assetId: number): Promise<WorkOrder[]>;
@@ -918,6 +945,125 @@ export class DatabaseStorage implements IStorage {
       ).length,
       pmDueThisWeek: 8, // Would calculate from pmAssetInstances
     };
+  }
+
+  async getKpiMetrics() {
+    const allWorkOrders = await db.select().from(workOrders);
+    const completedWos = allWorkOrders.filter(w => w.status === "completed" || w.status === "closed");
+    const allAssets = await db.select().from(assets);
+    
+    // MTTR: Mean Time To Repair (average hours from open to complete)
+    let mttr: number | null = null;
+    const wosWithTimes = completedWos.filter(w => w.startedAt && w.completedAt);
+    if (wosWithTimes.length > 0) {
+      const totalHours = wosWithTimes.reduce((sum, wo) => {
+        const start = new Date(wo.startedAt!).getTime();
+        const end = new Date(wo.completedAt!).getTime();
+        return sum + (end - start) / (1000 * 60 * 60);
+      }, 0);
+      mttr = Math.round((totalHours / wosWithTimes.length) * 10) / 10;
+    }
+
+    // MTBF: Mean Time Between Failures (days between corrective/emergency WOs per asset)
+    let mtbf: number | null = null;
+    const failureWos = allWorkOrders.filter(w => 
+      (w.type === "corrective" || w.type === "emergency") && w.assetId
+    ).sort((a, b) => new Date(a.createdAt!).getTime() - new Date(b.createdAt!).getTime());
+    
+    if (failureWos.length > 1) {
+      const intervals: number[] = [];
+      const assetFailures: Record<number, Date[]> = {};
+      failureWos.forEach(wo => {
+        if (!assetFailures[wo.assetId!]) assetFailures[wo.assetId!] = [];
+        assetFailures[wo.assetId!].push(new Date(wo.createdAt!));
+      });
+      Object.values(assetFailures).forEach(dates => {
+        for (let i = 1; i < dates.length; i++) {
+          intervals.push((dates[i].getTime() - dates[i-1].getTime()) / (1000 * 60 * 60 * 24));
+        }
+      });
+      if (intervals.length > 0) {
+        mtbf = Math.round(intervals.reduce((a, b) => a + b, 0) / intervals.length);
+      }
+    }
+
+    // Asset Uptime: % of assets operational
+    const assetUptime = allAssets.length > 0 
+      ? Math.round((allAssets.filter(a => a.status === "operational").length / allAssets.length) * 100) 
+      : 100;
+
+    // PM Compliance: % of preventive WOs completed vs total preventive WOs
+    const preventiveWos = allWorkOrders.filter(w => w.type === "preventive");
+    const completedPreventive = preventiveWos.filter(w => w.status === "completed" || w.status === "closed");
+    const pmCompliance = preventiveWos.length > 0
+      ? Math.round((completedPreventive.length / preventiveWos.length) * 100)
+      : 100;
+
+    // Emergency WO Ratio
+    const emergencyWos = allWorkOrders.filter(w => w.type === "emergency" || w.priority === "critical");
+    const emergencyWoRatio = allWorkOrders.length > 0
+      ? Math.round((emergencyWos.length / allWorkOrders.length) * 100)
+      : 0;
+
+    // Average Cost per WO
+    const totalCost = completedWos.reduce((sum, wo) => sum + Number(wo.totalCost || 0), 0);
+    const avgCostPerWo = completedWos.length > 0 ? Math.round(totalCost / completedWos.length) : 0;
+
+    return { mttr, mtbf, assetUptime, pmCompliance, emergencyWoRatio, avgCostPerWo };
+  }
+
+  async getProcurementOverview() {
+    const allRequisitions = await db.select().from(purchaseRequisitions);
+    const allPurchaseOrders = await db.select().from(purchaseOrders);
+    const allReorderAlerts = await db.select().from(reorderAlerts);
+    const allPartRequests = await db.select().from(partRequests);
+
+    return {
+      pendingRequisitions: allRequisitions.filter(r => r.status === "submitted" || r.status === "draft").length,
+      activePurchaseOrders: allPurchaseOrders.filter(po => 
+        po.status === "sent" || po.status === "acknowledged" || po.status === "partial"
+      ).length,
+      reorderAlerts: allReorderAlerts.filter(a => a.status === "pending").length,
+      pendingPartRequests: allPartRequests.filter(pr => pr.status === "pending").length,
+    };
+  }
+
+  async getPartsAnalytics() {
+    const allTransactions = await db.select().from(workOrderTransactions);
+    const allParts = await db.select().from(parts);
+    
+    // Aggregate part consumption
+    const partUsage: Record<number, { count: number; cost: number }> = {};
+    allTransactions
+      .filter(t => t.type === "part_consumption" && t.partId)
+      .forEach(t => {
+        if (!partUsage[t.partId!]) partUsage[t.partId!] = { count: 0, cost: 0 };
+        partUsage[t.partId!].count += Number(t.quantity || 1);
+        partUsage[t.partId!].cost += Number(t.totalCost || 0);
+      });
+
+    const topUsedParts = Object.entries(partUsage)
+      .map(([partId, usage]) => {
+        const part = allParts.find(p => p.id === parseInt(partId));
+        return {
+          partId: parseInt(partId),
+          partNumber: part?.partNumber || "Unknown",
+          partName: part?.name || "Unknown",
+          usageCount: usage.count,
+          totalCost: usage.cost,
+        };
+      })
+      .sort((a, b) => b.usageCount - a.usageCount)
+      .slice(0, 5);
+
+    // Critical low stock (quantity at 0 or below reorder point for critical parts)
+    const lowStockCritical = allParts.filter(p => {
+      const qty = Number(p.quantityOnHand || 0);
+      const reorder = Number(p.reorderPoint || 0);
+      return qty <= reorder && qty <= 5;
+    }).length;
+
+    return { topUsedParts, lowStockCritical };
   }
 
   // Phase 3 methods
