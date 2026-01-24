@@ -9,6 +9,8 @@ import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 import { PageHeader } from "@/components/PageHeader";
 import { useAuth } from "@/hooks/use-auth";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -92,6 +94,9 @@ export default function Settings() {
   const { user, logout, isLoggingOut } = useAuth();
   const { toast } = useToast();
   const [orgName, setOrgName] = useState("");
+  const [addLocationOpen, setAddLocationOpen] = useState(false);
+  const [newLocationName, setNewLocationName] = useState("");
+  const [newLocationAddress, setNewLocationAddress] = useState("");
 
   const { data: organization, isLoading: orgLoading } = useQuery<Organization>({
     queryKey: ["/api/organizations/current"],
@@ -152,6 +157,34 @@ export default function Settings() {
       });
     },
   });
+
+  const createLocationMutation = useMutation({
+    mutationFn: async (data: { name: string; address?: string }) => {
+      return apiRequest("POST", "/api/locations", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/locations"] });
+      setAddLocationOpen(false);
+      setNewLocationName("");
+      setNewLocationAddress("");
+      toast({ title: "Location created", description: "New location has been added." });
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Error", 
+        description: error?.message || "Failed to create location.", 
+        variant: "destructive" 
+      });
+    },
+  });
+
+  const handleAddLocation = () => {
+    if (!newLocationName.trim()) return;
+    createLocationMutation.mutate({ 
+      name: newLocationName.trim(), 
+      address: newLocationAddress.trim() || undefined 
+    });
+  };
 
   const currentUserMembership = members.find(m => m.userId === user?.id);
   const canManageOrg = currentUserMembership?.role === "owner" || currentUserMembership?.role === "admin";
@@ -433,9 +466,67 @@ export default function Settings() {
                   )}
                 </div>
                 {canManageOrg && (
-                  <Button variant="outline" className="mt-4 w-full" data-testid="button-add-location">
-                    Add Location
-                  </Button>
+                  <Dialog open={addLocationOpen} onOpenChange={setAddLocationOpen}>
+                    <DialogTrigger asChild>
+                      <Button variant="outline" className="mt-4 w-full" data-testid="button-add-location">
+                        <Plus className="h-4 w-4 mr-2" />
+                        Add Location
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>Add New Location</DialogTitle>
+                        <DialogDescription>
+                          Create a new location for your organization. Locations help organize assets, parts, and team members.
+                        </DialogDescription>
+                      </DialogHeader>
+                      <div className="space-y-4 py-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="location-name">Location Name</Label>
+                          <Input
+                            id="location-name"
+                            placeholder="e.g., Main Warehouse, North Depot"
+                            value={newLocationName}
+                            onChange={(e) => setNewLocationName(e.target.value)}
+                            data-testid="input-location-name"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="location-address">Address (optional)</Label>
+                          <Textarea
+                            id="location-address"
+                            placeholder="Enter the full address"
+                            value={newLocationAddress}
+                            onChange={(e) => setNewLocationAddress(e.target.value)}
+                            data-testid="input-location-address"
+                          />
+                        </div>
+                      </div>
+                      <DialogFooter>
+                        <Button 
+                          variant="outline" 
+                          onClick={() => setAddLocationOpen(false)}
+                          data-testid="button-cancel-location"
+                        >
+                          Cancel
+                        </Button>
+                        <Button 
+                          onClick={handleAddLocation}
+                          disabled={!newLocationName.trim() || createLocationMutation.isPending}
+                          data-testid="button-save-location"
+                        >
+                          {createLocationMutation.isPending ? (
+                            <>
+                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                              Creating...
+                            </>
+                          ) : (
+                            "Create Location"
+                          )}
+                        </Button>
+                      </DialogFooter>
+                    </DialogContent>
+                  </Dialog>
                 )}
               </CardContent>
             </Card>
