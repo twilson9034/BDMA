@@ -48,6 +48,14 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { LogOut, User, ChevronUp } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 
 const mainNavItems = [
@@ -216,20 +224,43 @@ export function AppSidebar() {
 
       <SidebarFooter className="border-t border-sidebar-border p-3">
         {user && (
-          <div className="flex items-center gap-3">
-            <Avatar className="h-8 w-8">
-              <AvatarImage src={user.profileImageUrl || undefined} />
-              <AvatarFallback className="text-xs bg-primary/10 text-primary">
-                {user.firstName?.[0] || user.email?.[0]?.toUpperCase() || "U"}
-              </AvatarFallback>
-            </Avatar>
-            <div className="flex flex-col min-w-0">
-              <span className="text-sm font-medium truncate">
-                {user.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : user.email}
-              </span>
-              <span className="text-xs text-muted-foreground truncate">{user.email}</span>
-            </div>
-          </div>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                className="flex items-center gap-3 w-full rounded-md p-2 hover-elevate text-left"
+                data-testid="button-user-menu"
+              >
+                <Avatar className="h-8 w-8">
+                  <AvatarImage src={user.profileImageUrl || undefined} />
+                  <AvatarFallback className="text-xs bg-primary/10 text-primary">
+                    {user.firstName?.[0] || user.email?.[0]?.toUpperCase() || "U"}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="flex flex-col min-w-0 flex-1">
+                  <span className="text-sm font-medium truncate">
+                    {user.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : user.email}
+                  </span>
+                  <span className="text-xs text-muted-foreground truncate">{user.email}</span>
+                </div>
+                <ChevronUp className="h-4 w-4 text-muted-foreground" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent side="top" align="start" className="w-56">
+              <DropdownMenuItem asChild>
+                <Link href="/settings" className="flex items-center gap-2" data-testid="menu-profile">
+                  <User className="h-4 w-4" />
+                  <span>Profile Settings</span>
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem asChild>
+                <a href="/api/logout" className="flex items-center gap-2 text-destructive" data-testid="menu-logout">
+                  <LogOut className="h-4 w-4" />
+                  <span>Sign Out</span>
+                </a>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         )}
       </SidebarFooter>
     </Sidebar>
