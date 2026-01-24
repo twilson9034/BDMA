@@ -1,3 +1,5 @@
+import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -5,24 +7,133 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PageHeader } from "@/components/PageHeader";
 import { useAuth } from "@/hooks/use-auth";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { 
   User, 
   Bell, 
-  Shield, 
-  Palette, 
-  Database, 
   Building,
   LogOut,
   Code2,
-  ChevronRight
+  ChevronRight,
+  Users,
+  Crown,
+  Shield,
+  Wrench,
+  Eye,
+  Loader2
 } from "lucide-react";
 import { Link } from "wouter";
 
+interface Organization {
+  id: number;
+  name: string;
+  slug: string;
+  plan: string;
+  status: string;
+  maxAssets: number;
+}
+
+interface OrgMember {
+  id: number;
+  userId: string;
+  role: string;
+  joinedAt: string;
+  firstName: string | null;
+  lastName: string | null;
+  email: string | null;
+  profileImageUrl: string | null;
+}
+
+interface Location {
+  id: number;
+  name: string;
+}
+
+const roleIcons: Record<string, typeof Crown> = {
+  owner: Crown,
+  admin: Shield,
+  manager: Users,
+  technician: Wrench,
+  viewer: Eye,
+};
+
+const roleLabels: Record<string, string> = {
+  owner: "Owner",
+  admin: "Admin",
+  manager: "Manager",
+  technician: "Technician",
+  viewer: "Viewer",
+};
+
+const roleBadgeVariants: Record<string, "default" | "secondary" | "outline"> = {
+  owner: "default",
+  admin: "default",
+  manager: "secondary",
+  technician: "secondary",
+  viewer: "outline",
+};
+
 export default function Settings() {
   const { user, logout, isLoggingOut } = useAuth();
+  const { toast } = useToast();
+  const [orgName, setOrgName] = useState("");
+
+  const { data: organization, isLoading: orgLoading } = useQuery<Organization>({
+    queryKey: ["/api/organizations/current"],
+  });
+
+  const { data: members = [], isLoading: membersLoading } = useQuery<OrgMember[]>({
+    queryKey: ["/api/organizations/current/members"],
+  });
+
+  const { data: locations = [] } = useQuery<Location[]>({
+    queryKey: ["/api/locations"],
+  });
+
+  const updateOrgMutation = useMutation({
+    mutationFn: async (data: { name?: string; slug?: string }) => {
+      return apiRequest("PATCH", "/api/organizations/current", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/organizations/current"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/organizations"] });
+      toast({ title: "Organization updated", description: "Your organization settings have been saved." });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to update organization settings.", variant: "destructive" });
+    },
+  });
+
+  const updateRoleMutation = useMutation({
+    mutationFn: async ({ memberId, role }: { memberId: number; role: string }) => {
+      return apiRequest("PATCH", `/api/organizations/current/members/${memberId}`, { role });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/organizations/current/members"] });
+      toast({ title: "Role updated", description: "Member role has been updated." });
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Error", 
+        description: error?.message || "Failed to update member role.", 
+        variant: "destructive" 
+      });
+    },
+  });
+
+  const currentUserMembership = members.find(m => m.userId === user?.id);
+  const canManageOrg = currentUserMembership?.role === "owner" || currentUserMembership?.role === "admin";
+
+  const handleSaveOrgSettings = () => {
+    if (!orgName.trim() || orgName === organization?.name) return;
+    updateOrgMutation.mutate({ name: orgName });
+  };
 
   return (
     <div className="space-y-6 fade-in">
@@ -32,18 +143,22 @@ export default function Settings() {
       />
 
       <Tabs defaultValue="profile" className="space-y-6">
-        <TabsList>
-          <TabsTrigger value="profile" className="gap-2">
+        <TabsList className="flex-wrap">
+          <TabsTrigger value="profile" className="gap-2" data-testid="tab-profile">
             <User className="h-4 w-4" />
             Profile
           </TabsTrigger>
-          <TabsTrigger value="notifications" className="gap-2">
+          <TabsTrigger value="notifications" className="gap-2" data-testid="tab-notifications">
             <Bell className="h-4 w-4" />
             Notifications
           </TabsTrigger>
-          <TabsTrigger value="organization" className="gap-2">
+          <TabsTrigger value="organization" className="gap-2" data-testid="tab-organization">
             <Building className="h-4 w-4" />
             Organization
+          </TabsTrigger>
+          <TabsTrigger value="team" className="gap-2" data-testid="tab-team">
+            <Users className="h-4 w-4" />
+            Team
           </TabsTrigger>
         </TabsList>
 
@@ -69,9 +184,11 @@ export default function Settings() {
                       {user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "User"}
                     </h3>
                     <p className="text-sm text-muted-foreground">{user?.email}</p>
-                    <Button variant="outline" size="sm" className="mt-2">
-                      Change Photo
-                    </Button>
+                    {currentUserMembership && (
+                      <Badge variant={roleBadgeVariants[currentUserMembership.role] || "secondary"} className="mt-2">
+                        {roleLabels[currentUserMembership.role] || currentUserMembership.role}
+                      </Badge>
+                    )}
                   </div>
                 </div>
 
@@ -80,24 +197,24 @@ export default function Settings() {
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="space-y-2">
                     <Label htmlFor="firstName">First Name</Label>
-                    <Input id="firstName" defaultValue={user?.firstName || ""} />
+                    <Input id="firstName" defaultValue={user?.firstName || ""} data-testid="input-first-name" />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="lastName">Last Name</Label>
-                    <Input id="lastName" defaultValue={user?.lastName || ""} />
+                    <Input id="lastName" defaultValue={user?.lastName || ""} data-testid="input-last-name" />
                   </div>
                   <div className="space-y-2 sm:col-span-2">
                     <Label htmlFor="email">Email</Label>
-                    <Input id="email" defaultValue={user?.email || ""} disabled />
+                    <Input id="email" defaultValue={user?.email || ""} disabled data-testid="input-email" />
                   </div>
                 </div>
 
-                <div className="flex justify-between items-center pt-4">
-                  <Button variant="outline" onClick={() => logout()} disabled={isLoggingOut}>
+                <div className="flex flex-wrap justify-between items-center gap-2 pt-4">
+                  <Button variant="outline" onClick={() => logout()} disabled={isLoggingOut} data-testid="button-sign-out">
                     <LogOut className="h-4 w-4 mr-2" />
                     Sign Out
                   </Button>
-                  <Button>Save Changes</Button>
+                  <Button data-testid="button-save-profile">Save Changes</Button>
                 </div>
               </CardContent>
             </Card>
@@ -121,7 +238,7 @@ export default function Settings() {
                       Get notified when you're assigned to a work order
                     </p>
                   </div>
-                  <Switch defaultChecked />
+                  <Switch defaultChecked data-testid="switch-wo-assignments" />
                 </div>
 
                 <Separator />
@@ -133,7 +250,7 @@ export default function Settings() {
                       Receive reminders for upcoming preventive maintenance
                     </p>
                   </div>
-                  <Switch defaultChecked />
+                  <Switch defaultChecked data-testid="switch-pm-reminders" />
                 </div>
 
                 <Separator />
@@ -145,7 +262,7 @@ export default function Settings() {
                       Get notified when parts reach reorder point
                     </p>
                   </div>
-                  <Switch defaultChecked />
+                  <Switch defaultChecked data-testid="switch-low-stock" />
                 </div>
 
                 <Separator />
@@ -157,7 +274,7 @@ export default function Settings() {
                       Notifications when assets change status
                     </p>
                   </div>
-                  <Switch />
+                  <Switch data-testid="switch-asset-status" />
                 </div>
 
                 <Separator />
@@ -169,12 +286,12 @@ export default function Settings() {
                       Receive a daily summary of maintenance activities
                     </p>
                   </div>
-                  <Switch />
+                  <Switch data-testid="switch-daily-summary" />
                 </div>
               </div>
 
               <div className="flex justify-end pt-4">
-                <Button>Save Preferences</Button>
+                <Button data-testid="button-save-notifications">Save Preferences</Button>
               </div>
             </CardContent>
           </Card>
@@ -190,51 +307,67 @@ export default function Settings() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="orgName">Organization Name</Label>
-                    <Input id="orgName" defaultValue="Acme Fleet Services" />
+                {orgLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="timezone">Timezone</Label>
-                    <Input id="timezone" defaultValue="America/Chicago" />
-                  </div>
-                </div>
-
-                <Separator />
-
-                <div className="space-y-4">
-                  <h4 className="font-medium">Work Order Settings</h4>
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label htmlFor="woPrefix">Work Order Prefix</Label>
-                      <Input id="woPrefix" defaultValue="WO" />
+                ) : organization ? (
+                  <>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="orgName">Organization Name</Label>
+                        <Input 
+                          id="orgName" 
+                          defaultValue={organization.name}
+                          onChange={(e) => setOrgName(e.target.value)}
+                          disabled={!canManageOrg}
+                          data-testid="input-org-name"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Plan</Label>
+                        <div className="flex items-center gap-2 h-9">
+                          <Badge variant="outline" className="capitalize">
+                            {organization.plan}
+                          </Badge>
+                          <span className="text-sm text-muted-foreground">
+                            (up to {organization.maxAssets} assets)
+                          </span>
+                        </div>
+                      </div>
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="woStartNumber">Starting Number</Label>
-                      <Input id="woStartNumber" defaultValue="2024-0001" />
+
+                    <Separator />
+
+                    <div className="space-y-4">
+                      <h4 className="font-medium">Asset Auto-Status</h4>
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm">Auto-update asset status based on work orders</p>
+                          <p className="text-xs text-muted-foreground">
+                            Assets will automatically change to "In Maintenance" when active work orders exist
+                          </p>
+                        </div>
+                        <Switch defaultChecked disabled={!canManageOrg} data-testid="switch-auto-status" />
+                      </div>
                     </div>
-                  </div>
-                </div>
 
-                <Separator />
-
-                <div className="space-y-4">
-                  <h4 className="font-medium">Asset Auto-Status</h4>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm">Auto-update asset status based on work orders</p>
-                      <p className="text-xs text-muted-foreground">
-                        Assets will automatically change to "In Maintenance" when active work orders exist
-                      </p>
-                    </div>
-                    <Switch defaultChecked />
-                  </div>
-                </div>
-
-                <div className="flex justify-end pt-4">
-                  <Button>Save Settings</Button>
-                </div>
+                    {canManageOrg && (
+                      <div className="flex justify-end pt-4">
+                        <Button 
+                          onClick={handleSaveOrgSettings}
+                          disabled={updateOrgMutation.isPending}
+                          data-testid="button-save-org-settings"
+                        >
+                          {updateOrgMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                          Save Settings
+                        </Button>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <p className="text-muted-foreground">No organization selected</p>
+                )}
               </CardContent>
             </Card>
 
@@ -247,19 +380,29 @@ export default function Settings() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  {["Main Depot", "East Yard", "West Terminal"].map((location) => (
-                    <div key={location} className="flex items-center justify-between p-3 rounded-lg border border-border">
-                      <div className="flex items-center gap-3">
-                        <Building className="h-5 w-5 text-muted-foreground" />
-                        <span className="font-medium">{location}</span>
+                  {locations.length > 0 ? (
+                    locations.map((location) => (
+                      <div key={location.id} className="flex items-center justify-between p-3 rounded-lg border border-border">
+                        <div className="flex items-center gap-3">
+                          <Building className="h-5 w-5 text-muted-foreground" />
+                          <span className="font-medium">{location.name}</span>
+                        </div>
+                        {canManageOrg && (
+                          <Button variant="ghost" size="sm" data-testid={`button-edit-location-${location.id}`}>
+                            Edit
+                          </Button>
+                        )}
                       </div>
-                      <Button variant="ghost" size="sm">Edit</Button>
-                    </div>
-                  ))}
+                    ))
+                  ) : (
+                    <p className="text-sm text-muted-foreground py-4 text-center">No locations configured</p>
+                  )}
                 </div>
-                <Button variant="outline" className="mt-4 w-full">
-                  Add Location
-                </Button>
+                {canManageOrg && (
+                  <Button variant="outline" className="mt-4 w-full" data-testid="button-add-location">
+                    Add Location
+                  </Button>
+                )}
               </CardContent>
             </Card>
 
@@ -283,6 +426,114 @@ export default function Settings() {
               </CardContent>
             </Card>
           </div>
+        </TabsContent>
+
+        <TabsContent value="team">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Users className="h-5 w-5" />
+                Team Members
+              </CardTitle>
+              <CardDescription>
+                View and manage your organization's team members
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {membersLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                </div>
+              ) : members.length > 0 ? (
+                <div className="space-y-4">
+                  {members.map((member) => {
+                    const RoleIcon = roleIcons[member.role] || User;
+                    const isCurrentUser = member.userId === user?.id;
+                    
+                    return (
+                      <div 
+                        key={member.id} 
+                        className="flex items-center justify-between p-4 rounded-lg border border-border"
+                        data-testid={`member-${member.id}`}
+                      >
+                        <div className="flex items-center gap-4">
+                          <Avatar>
+                            <AvatarImage src={member.profileImageUrl || undefined} />
+                            <AvatarFallback className="bg-primary/10 text-primary">
+                              {member.firstName?.[0] || member.email?.[0]?.toUpperCase() || "U"}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <p className="font-medium">
+                                {member.firstName ? `${member.firstName} ${member.lastName || ""}`.trim() : member.email || "Unknown User"}
+                              </p>
+                              {isCurrentUser && (
+                                <Badge variant="outline" className="text-xs">You</Badge>
+                              )}
+                            </div>
+                            <p className="text-sm text-muted-foreground">{member.email}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          {canManageOrg && !isCurrentUser ? (
+                            <Select
+                              value={member.role}
+                              onValueChange={(value) => updateRoleMutation.mutate({ memberId: member.id, role: value })}
+                              disabled={updateRoleMutation.isPending}
+                            >
+                              <SelectTrigger className="w-[140px]" data-testid={`select-role-${member.id}`}>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="owner">
+                                  <div className="flex items-center gap-2">
+                                    <Crown className="h-4 w-4" />
+                                    Owner
+                                  </div>
+                                </SelectItem>
+                                <SelectItem value="admin">
+                                  <div className="flex items-center gap-2">
+                                    <Shield className="h-4 w-4" />
+                                    Admin
+                                  </div>
+                                </SelectItem>
+                                <SelectItem value="manager">
+                                  <div className="flex items-center gap-2">
+                                    <Users className="h-4 w-4" />
+                                    Manager
+                                  </div>
+                                </SelectItem>
+                                <SelectItem value="technician">
+                                  <div className="flex items-center gap-2">
+                                    <Wrench className="h-4 w-4" />
+                                    Technician
+                                  </div>
+                                </SelectItem>
+                                <SelectItem value="viewer">
+                                  <div className="flex items-center gap-2">
+                                    <Eye className="h-4 w-4" />
+                                    Viewer
+                                  </div>
+                                </SelectItem>
+                              </SelectContent>
+                            </Select>
+                          ) : (
+                            <Badge variant={roleBadgeVariants[member.role] || "secondary"} className="flex items-center gap-1">
+                              <RoleIcon className="h-3 w-3" />
+                              {roleLabels[member.role] || member.role}
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-muted-foreground text-center py-8">No team members found</p>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
     </div>

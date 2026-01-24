@@ -120,12 +120,33 @@ import {
   notifications,
   type InsertNotification,
   type Notification,
+  organizations,
+  orgMemberships,
+  type Organization,
+  type OrgMembership,
 } from "@shared/schema";
 
 export interface IStorage {
   // Users
   getUser(id: string): Promise<User | undefined>;
   upsertUser(user: UpsertUser): Promise<User>;
+
+  // Organizations
+  getOrganization(id: number): Promise<Organization | undefined>;
+  updateOrganization(id: number, data: Partial<{ name: string; slug: string }>): Promise<Organization | undefined>;
+  getOrgMembers(orgId: number): Promise<Array<{
+    id: number;
+    userId: string;
+    role: string;
+    joinedAt: Date | null;
+    firstName: string | null;
+    lastName: string | null;
+    email: string | null;
+    profileImageUrl: string | null;
+  }>>;
+  getOrgMembership(orgId: number, userId: string): Promise<OrgMembership | undefined>;
+  updateOrgMemberRole(memberId: number, role: string): Promise<OrgMembership | undefined>;
+  countOrgOwners(orgId: number): Promise<number>;
   
   // Locations
   getLocations(): Promise<Location[]>;
@@ -438,6 +459,66 @@ export class DatabaseStorage implements IStorage {
       })
       .returning();
     return user;
+  }
+
+  // Organizations
+  async getOrganization(id: number): Promise<Organization | undefined> {
+    const [org] = await db.select().from(organizations).where(eq(organizations.id, id));
+    return org;
+  }
+
+  async updateOrganization(id: number, data: Partial<{ name: string; slug: string }>): Promise<Organization | undefined> {
+    const [updated] = await db.update(organizations)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(organizations.id, id))
+      .returning();
+    return updated;
+  }
+
+  async getOrgMembers(orgId: number): Promise<Array<{
+    id: number;
+    userId: string;
+    role: string;
+    joinedAt: Date | null;
+    firstName: string | null;
+    lastName: string | null;
+    email: string | null;
+    profileImageUrl: string | null;
+  }>> {
+    const members = await db.select({
+      id: orgMemberships.id,
+      userId: orgMemberships.userId,
+      role: orgMemberships.role,
+      joinedAt: orgMemberships.joinedAt,
+      firstName: users.firstName,
+      lastName: users.lastName,
+      email: users.email,
+      profileImageUrl: users.profileImageUrl,
+    })
+      .from(orgMemberships)
+      .leftJoin(users, eq(orgMemberships.userId, users.id))
+      .where(eq(orgMemberships.orgId, orgId));
+    return members;
+  }
+
+  async getOrgMembership(orgId: number, userId: string): Promise<OrgMembership | undefined> {
+    const [membership] = await db.select().from(orgMemberships)
+      .where(and(eq(orgMemberships.orgId, orgId), eq(orgMemberships.userId, userId)));
+    return membership;
+  }
+
+  async updateOrgMemberRole(memberId: number, role: string): Promise<OrgMembership | undefined> {
+    const [updated] = await db.update(orgMemberships)
+      .set({ role })
+      .where(eq(orgMemberships.id, memberId))
+      .returning();
+    return updated;
+  }
+
+  async countOrgOwners(orgId: number): Promise<number> {
+    const owners = await db.select().from(orgMemberships)
+      .where(and(eq(orgMemberships.orgId, orgId), eq(orgMemberships.role, "owner")));
+    return owners.length;
   }
 
   // Locations
@@ -1063,7 +1144,16 @@ export class DatabaseStorage implements IStorage {
     const allParts = await db.select().from(parts);
     
     const now = new Date();
-    const oneWeekFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const endOfWeek = new Date(now);
+    endOfWeek.setDate(now.getDate() + 7);
+    
+    // Calculate PM due this week from pmAssetInstances
+    const allPmInstances = await db.select().from(pmAssetInstances);
+    const pmDueThisWeek = allPmInstances.filter(instance => {
+      if (!instance.nextDueDate) return false;
+      const dueDate = new Date(instance.nextDueDate);
+      return dueDate >= now && dueDate <= endOfWeek;
+    }).length;
     
     return {
       totalAssets: allAssets.length,
@@ -1078,7 +1168,7 @@ export class DatabaseStorage implements IStorage {
       partsLowStock: allParts.filter(p => 
         Number(p.quantityOnHand || 0) <= Number(p.reorderPoint || 0)
       ).length,
-      pmDueThisWeek: 8, // Would calculate from pmAssetInstances
+      pmDueThisWeek,
     };
   }
 
@@ -2339,6 +2429,21 @@ export class DatabaseStorage implements IStorage {
     const orgWorkOrders = await db.select().from(workOrders).where(eq(workOrders.orgId, orgId));
     const orgParts = await db.select().from(parts).where(eq(parts.orgId, orgId));
     const now = new Date();
+    const endOfWeek = new Date(now);
+    endOfWeek.setDate(now.getDate() + 7);
+    
+    // Calculate PM due this week - join pmAssetInstances with pmSchedules to filter by org
+    const orgPmSchedules = await db.select().from(pmSchedules).where(eq(pmSchedules.orgId, orgId));
+    const orgPmScheduleIds = new Set(orgPmSchedules.map(pm => pm.id));
+    
+    const allPmInstances = await db.select().from(pmAssetInstances);
+    const pmDueThisWeek = allPmInstances.filter(instance => {
+      if (!orgPmScheduleIds.has(instance.pmScheduleId)) return false;
+      if (!instance.nextDueDate) return false;
+      const dueDate = new Date(instance.nextDueDate);
+      return dueDate >= now && dueDate <= endOfWeek;
+    }).length;
+    
     return {
       totalAssets: orgAssets.length,
       operationalAssets: orgAssets.filter(a => a.status === "operational").length,
@@ -2352,7 +2457,7 @@ export class DatabaseStorage implements IStorage {
       partsLowStock: orgParts.filter(p => 
         Number(p.quantityOnHand || 0) <= Number(p.reorderPoint || 0)
       ).length,
-      pmDueThisWeek: 0,
+      pmDueThisWeek,
     };
   }
 
@@ -2501,6 +2606,22 @@ export class DatabaseStorage implements IStorage {
     const overdueWos = orgWorkOrders.filter(w => w.dueDate && new Date(w.dueDate) < new Date() && w.status !== "completed" && w.status !== "cancelled").length;
     const lowStock = orgParts.filter(p => p.reorderPoint && p.quantityOnHand && parseFloat(p.quantityOnHand) <= parseFloat(p.reorderPoint)).length;
 
+    // Calculate PM due this week - join pmAssetInstances with pmSchedules to filter by org
+    const now = new Date();
+    const endOfWeek = new Date(now);
+    endOfWeek.setDate(now.getDate() + 7);
+    
+    const orgPmSchedules = await db.select().from(pmSchedules).where(eq(pmSchedules.orgId, orgId));
+    const orgPmScheduleIds = new Set(orgPmSchedules.map(pm => pm.id));
+    
+    const allPmInstances = await db.select().from(pmAssetInstances);
+    const pmDueThisWeek = allPmInstances.filter(instance => {
+      if (!orgPmScheduleIds.has(instance.pmScheduleId)) return false;
+      if (!instance.nextDueDate) return false;
+      const dueDate = new Date(instance.nextDueDate);
+      return dueDate >= now && dueDate <= endOfWeek;
+    }).length;
+
     return {
       totalAssets: orgAssets.length,
       operationalAssets: operational,
@@ -2509,7 +2630,7 @@ export class DatabaseStorage implements IStorage {
       openWorkOrders: openWos,
       overdueWorkOrders: overdueWos,
       partsLowStock: lowStock,
-      pmDueThisWeek: 0, // TODO: Calculate based on PM instances
+      pmDueThisWeek,
     };
   }
 

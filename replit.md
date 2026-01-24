@@ -1,8 +1,8 @@
-# FleetMaster CMMS
+# BDMA (Best Damn Maintenance App)
 
 ## Overview
 
-FleetMaster is a comprehensive Computerized Maintenance Management System (CMMS) designed for efficient fleet and asset management. It enables organizations to track physical assets, manage work orders and maintenance schedules, handle parts inventory with automated reordering, process procurement workflows, and leverage AI-driven predictive maintenance insights. The system aims to optimize asset uptime, reduce maintenance costs, and streamline operational workflows.
+BDMA is a comprehensive Computerized Maintenance Management System (CMMS) designed for efficient fleet and asset management. It enables organizations to track physical assets, manage work orders and maintenance schedules, handle parts inventory with automated reordering, process procurement workflows, and leverage AI-driven predictive maintenance insights. The system aims to optimize asset uptime, reduce maintenance costs, and streamline operational workflows.
 
 ## User Preferences
 

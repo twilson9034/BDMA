@@ -37,9 +37,10 @@ import OpenAI from "openai";
 import { z } from "zod";
 import { setupAuth, registerAuthRoutes } from "./replit_integrations/auth";
 import { tenantMiddleware, getUserOrgMemberships, getOrgId } from "./tenant";
-import { organizations, orgMemberships, insertOrganizationSchema, insertOrgMembershipSchema } from "@shared/schema";
+import { organizations, orgMemberships, insertOrganizationSchema, insertOrgMembershipSchema, updateOrganizationSchema, updateOrgMemberRoleSchema } from "@shared/schema";
 import { db } from "./db";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
+import { users } from "@shared/schema";
 
 function requireAuth(req: Request, res: Response, next: NextFunction) {
   if (!req.isAuthenticated || !req.isAuthenticated()) {
@@ -226,6 +227,105 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Switch organization error:", error);
       res.status(500).json({ error: "Failed to switch organization" });
+    }
+  });
+
+  // Update organization settings (only owner/admin can update)
+  app.patch("/api/organizations/current", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const userId = (req.user as any)?.claims?.sub;
+      if (!userId) return res.status(401).json({ error: "User not found" });
+      
+      const orgId = getOrgId(req);
+      if (!orgId) return res.status(403).json({ error: "No organization context" });
+      
+      // Check user has owner or admin role using storage
+      const membership = await storage.getOrgMembership(orgId, userId);
+      
+      if (!membership || !["owner", "admin"].includes(membership.role)) {
+        return res.status(403).json({ error: "Only owners and admins can update organization settings" });
+      }
+      
+      // Validate with schema
+      const validated = updateOrganizationSchema.parse(req.body);
+      
+      if (Object.keys(validated).length === 0) {
+        return res.status(400).json({ error: "No valid fields to update" });
+      }
+      
+      const updated = await storage.updateOrganization(orgId, validated);
+      if (!updated) {
+        return res.status(404).json({ error: "Organization not found" });
+      }
+      res.json(updated);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: "Invalid data", details: error.errors });
+      }
+      console.error("Update organization error:", error);
+      res.status(500).json({ error: "Failed to update organization" });
+    }
+  });
+
+  // Get organization members
+  app.get("/api/organizations/current/members", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      if (!orgId) return res.status(403).json({ error: "No organization context" });
+      
+      const members = await storage.getOrgMembers(orgId);
+      res.json(members);
+    } catch (error) {
+      console.error("Get org members error:", error);
+      res.status(500).json({ error: "Failed to get organization members" });
+    }
+  });
+
+  // Update member role (only owner/admin can update)
+  app.patch("/api/organizations/current/members/:memberId", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const userId = (req.user as any)?.claims?.sub;
+      if (!userId) return res.status(401).json({ error: "User not found" });
+      
+      const orgId = getOrgId(req);
+      if (!orgId) return res.status(403).json({ error: "No organization context" });
+      
+      const memberId = parseInt(req.params.memberId);
+      
+      // Validate with schema from shared/schema.ts
+      const validated = updateOrgMemberRoleSchema.parse(req.body);
+      
+      // Check user has owner or admin role using storage
+      const membership = await storage.getOrgMembership(orgId, userId);
+      
+      if (!membership || !["owner", "admin"].includes(membership.role)) {
+        return res.status(403).json({ error: "Only owners and admins can update member roles" });
+      }
+      
+      // Get the target member to check their current role
+      const orgMembers = await storage.getOrgMembers(orgId);
+      const targetMember = orgMembers.find(m => m.id === memberId);
+      
+      if (!targetMember) {
+        return res.status(404).json({ error: "Member not found" });
+      }
+      
+      // Cannot demote owner unless there's another owner
+      if (targetMember.role === "owner" && validated.role !== "owner") {
+        const ownerCount = await storage.countOrgOwners(orgId);
+        if (ownerCount <= 1) {
+          return res.status(400).json({ error: "Cannot demote the only owner" });
+        }
+      }
+      
+      const updated = await storage.updateOrgMemberRole(memberId, validated.role);
+      res.json(updated);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: "Invalid data", details: error.errors });
+      }
+      console.error("Update member role error:", error);
+      res.status(500).json({ error: "Failed to update member role" });
     }
   });
 

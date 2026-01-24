@@ -32,7 +32,9 @@ export const organizations = pgTable("organizations", {
 });
 
 export const insertOrganizationSchema = createInsertSchema(organizations).omit({ id: true, createdAt: true, updatedAt: true });
+export const updateOrganizationSchema = insertOrganizationSchema.partial().pick({ name: true, slug: true });
 export type InsertOrganization = z.infer<typeof insertOrganizationSchema>;
+export type UpdateOrganization = z.infer<typeof updateOrganizationSchema>;
 export type Organization = typeof organizations.$inferSelect;
 
 // ============================================================
@@ -59,7 +61,11 @@ export const orgMembershipsRelations = relations(orgMemberships, ({ one }) => ({
 }));
 
 export const insertOrgMembershipSchema = createInsertSchema(orgMemberships).omit({ id: true, createdAt: true, updatedAt: true });
+export const updateOrgMemberRoleSchema = z.object({
+  role: z.enum(["owner", "admin", "manager", "technician", "viewer"]),
+});
 export type InsertOrgMembership = z.infer<typeof insertOrgMembershipSchema>;
+export type UpdateOrgMemberRole = z.infer<typeof updateOrgMemberRoleSchema>;
 export type OrgMembership = typeof orgMemberships.$inferSelect;
 
 // ============================================================
