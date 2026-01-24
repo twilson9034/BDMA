@@ -92,6 +92,19 @@ Preferred communication style: Simple, everyday language.
 - `getOrgMembership(orgId, userId)` - Get specific membership
 - `updateOrgMemberRole(membershipId, role)` - Update member role (validated with updateOrgMemberRoleSchema)
 - `countOrgOwners(orgId)` - Count owners (for protection logic)
+- `getSubsidiaryOrgs(parentOrgId)` - Get all subsidiary organizations
+- `setParentOrg(orgId, parentOrgId)` - Link org to parent (validated with setParentOrgSchema)
+- `getOrgsForCorporateAdmin(userId)` - Get all orgs visible to corporate admin
+- `updateMemberCorporateAdmin(orgId, memberId, isCorporateAdmin)` - Set corporate admin status
+- `hasCorporateAdminMembership(userId)` - Check if user has any corporate admin membership
+
+**Parent-Subsidiary Organization Features:**
+- `parentOrgId` field on organizations table for hierarchical relationships
+- `isCorporateAdmin` field on org_memberships for cross-org visibility
+- Circular reference prevention via ancestor chain validation
+- Corporate admins can view parent org and all subsidiaries
+- OrganizationSwitcher only visible to users with multiple orgs or corporate admin role
+- Parent linking requires owner/admin/corporate-admin role on parent organization
 
 **Remaining Work for Complete Isolation:**
 - Helper generators (work order/PO/requisition/estimate numbers) still use unscoped storage
