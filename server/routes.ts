@@ -36,6 +36,10 @@ import {
 import OpenAI from "openai";
 import { z } from "zod";
 import { setupAuth, registerAuthRoutes } from "./replit_integrations/auth";
+import { tenantMiddleware, getUserOrgMemberships, getOrgId } from "./tenant";
+import { organizations, orgMemberships, insertOrganizationSchema, insertOrgMembershipSchema } from "@shared/schema";
+import { db } from "./db";
+import { eq } from "drizzle-orm";
 
 function requireAuth(req: Request, res: Response, next: NextFunction) {
   if (!req.isAuthenticated || !req.isAuthenticated()) {
@@ -152,6 +156,76 @@ export async function registerRoutes(
       res.json(req.user);
     } else {
       res.json(null);
+    }
+  });
+
+  // Organization management endpoints
+  app.get("/api/organizations", requireAuth, async (req, res) => {
+    try {
+      const userId = (req.user as any)?.claims?.sub;
+      if (!userId) return res.status(401).json({ error: "User not found" });
+      
+      const memberships = await getUserOrgMemberships(userId);
+      res.json(memberships);
+    } catch (error) {
+      console.error("Get organizations error:", error);
+      res.status(500).json({ error: "Failed to get organizations" });
+    }
+  });
+
+  app.get("/api/organizations/current", requireAuth, tenantMiddleware(), async (req, res) => {
+    if (!req.tenant) {
+      return res.status(403).json({ error: "No organization context" });
+    }
+    res.json(req.tenant);
+  });
+
+  app.post("/api/organizations", requireAuth, async (req, res) => {
+    try {
+      const userId = (req.user as any)?.claims?.sub;
+      if (!userId) return res.status(401).json({ error: "User not found" });
+      
+      const validated = insertOrganizationSchema.parse(req.body);
+      
+      const [newOrg] = await db.insert(organizations)
+        .values(validated)
+        .returning();
+      
+      await db.insert(orgMemberships).values({
+        orgId: newOrg.id,
+        userId,
+        role: "owner",
+      });
+      
+      res.status(201).json(newOrg);
+    } catch (error) {
+      console.error("Create organization error:", error);
+      res.status(500).json({ error: "Failed to create organization" });
+    }
+  });
+
+  app.post("/api/organizations/switch/:orgId", requireAuth, async (req, res) => {
+    try {
+      const userId = (req.user as any)?.claims?.sub;
+      const orgId = parseInt(req.params.orgId);
+      
+      if (!userId) return res.status(401).json({ error: "User not found" });
+      
+      const memberships = await getUserOrgMemberships(userId);
+      const hasMembership = memberships.some(m => m.orgId === orgId);
+      
+      if (!hasMembership) {
+        return res.status(403).json({ error: "Not a member of this organization" });
+      }
+      
+      if (req.session) {
+        (req.session as any).selectedOrgId = orgId;
+      }
+      
+      res.json({ success: true, orgId });
+    } catch (error) {
+      console.error("Switch organization error:", error);
+      res.status(500).json({ error: "Failed to switch organization" });
     }
   });
 
