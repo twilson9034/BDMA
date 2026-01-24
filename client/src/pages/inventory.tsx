@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
-import { Plus, Search, Package, AlertTriangle, BarChart3 } from "lucide-react";
+import { Plus, Search, Package, AlertTriangle, BarChart3, Download, Barcode } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -29,6 +30,8 @@ export default function Inventory() {
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [stockFilter, setStockFilter] = useState<string>("all");
+  const [abcFilter, setAbcFilter] = useState<string>("all");
+  const { toast } = useToast();
 
   const { data: parts, isLoading } = useQuery<PartWithVendor[]>({
     queryKey: ["/api/parts"],
@@ -154,8 +157,71 @@ export default function Inventory() {
     const matchesCategory = categoryFilter === "all" || part.category === categoryFilter;
     const stockLevel = getStockLevel(part);
     const matchesStock = stockFilter === "all" || stockLevel === stockFilter;
-    return matchesSearch && matchesCategory && matchesStock;
+    const matchesAbc = abcFilter === "all" || part.abcClass === abcFilter;
+    return matchesSearch && matchesCategory && matchesStock && matchesAbc;
   });
+
+  const handleExportCSV = () => {
+    const headers = [
+      "Part Number",
+      "Name",
+      "Description",
+      "Category",
+      "ABC Class",
+      "Unit of Measure",
+      "Quantity on Hand",
+      "Quantity Reserved",
+      "Reorder Point",
+      "Reorder Quantity",
+      "Unit Cost",
+      "Bin Location",
+      "Location",
+      "Vendor",
+      "Barcode",
+    ];
+
+    const rows = filteredParts.map((part) => [
+      part.partNumber,
+      part.name,
+      part.description || "",
+      part.category || "",
+      part.abcClass || "",
+      part.unitOfMeasure || "",
+      part.quantityOnHand || "0",
+      part.quantityReserved || "0",
+      part.reorderPoint || "0",
+      part.reorderQuantity || "0",
+      part.unitCost || "0",
+      part.binLocation || "",
+      part.locationName || "",
+      part.vendorName || "",
+      part.barcode || "",
+    ]);
+
+    const csvContent = [
+      headers.join(","),
+      ...rows.map((row) =>
+        row
+          .map((cell) => `"${String(cell).replace(/"/g, '""')}"`)
+          .join(",")
+      ),
+    ].join("\n");
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `inventory_export_${new Date().toISOString().split("T")[0]}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    toast({
+      title: "Export Complete",
+      description: `Exported ${filteredParts.length} parts to CSV`,
+    });
+  };
 
   const lowStockCount = displayParts.filter((p) => getStockLevel(p) === "low").length;
   const outOfStockCount = displayParts.filter((p) => getStockLevel(p) === "out").length;
@@ -261,6 +327,22 @@ export default function Inventory() {
         </div>
       ),
     },
+    {
+      key: "barcode",
+      header: "Barcode",
+      cell: (part) => (
+        <div className="flex items-center gap-2">
+          {part.barcode ? (
+            <>
+              <Barcode className="h-4 w-4 text-muted-foreground" />
+              <span className="text-xs font-mono">{part.barcode}</span>
+            </>
+          ) : (
+            <span className="text-xs text-muted-foreground">-</span>
+          )}
+        </div>
+      ),
+    },
   ];
 
   return (
@@ -269,12 +351,18 @@ export default function Inventory() {
         title="Inventory"
         description="Manage parts, supplies, and stock levels"
         actions={
-          <Button asChild data-testid="button-new-part">
-            <Link href="/inventory/new">
-              <Plus className="h-4 w-4 mr-2" />
-              Add Part
-            </Link>
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={handleExportCSV} data-testid="button-export-csv">
+              <Download className="h-4 w-4 mr-2" />
+              Export CSV
+            </Button>
+            <Button asChild data-testid="button-new-part">
+              <Link href="/inventory/new">
+                <Plus className="h-4 w-4 mr-2" />
+                Add Part
+              </Link>
+            </Button>
+          </div>
         }
       />
 
@@ -376,6 +464,17 @@ export default function Inventory() {
               <SelectItem value="normal">In Stock</SelectItem>
               <SelectItem value="low">Low Stock</SelectItem>
               <SelectItem value="out">Out of Stock</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={abcFilter} onValueChange={setAbcFilter}>
+            <SelectTrigger className="w-[100px]" data-testid="select-abc">
+              <SelectValue placeholder="ABC Class" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All ABC</SelectItem>
+              <SelectItem value="A">Class A</SelectItem>
+              <SelectItem value="B">Class B</SelectItem>
+              <SelectItem value="C">Class C</SelectItem>
             </SelectContent>
           </Select>
         </div>
