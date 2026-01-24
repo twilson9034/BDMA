@@ -801,15 +801,11 @@ export async function registerRoutes(
     try {
       // Convert empty strings to null for numeric fields to avoid PostgreSQL parse errors
       const data = { ...req.body };
-      const numericFields = ['year', 'currentMeterReading', 'purchasePrice', 'salvageValue', 'residualValue', 'usefulLifeYears'];
+      const numericFields = ['year', 'currentMeterReading', 'purchasePrice', 'salvageValue', 'residualValue', 'usefulLifeYears', 'locationId', 'parentAssetId'];
       for (const field of numericFields) {
         if (data[field] === '' || data[field] === undefined) {
           data[field] = null;
         }
-      }
-      // Also handle locationId which is a foreign key reference
-      if (data.locationId === '' || data.locationId === undefined) {
-        data.locationId = null;
       }
       
       const updated = await storage.updateAsset(parseInt(req.params.id), data);
