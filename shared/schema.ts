@@ -19,6 +19,7 @@ export const organizations = pgTable("organizations", {
   slug: text("slug").notNull().unique(),
   plan: text("plan").default("starter").$type<typeof organizationPlanEnum[number]>(),
   status: text("status").default("active").$type<typeof organizationStatusEnum[number]>(),
+  parentOrgId: integer("parent_org_id"), // Parent organization for subsidiary relationships
   logoUrl: text("logo_url"),
   address: text("address"),
   city: text("city"),
@@ -49,6 +50,7 @@ export const orgMemberships = pgTable("org_memberships", {
   orgId: integer("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
   role: text("role").default("technician").$type<typeof orgRoleEnum[number]>(),
   primaryLocationId: integer("primary_location_id"), // Technician's primary/default location for filtering
+  isCorporateAdmin: boolean("is_corporate_admin").default(false), // Can view/manage subsidiary organizations
   isActive: boolean("is_active").default(true),
   isDefault: boolean("is_default").default(false), // User's default org
   createdAt: timestamp("created_at").defaultNow(),
