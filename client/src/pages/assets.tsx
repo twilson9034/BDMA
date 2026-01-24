@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
-import { Plus, Search, Truck, Filter, Gauge } from "lucide-react";
+import { Plus, Search, Truck, Filter, Gauge, Download } from "lucide-react";
 import { BatchMeterUpdate } from "@/components/BatchMeterUpdate";
+import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -37,8 +38,10 @@ export default function Assets() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [typeFilter, setTypeFilter] = useState<string>("all");
+  const [lifecycleFilter, setLifecycleFilter] = useState<string>("all");
   const [viewMode, setViewMode] = useState<"table" | "grid">("table");
   const [showBatchMeter, setShowBatchMeter] = useState(false);
+  const { toast } = useToast();
 
   const { data: assets, isLoading } = useQuery<AssetWithLocation[]>({
     queryKey: ["/api/assets"],
@@ -47,6 +50,7 @@ export default function Assets() {
   const mockAssets: AssetWithLocation[] = [
     {
       id: 1,
+      orgId: 1,
       assetNumber: "TRK-1024",
       name: "Freightliner Cascadia",
       description: "Long haul semi truck",
@@ -80,6 +84,7 @@ export default function Assets() {
     },
     {
       id: 2,
+      orgId: 1,
       assetNumber: "VAN-3012",
       name: "Ford Transit 350",
       description: "Cargo van for local deliveries",
@@ -113,6 +118,7 @@ export default function Assets() {
     },
     {
       id: 3,
+      orgId: 1,
       assetNumber: "BUS-5001",
       name: "Blue Bird Vision",
       description: "School bus",
@@ -146,6 +152,7 @@ export default function Assets() {
     },
     {
       id: 4,
+      orgId: 1,
       assetNumber: "LIFT-001",
       name: "Caterpillar GP25N",
       description: "Forklift for warehouse operations",
@@ -188,8 +195,82 @@ export default function Assets() {
       (asset.manufacturer?.toLowerCase() || "").includes(search.toLowerCase());
     const matchesStatus = statusFilter === "all" || asset.status === statusFilter;
     const matchesType = typeFilter === "all" || asset.type === typeFilter;
-    return matchesSearch && matchesStatus && matchesType;
+    const matchesLifecycle = lifecycleFilter === "all" || asset.lifecycleStatus === lifecycleFilter;
+    return matchesSearch && matchesStatus && matchesType && matchesLifecycle;
   });
+
+  const handleExportCSV = () => {
+    const headers = [
+      "Asset Number",
+      "Name",
+      "Description",
+      "Type",
+      "Status",
+      "Lifecycle Status",
+      "Location",
+      "Manufacturer",
+      "Model",
+      "Serial Number",
+      "Year",
+      "Purchase Date",
+      "Purchase Price",
+      "Salvage Value",
+      "Replacement Cost",
+      "Meter Type",
+      "Current Meter",
+      "Last Meter Update",
+    ];
+
+    const rows = filteredAssets.map((asset) => {
+      const purchasePrice = parseFloat(asset.purchasePrice || "0");
+      const salvageValue = parseFloat(asset.salvageValue || "0");
+      const replacementCost = Math.max(0, purchasePrice - salvageValue);
+      return [
+        asset.assetNumber,
+        asset.name,
+        asset.description || "",
+        asset.type || "",
+        asset.status || "",
+        asset.lifecycleStatus || "active",
+        asset.locationName || "",
+        asset.manufacturer || "",
+        asset.model || "",
+        asset.serialNumber || "",
+        asset.year?.toString() || "",
+        asset.purchaseDate ? new Date(asset.purchaseDate).toLocaleDateString() : "",
+        asset.purchasePrice || "0",
+        asset.salvageValue || "",
+        replacementCost.toFixed(2),
+        asset.meterType || "",
+        asset.currentMeterReading || "",
+        asset.lastMeterUpdate ? new Date(asset.lastMeterUpdate).toLocaleDateString() : "",
+      ];
+    });
+
+    const csvContent = [
+      headers.join(","),
+      ...rows.map((row) =>
+        row
+          .map((cell) => `"${String(cell).replace(/"/g, '""')}"`)
+          .join(",")
+      ),
+    ].join("\n");
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `assets_export_${new Date().toISOString().split("T")[0]}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    toast({
+      title: "Export Complete",
+      description: `Exported ${filteredAssets.length} assets to CSV`,
+    });
+  };
 
   const columns: Column<AssetWithLocation>[] = [
     {
@@ -222,11 +303,39 @@ export default function Assets() {
       cell: (asset) => <StatusBadge status={asset.status} />,
     },
     {
+      key: "lifecycleStatus",
+      header: "Lifecycle",
+      cell: (asset) => {
+        const lifecycle = asset.lifecycleStatus || "active";
+        const lifecycleVariant = lifecycle === "active" ? "default" : 
+          lifecycle === "disposed" || lifecycle === "scrapped" ? "destructive" : "secondary";
+        return (
+          <Badge variant={lifecycleVariant} className="capitalize" data-testid={`badge-lifecycle-${asset.id}`}>
+            {lifecycle}
+          </Badge>
+        );
+      },
+    },
+    {
       key: "location",
       header: "Location",
       cell: (asset) => (
         <span className="text-sm">{asset.locationName || "-"}</span>
       ),
+    },
+    {
+      key: "replacementCost",
+      header: "Replacement Cost",
+      cell: (asset) => {
+        const purchasePrice = parseFloat(asset.purchasePrice || "0");
+        const salvageValue = parseFloat(asset.salvageValue || "0");
+        const replacementCost = Math.max(0, purchasePrice - salvageValue);
+        return (
+          <span className="text-sm font-medium" data-testid={`text-replacement-cost-${asset.id}`}>
+            {replacementCost > 0 ? `$${replacementCost.toLocaleString()}` : "-"}
+          </span>
+        );
+      },
     },
     {
       key: "meterReading",
@@ -263,6 +372,10 @@ export default function Assets() {
         description="Manage your fleet vehicles, equipment, and facilities"
         actions={
           <div className="flex gap-2">
+            <Button variant="outline" onClick={handleExportCSV} data-testid="button-export-csv">
+              <Download className="h-4 w-4 mr-2" />
+              Export CSV
+            </Button>
             <Button variant="outline" onClick={() => setShowBatchMeter(true)} data-testid="button-batch-meter">
               <Gauge className="h-4 w-4 mr-2" />
               Batch Meters
@@ -374,6 +487,19 @@ export default function Assets() {
               <SelectItem value="facility">Facility</SelectItem>
               <SelectItem value="tool">Tool</SelectItem>
               <SelectItem value="other">Other</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={lifecycleFilter} onValueChange={setLifecycleFilter}>
+            <SelectTrigger className="w-[140px]" data-testid="select-lifecycle">
+              <SelectValue placeholder="Lifecycle" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Lifecycle</SelectItem>
+              <SelectItem value="active">Active</SelectItem>
+              <SelectItem value="disposed">Disposed</SelectItem>
+              <SelectItem value="sold">Sold</SelectItem>
+              <SelectItem value="transferred">Transferred</SelectItem>
+              <SelectItem value="scrapped">Scrapped</SelectItem>
             </SelectContent>
           </Select>
         </div>
