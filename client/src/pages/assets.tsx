@@ -1,13 +1,24 @@
-import { useState, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useState, useEffect, useRef } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
-import { Plus, Search, Truck, Filter, Gauge, Download, MapPin } from "lucide-react";
+import { Plus, Search, Truck, Filter, Gauge, Download, MapPin, QrCode, Printer, X } from "lucide-react";
+import { QRCodeSVG } from "qrcode.react";
 import { BatchMeterUpdate } from "@/components/BatchMeterUpdate";
 import { useToast } from "@/hooks/use-toast";
 import { useMembership } from "@/hooks/use-membership";
+import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { 
   Select,
   SelectContent,
@@ -44,6 +55,10 @@ export default function Assets() {
   const [locationFilterInitialized, setLocationFilterInitialized] = useState(false);
   const [viewMode, setViewMode] = useState<"table" | "grid">("table");
   const [showBatchMeter, setShowBatchMeter] = useState(false);
+  const [selectedAssets, setSelectedAssets] = useState<Set<number>>(new Set());
+  const [showBulkQrDialog, setShowBulkQrDialog] = useState(false);
+  const [qrTokens, setQrTokens] = useState<Record<number, { token: string; assetNumber: string; assetName: string }>>({});
+  const [isGeneratingTokens, setIsGeneratingTokens] = useState(false);
   const { toast } = useToast();
   const { primaryLocationId, isLoading: membershipLoading } = useMembership();
 
@@ -291,7 +306,144 @@ export default function Assets() {
     });
   };
 
+  const toggleAssetSelection = (assetId: number) => {
+    setSelectedAssets(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(assetId)) {
+        newSet.delete(assetId);
+      } else {
+        newSet.add(assetId);
+      }
+      return newSet;
+    });
+  };
+
+  const toggleAllAssets = () => {
+    if (selectedAssets.size === filteredAssets.length) {
+      setSelectedAssets(new Set());
+    } else {
+      setSelectedAssets(new Set(filteredAssets.map(a => a.id)));
+    }
+  };
+
+  const handleBulkPrintQrCodes = async () => {
+    if (selectedAssets.size === 0) {
+      toast({
+        title: "No assets selected",
+        description: "Please select at least one asset to print QR codes.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsGeneratingTokens(true);
+    setShowBulkQrDialog(true);
+    const tokens: Record<number, { token: string; assetNumber: string; assetName: string }> = {};
+
+    for (const assetId of selectedAssets) {
+      const asset = displayAssets.find(a => a.id === assetId);
+      if (asset) {
+        try {
+          const res = await apiRequest("POST", `/api/assets/${assetId}/dvir-token`);
+          const data = await res.json();
+          tokens[assetId] = {
+            token: data.token,
+            assetNumber: asset.assetNumber,
+            assetName: asset.name,
+          };
+        } catch (error) {
+          console.error(`Failed to generate token for asset ${assetId}:`, error);
+        }
+      }
+    }
+
+    setQrTokens(tokens);
+    setIsGeneratingTokens(false);
+  };
+
+  const printBulkQrCodes = () => {
+    const printWindow = window.open("", "_blank");
+    if (printWindow) {
+      const qrItems = Object.entries(qrTokens).map(([assetId, data]) => {
+        const url = `${window.location.origin}/dvir/${data.token}`;
+        return `
+          <div class="qr-item">
+            <h2>${data.assetNumber}</h2>
+            <h3>${data.assetName}</h3>
+            <div class="qr-code" id="qr-${assetId}"></div>
+            <p>Scan to submit DVIR</p>
+          </div>
+        `;
+      }).join("");
+
+      printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>DVIR QR Codes - Bulk Print</title>
+          <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"><\/script>
+          <style>
+            body { font-family: Arial, sans-serif; margin: 0; padding: 20px; }
+            .qr-grid { 
+              display: grid; 
+              grid-template-columns: repeat(3, 1fr); 
+              gap: 20px; 
+              page-break-inside: auto;
+            }
+            .qr-item { 
+              border: 2px solid #333; 
+              border-radius: 8px; 
+              padding: 16px; 
+              text-align: center;
+              page-break-inside: avoid;
+            }
+            h2 { margin: 0 0 4px 0; font-size: 16px; }
+            h3 { margin: 0 0 12px 0; font-size: 12px; color: #666; }
+            .qr-code { display: flex; justify-content: center; margin-bottom: 8px; }
+            p { margin: 0; font-size: 10px; color: #666; }
+            @media print {
+              .qr-item { break-inside: avoid; }
+            }
+          </style>
+        </head>
+        <body>
+          <h1 style="text-align: center; margin-bottom: 20px;">DVIR QR Codes</h1>
+          <div class="qr-grid">${qrItems}</div>
+          <script>
+            ${Object.entries(qrTokens).map(([assetId, data]) => {
+              const url = `${window.location.origin}/dvir/${data.token}`;
+              return `QRCode.toCanvas(document.querySelector('#qr-${assetId}'), '${url}', { width: 150 }, function(error) { if (error) console.error(error); });`;
+            }).join("\n")}
+            setTimeout(() => { window.print(); }, 500);
+          <\/script>
+        </body>
+        </html>
+      `);
+      printWindow.document.close();
+    }
+  };
+
   const columns: Column<AssetWithLocation>[] = [
+    {
+      key: "select",
+      header: () => (
+        <Checkbox
+          checked={selectedAssets.size === filteredAssets.length && filteredAssets.length > 0}
+          onCheckedChange={toggleAllAssets}
+          aria-label="Select all"
+          data-testid="checkbox-select-all"
+        />
+      ),
+      cell: (asset) => (
+        <Checkbox
+          checked={selectedAssets.has(asset.id)}
+          onCheckedChange={() => toggleAssetSelection(asset.id)}
+          onClick={(e) => e.stopPropagation()}
+          aria-label={`Select ${asset.assetNumber}`}
+          data-testid={`checkbox-select-asset-${asset.id}`}
+        />
+      ),
+    },
     {
       key: "assetNumber",
       header: "Asset",
@@ -390,7 +542,13 @@ export default function Assets() {
         title="Assets"
         description="Manage your fleet vehicles, equipment, and facilities"
         actions={
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
+            {selectedAssets.size > 0 && (
+              <Button variant="outline" onClick={handleBulkPrintQrCodes} data-testid="button-bulk-print-qr">
+                <QrCode className="h-4 w-4 mr-2" />
+                Print QR Codes ({selectedAssets.size})
+              </Button>
+            )}
             <Button variant="outline" onClick={handleExportCSV} data-testid="button-export-csv">
               <Download className="h-4 w-4 mr-2" />
               Export CSV
@@ -563,6 +721,60 @@ export default function Assets() {
       )}
 
       <BatchMeterUpdate isOpen={showBatchMeter} onClose={() => setShowBatchMeter(false)} />
+
+      <Dialog open={showBulkQrDialog} onOpenChange={setShowBulkQrDialog}>
+        <DialogContent className="max-w-4xl max-h-[80vh] overflow-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <QrCode className="h-5 w-5" />
+              Bulk DVIR QR Codes
+            </DialogTitle>
+            <DialogDescription>
+              QR codes for {selectedAssets.size} selected asset(s). Print these and attach them to vehicles for easy DVIR submission.
+            </DialogDescription>
+          </DialogHeader>
+
+          {isGeneratingTokens ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="text-center space-y-4">
+                <div className="h-8 w-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto" />
+                <p className="text-muted-foreground">Generating QR codes...</p>
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 py-4">
+              {Object.entries(qrTokens).map(([assetId, data]) => (
+                <div key={assetId} className="border rounded-lg p-4 text-center">
+                  <h3 className="font-bold text-sm mb-1">{data.assetNumber}</h3>
+                  <p className="text-xs text-muted-foreground mb-3">{data.assetName}</p>
+                  <div className="flex justify-center bg-white rounded-lg p-2">
+                    <QRCodeSVG 
+                      value={`${window.location.origin}/dvir/${data.token}`} 
+                      size={120} 
+                      level="H" 
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-2">Scan for DVIR</p>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setShowBulkQrDialog(false)}>
+              Close
+            </Button>
+            <Button 
+              onClick={printBulkQrCodes} 
+              disabled={isGeneratingTokens || Object.keys(qrTokens).length === 0}
+              data-testid="button-print-all-qr"
+            >
+              <Printer className="h-4 w-4 mr-2" />
+              Print All
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

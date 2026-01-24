@@ -799,10 +799,24 @@ export async function registerRoutes(
 
   app.patch("/api/assets/:id", requireAuth, async (req, res) => {
     try {
-      const updated = await storage.updateAsset(parseInt(req.params.id), req.body);
+      // Convert empty strings to null for numeric fields to avoid PostgreSQL parse errors
+      const data = { ...req.body };
+      const numericFields = ['year', 'currentMeterReading', 'purchasePrice', 'salvageValue', 'residualValue', 'usefulLifeYears'];
+      for (const field of numericFields) {
+        if (data[field] === '' || data[field] === undefined) {
+          data[field] = null;
+        }
+      }
+      // Also handle locationId which is a foreign key reference
+      if (data.locationId === '' || data.locationId === undefined) {
+        data.locationId = null;
+      }
+      
+      const updated = await storage.updateAsset(parseInt(req.params.id), data);
       if (!updated) return res.status(404).json({ error: "Asset not found" });
       res.json(updated);
     } catch (error) {
+      console.error("Failed to update asset:", error);
       res.status(500).json({ error: "Failed to update asset" });
     }
   });

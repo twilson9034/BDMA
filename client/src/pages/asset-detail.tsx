@@ -43,8 +43,10 @@ import { PageHeader } from "@/components/PageHeader";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import type { Asset, Location, WorkOrder, TelematicsData, FaultCode, Prediction } from "@shared/schema";
+import type { Asset, Location, WorkOrder, TelematicsData, FaultCode, Prediction, DVIR, PmAssetInstance, InventoryTransaction } from "@shared/schema";
 import { AssetImages, AssetDocuments } from "@/components/AssetImagesDocuments";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ClipboardList, Package, History, Plus } from "lucide-react";
 
 const assetFormSchema = z.object({
   name: z.string().min(1, "Name is required"),
@@ -59,6 +61,7 @@ const assetFormSchema = z.object({
   meterType: z.string().optional(),
   currentMeterReading: z.string().optional(),
   notes: z.string().optional(),
+  customFields: z.record(z.any()).optional(),
 });
 
 type AssetFormValues = z.infer<typeof assetFormSchema>;
@@ -291,6 +294,8 @@ export default function AssetDetail() {
   const { toast } = useToast();
   const [isEditing, setIsEditing] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [newFieldKey, setNewFieldKey] = useState("");
+  const [newFieldValue, setNewFieldValue] = useState("");
 
   const assetId = params?.id ? parseInt(params.id) : null;
 
@@ -317,7 +322,22 @@ export default function AssetDetail() {
     enabled: !!assetId,
   });
 
+  const { data: dvirs } = useQuery<DVIR[]>({
+    queryKey: ["/api/dvirs"],
+  });
+
+  const { data: pmInstances } = useQuery<PmAssetInstance[]>({
+    queryKey: ["/api/pm-asset-instances"],
+  });
+
+  const { data: inventoryTransactions } = useQuery<InventoryTransaction[]>({
+    queryKey: ["/api/inventory-transactions"],
+  });
+
   const assetWorkOrders = workOrders?.filter(wo => wo.assetId === assetId) || [];
+  const assetDvirs = dvirs?.filter(d => d.assetId === assetId) || [];
+  const assetPmInstances = pmInstances?.filter(pm => pm.assetId === assetId) || [];
+  const assetInventoryTransactions = inventoryTransactions?.filter(t => t.assetId === assetId) || [];
   const activeFaults = faultCodes?.filter(fc => fc.status === "active") || [];
 
   const form = useForm<AssetFormValues>({
@@ -353,9 +373,12 @@ export default function AssetDetail() {
         meterType: asset.meterType || "",
         currentMeterReading: asset.currentMeterReading || "",
         notes: asset.notes || "",
+        customFields: asset.customFields || {},
       });
     }
   }, [asset, form]);
+
+  const customFields = form.watch("customFields") || {};
 
   const updateMutation = useMutation({
     mutationFn: async (data: AssetFormValues) => {
@@ -363,6 +386,7 @@ export default function AssetDetail() {
         ...data,
         year: data.year ? parseInt(data.year) : null,
         locationId: data.locationId || null,
+        customFields: data.customFields,
       });
     },
     onSuccess: () => {
@@ -433,6 +457,30 @@ export default function AssetDetail() {
 
   const onSubmit = (data: AssetFormValues) => {
     updateMutation.mutate(data);
+  };
+
+  const addCustomField = () => {
+    if (newFieldKey.trim() && !customFields[newFieldKey.trim()]) {
+      form.setValue("customFields", {
+        ...customFields,
+        [newFieldKey.trim()]: newFieldValue,
+      }, { shouldDirty: true });
+      setNewFieldKey("");
+      setNewFieldValue("");
+    }
+  };
+
+  const removeCustomField = (key: string) => {
+    const updated = { ...customFields };
+    delete updated[key];
+    form.setValue("customFields", updated, { shouldDirty: true });
+  };
+
+  const updateCustomFieldValue = (key: string, value: string) => {
+    form.setValue("customFields", {
+      ...customFields,
+      [key]: value,
+    }, { shouldDirty: true });
   };
 
   if (isLoading) {
@@ -757,6 +805,76 @@ export default function AssetDetail() {
                   />
                 </CardContent>
               </Card>
+
+              <Card className="glass-card">
+                <CardHeader>
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <Settings className="h-5 w-5" />
+                    Custom Fields
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {Object.entries(customFields).length > 0 && (
+                    <div className="space-y-2">
+                      {Object.entries(customFields).map(([key, value]) => (
+                        <div key={key} className="flex items-center gap-2">
+                          <Input
+                            value={key}
+                            disabled
+                            className="flex-1"
+                            data-testid={`input-custom-field-key-${key}`}
+                          />
+                          <Input
+                            value={value as string}
+                            onChange={(e) => updateCustomFieldValue(key, e.target.value)}
+                            className="flex-1"
+                            placeholder="Value"
+                            data-testid={`input-custom-field-value-${key}`}
+                          />
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => removeCustomField(key)}
+                            data-testid={`button-remove-field-${key}`}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="flex items-center gap-2">
+                    <Input
+                      value={newFieldKey}
+                      onChange={(e) => setNewFieldKey(e.target.value)}
+                      placeholder="Field name"
+                      className="flex-1"
+                      data-testid="input-new-field-key"
+                    />
+                    <Input
+                      value={newFieldValue}
+                      onChange={(e) => setNewFieldValue(e.target.value)}
+                      placeholder="Value"
+                      className="flex-1"
+                      data-testid="input-new-field-value"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      onClick={addCustomField}
+                      disabled={!newFieldKey.trim()}
+                      data-testid="button-add-custom-field"
+                    >
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Add custom fields to track additional information specific to this asset.
+                  </p>
+                </CardContent>
+              </Card>
             </div>
 
             <div className="flex justify-end">
@@ -875,41 +993,172 @@ export default function AssetDetail() {
                   </div>
                 </div>
               )}
+
+              {asset.customFields && Object.keys(asset.customFields).length > 0 && (
+                <div className="space-y-2 pt-4 border-t">
+                  <p className="text-sm font-medium">Custom Fields</p>
+                  <div className="grid grid-cols-2 gap-4">
+                    {Object.entries(asset.customFields).map(([key, value]) => (
+                      <div key={key}>
+                        <p className="text-sm text-muted-foreground">{key}</p>
+                        <p className="font-medium">{String(value) || "-"}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
 
           <Card className="glass-card lg:col-span-2">
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2">
-                <Wrench className="h-5 w-5" />
-                Work Order History
+                <History className="h-5 w-5" />
+                Asset History
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {assetWorkOrders.length > 0 ? (
-                <div className="space-y-3">
-                  {assetWorkOrders.slice(0, 5).map((wo) => (
-                    <div 
-                      key={wo.id} 
-                      className="p-4 rounded-lg bg-muted/50 flex items-center justify-between cursor-pointer hover-elevate"
-                      onClick={() => navigate(`/work-orders/${wo.id}`)}
-                    >
-                      <div>
-                        <p className="font-medium">{wo.workOrderNumber}</p>
-                        <p className="text-sm text-muted-foreground">{wo.title}</p>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <StatusBadge status={wo.status} />
-                        <span className="text-sm text-muted-foreground">
-                          {wo.createdAt ? new Date(wo.createdAt).toLocaleDateString() : ""}
-                        </span>
-                      </div>
+              <Tabs defaultValue="work-orders" className="w-full">
+                <TabsList className="w-full justify-start mb-4">
+                  <TabsTrigger value="work-orders" className="flex items-center gap-2" data-testid="tab-work-orders">
+                    <Wrench className="h-4 w-4" />
+                    Work Orders ({assetWorkOrders.length})
+                  </TabsTrigger>
+                  <TabsTrigger value="pm-schedules" className="flex items-center gap-2" data-testid="tab-pm-schedules">
+                    <Calendar className="h-4 w-4" />
+                    PM History ({assetPmInstances.length})
+                  </TabsTrigger>
+                  <TabsTrigger value="parts" className="flex items-center gap-2" data-testid="tab-parts">
+                    <Package className="h-4 w-4" />
+                    Parts Used ({assetInventoryTransactions.length})
+                  </TabsTrigger>
+                  <TabsTrigger value="dvirs" className="flex items-center gap-2" data-testid="tab-dvirs">
+                    <ClipboardList className="h-4 w-4" />
+                    DVIRs ({assetDvirs.length})
+                  </TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="work-orders">
+                  {assetWorkOrders.length > 0 ? (
+                    <div className="space-y-3 max-h-96 overflow-auto">
+                      {assetWorkOrders.map((wo) => (
+                        <div 
+                          key={wo.id} 
+                          className="p-4 rounded-lg bg-muted/50 flex items-center justify-between cursor-pointer hover-elevate"
+                          onClick={() => navigate(`/work-orders/${wo.id}`)}
+                        >
+                          <div>
+                            <p className="font-medium">{wo.workOrderNumber}</p>
+                            <p className="text-sm text-muted-foreground">{wo.title}</p>
+                          </div>
+                          <div className="flex items-center gap-3 flex-wrap">
+                            <StatusBadge status={wo.status} />
+                            <span className="text-sm text-muted-foreground">
+                              {wo.createdAt ? new Date(wo.createdAt).toLocaleDateString() : ""}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-muted-foreground text-center py-8">No work orders for this asset</p>
-              )}
+                  ) : (
+                    <p className="text-muted-foreground text-center py-8">No work orders for this asset</p>
+                  )}
+                </TabsContent>
+
+                <TabsContent value="pm-schedules">
+                  {assetPmInstances.length > 0 ? (
+                    <div className="space-y-3 max-h-96 overflow-auto">
+                      {assetPmInstances.map((pm) => (
+                        <div 
+                          key={pm.id} 
+                          className="p-4 rounded-lg bg-muted/50 flex items-center justify-between"
+                        >
+                          <div>
+                            <p className="font-medium">PM Schedule #{pm.pmScheduleId}</p>
+                            <p className="text-sm text-muted-foreground">
+                              Next Due: {pm.nextDueDate ? new Date(pm.nextDueDate).toLocaleDateString() : 'Not set'}
+                              {pm.nextDueMeter && ` or ${pm.nextDueMeter} ${asset?.meterType || 'units'}`}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-3 flex-wrap">
+                            <Badge variant={pm.lastCompletedDate ? "default" : "secondary"}>
+                              {pm.lastCompletedDate ? "Completed" : "Pending"}
+                            </Badge>
+                            {pm.lastCompletedDate && (
+                              <span className="text-sm text-muted-foreground">
+                                Last: {new Date(pm.lastCompletedDate).toLocaleDateString()}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-muted-foreground text-center py-8">No PM schedules for this asset</p>
+                  )}
+                </TabsContent>
+
+                <TabsContent value="parts">
+                  {assetInventoryTransactions.length > 0 ? (
+                    <div className="space-y-3 max-h-96 overflow-auto">
+                      {assetInventoryTransactions.map((tx) => (
+                        <div 
+                          key={tx.id} 
+                          className="p-4 rounded-lg bg-muted/50 flex items-center justify-between"
+                        >
+                          <div>
+                            <p className="font-medium">Part #{tx.partId}</p>
+                            <p className="text-sm text-muted-foreground">
+                              {tx.transactionType === 'consume' ? 'Used' : tx.transactionType} - Qty: {tx.quantity}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-3 flex-wrap">
+                            <Badge variant={tx.transactionType === 'consume' ? "destructive" : "default"}>
+                              {tx.transactionType}
+                            </Badge>
+                            <span className="text-sm text-muted-foreground">
+                              {tx.createdAt ? new Date(tx.createdAt).toLocaleDateString() : ""}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-muted-foreground text-center py-8">No parts used for this asset</p>
+                  )}
+                </TabsContent>
+
+                <TabsContent value="dvirs">
+                  {assetDvirs.length > 0 ? (
+                    <div className="space-y-3 max-h-96 overflow-auto">
+                      {assetDvirs.map((dvir) => (
+                        <div 
+                          key={dvir.id} 
+                          className="p-4 rounded-lg bg-muted/50 flex items-center justify-between cursor-pointer hover-elevate"
+                          onClick={() => navigate(`/dvirs/${dvir.id}`)}
+                        >
+                          <div>
+                            <p className="font-medium">{dvir.inspectionType} Inspection</p>
+                            <p className="text-sm text-muted-foreground">
+                              By: {dvir.driverName || 'Unknown'} - {dvir.defectCount || 0} defect(s)
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-3 flex-wrap">
+                            <Badge variant={dvir.overallStatus === 'pass' ? "default" : "destructive"}>
+                              {dvir.overallStatus}
+                            </Badge>
+                            <span className="text-sm text-muted-foreground">
+                              {dvir.inspectionDate ? new Date(dvir.inspectionDate).toLocaleDateString() : ""}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-muted-foreground text-center py-8">No DVIRs for this asset</p>
+                  )}
+                </TabsContent>
+              </Tabs>
             </CardContent>
           </Card>
 
