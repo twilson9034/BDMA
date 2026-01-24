@@ -10,6 +10,7 @@ import { AuthProvider, useAuth } from "@/hooks/use-auth";
 import { AppSidebar } from "@/components/AppSidebar";
 import { PageLoader } from "@/components/LoadingSpinner";
 import { BarcodeScanner } from "@/components/BarcodeScanner";
+import { NotificationBell } from "@/components/NotificationBell";
 
 import LandingPage from "@/pages/landing";
 import Dashboard from "@/pages/dashboard";
@@ -132,6 +133,7 @@ function AuthenticatedLayout() {
             <SidebarTrigger data-testid="button-sidebar-toggle" />
             <div className="flex items-center gap-2">
               <BarcodeScanner />
+              <NotificationBell />
               <ThemeToggle />
             </div>
           </header>

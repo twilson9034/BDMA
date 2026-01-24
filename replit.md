@@ -51,6 +51,9 @@ Preferred communication style: Simple, everyday language.
 - **ABC Classification & Cycle Counting**: Automatic ABC classification of parts for optimized cycle counting schedules and inventory reconciliation.
 - **PM Dues & Batch Work Order Creation**: Tracking PM due dates/meters and batch creation of work orders for multiple PM instances.
 - **Enhanced Dashboard**: KPI metrics (MTTR, MTBF, Asset Uptime %, PM Compliance, Avg Cost/WO), Procurement Overview widget, and Parts Analytics widget.
+- **Multi-User Labor Tracking**: Timer-based labor tracking per technician with hourly rates, start/pause/stop functionality, and calculated labor costs.
+- **Deferred Lines Display**: Visualization of work order lines that have been rescheduled from other work orders.
+- **Notification Center**: In-app notifications with bell icon, unread count badge, real-time polling, priority levels, and entity linking.
 
 ## External Dependencies
 

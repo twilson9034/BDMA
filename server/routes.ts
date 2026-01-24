@@ -25,6 +25,7 @@ import {
   insertChecklistMakeModelAssignmentSchema,
   insertReceivingTransactionSchema,
   insertPartRequestSchema,
+  insertNotificationSchema,
   insertPartKitSchema,
   insertPartKitLineSchema,
   insertCycleCountSchema,
@@ -1338,6 +1339,90 @@ export async function registerRoutes(
       }
       console.error("Update part request error:", error);
       res.status(500).json({ error: "Failed to update part request" });
+    }
+  });
+
+  // Notifications
+  app.get("/api/notifications", requireAuth, async (req, res) => {
+    try {
+      const userId = (req as any).user?.claims?.sub;
+      if (!userId) return res.status(401).json({ error: "Unauthorized" });
+      const notificationsList = await storage.getNotifications(userId);
+      res.json(notificationsList);
+    } catch (error) {
+      console.error("Error fetching notifications:", error);
+      res.status(500).json({ error: "Failed to fetch notifications" });
+    }
+  });
+
+  app.get("/api/notifications/unread-count", requireAuth, async (req, res) => {
+    try {
+      const userId = (req as any).user?.claims?.sub;
+      if (!userId) return res.status(401).json({ error: "Unauthorized" });
+      const count = await storage.getUnreadNotificationCount(userId);
+      res.json({ count });
+    } catch (error) {
+      console.error("Error fetching unread count:", error);
+      res.status(500).json({ error: "Failed to fetch unread count" });
+    }
+  });
+
+  app.post("/api/notifications", requireAuth, async (req, res) => {
+    try {
+      const userId = (req as any).user?.claims?.sub;
+      if (!userId) return res.status(401).json({ error: "Unauthorized" });
+      
+      // Validate with schema and force userId from authenticated user
+      const validated = insertNotificationSchema.parse({
+        ...req.body,
+        userId, // Override any userId in body with authenticated user
+      });
+      
+      const notification = await storage.createNotification(validated);
+      res.status(201).json(notification);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      console.error("Error creating notification:", error);
+      res.status(500).json({ error: "Failed to create notification" });
+    }
+  });
+
+  app.patch("/api/notifications/:id/read", requireAuth, async (req, res) => {
+    try {
+      const userId = (req as any).user?.claims?.sub;
+      if (!userId) return res.status(401).json({ error: "Unauthorized" });
+      const notification = await storage.markNotificationRead(parseInt(req.params.id), userId);
+      if (!notification) return res.status(404).json({ error: "Notification not found" });
+      res.json(notification);
+    } catch (error) {
+      console.error("Error marking notification read:", error);
+      res.status(500).json({ error: "Failed to mark notification read" });
+    }
+  });
+
+  app.post("/api/notifications/mark-all-read", requireAuth, async (req, res) => {
+    try {
+      const userId = (req as any).user?.claims?.sub;
+      if (!userId) return res.status(401).json({ error: "Unauthorized" });
+      const count = await storage.markAllNotificationsRead(userId);
+      res.json({ updated: count });
+    } catch (error) {
+      console.error("Error marking all notifications read:", error);
+      res.status(500).json({ error: "Failed to mark all notifications read" });
+    }
+  });
+
+  app.delete("/api/notifications/:id", requireAuth, async (req, res) => {
+    try {
+      const userId = (req as any).user?.claims?.sub;
+      if (!userId) return res.status(401).json({ error: "Unauthorized" });
+      await storage.dismissNotification(parseInt(req.params.id), userId);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error dismissing notification:", error);
+      res.status(500).json({ error: "Failed to dismiss notification" });
     }
   });
 

@@ -1197,3 +1197,45 @@ export const cycleCountsRelations = relations(cycleCounts, ({ one }) => ({
 export const insertCycleCountSchema = createInsertSchema(cycleCounts).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertCycleCount = z.infer<typeof insertCycleCountSchema>;
 export type CycleCount = typeof cycleCounts.$inferSelect;
+
+// ============================================================
+// NOTIFICATIONS
+// ============================================================
+export const notificationTypeEnum = [
+  "work_order_assigned",
+  "work_order_status_changed",
+  "work_order_due_soon",
+  "pm_due",
+  "part_low_stock",
+  "part_request_status",
+  "purchase_order_status",
+  "asset_status_changed",
+  "prediction_alert",
+  "system"
+] as const;
+
+export const notificationPriorityEnum = ["low", "medium", "high", "critical"] as const;
+
+export const notifications = pgTable("notifications", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull(),
+  type: text("type").notNull().$type<typeof notificationTypeEnum[number]>(),
+  priority: text("priority").notNull().default("medium").$type<typeof notificationPriorityEnum[number]>(),
+  title: text("title").notNull(),
+  message: text("message").notNull(),
+  entityType: text("entity_type"), // work_order, asset, part, pm_schedule, etc.
+  entityId: integer("entity_id"),
+  link: text("link"), // URL to navigate to when clicked
+  isRead: boolean("is_read").default(false),
+  readAt: timestamp("read_at"),
+  dismissedAt: timestamp("dismissed_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_notifications_user").on(table.userId),
+  index("idx_notifications_read").on(table.isRead),
+  index("idx_notifications_type").on(table.type),
+]);
+
+export const insertNotificationSchema = createInsertSchema(notifications).omit({ id: true, createdAt: true });
+export type InsertNotification = z.infer<typeof insertNotificationSchema>;
+export type Notification = typeof notifications.$inferSelect;
