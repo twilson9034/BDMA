@@ -758,11 +758,11 @@ export async function registerRoutes(
         await storage.updatePublicAssetToken(existingToken.id, { isActive: false });
       }
       
-      // Generate new token - expires in 30 days
+      // Generate new token - expires in 1 year (365 days)
       const crypto = await import("crypto");
       const tokenValue = crypto.randomBytes(32).toString("hex");
       const expiresAt = new Date();
-      expiresAt.setDate(expiresAt.getDate() + 30);
+      expiresAt.setFullYear(expiresAt.getFullYear() + 1);
       
       const newToken = await storage.createPublicAssetToken({
         assetId,
