@@ -759,14 +759,19 @@ export const dvirs = pgTable("dvirs", {
   orgId: integer("org_id").references(() => organizations.id),
   assetId: integer("asset_id").notNull().references(() => assets.id),
   inspectorId: varchar("inspector_id"),
+  inspectorName: varchar("inspector_name", { length: 255 }), // For anonymous DVIR submissions
   inspectionDate: timestamp("inspection_date").notNull().defaultNow(),
   status: text("status").notNull().default("safe").$type<typeof dvirStatusEnum[number]>(),
   meterReading: decimal("meter_reading", { precision: 12, scale: 2 }),
   preTrip: boolean("pre_trip").default(true),
   notes: text("notes"),
   signature: text("signature"),
+  isPublicSubmission: boolean("is_public_submission").default(false), // True for QR code submissions
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (table) => [
+  index("idx_dvirs_org").on(table.orgId),
+  index("idx_dvirs_asset").on(table.assetId),
+]);
 
 export const dvirsRelations = relations(dvirs, ({ one, many }) => ({
   asset: one(assets, { fields: [dvirs.assetId], references: [assets.id] }),
@@ -1489,6 +1494,52 @@ export const tireHistory = pgTable("tire_history", {
 export const insertTireHistorySchema = createInsertSchema(tireHistory).omit({ id: true, createdAt: true });
 export type InsertTireHistory = z.infer<typeof insertTireHistorySchema>;
 export type TireHistory = typeof tireHistory.$inferSelect;
+
+// ============================================================
+// TIRE REPLACEMENT SETTINGS
+// ============================================================
+export const tirePositionEnum = ["steer", "drive", "trailer", "all_position", "spare"] as const;
+
+export const tireReplacementSettings = pgTable("tire_replacement_settings", {
+  id: serial("id").primaryKey(),
+  orgId: integer("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  position: text("position").notNull().$type<typeof tirePositionEnum[number]>(),
+  minTreadDepth: decimal("min_tread_depth", { precision: 4, scale: 1 }).notNull().default("4.0"),
+  warningTreadDepth: decimal("warning_tread_depth", { precision: 4, scale: 1 }).notNull().default("5.0"),
+  maxMiles: integer("max_miles"),
+  maxAge: integer("max_age_months"),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_tire_replacement_settings_org").on(table.orgId),
+]);
+
+export const insertTireReplacementSettingSchema = createInsertSchema(tireReplacementSettings).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertTireReplacementSetting = z.infer<typeof insertTireReplacementSettingSchema>;
+export type TireReplacementSetting = typeof tireReplacementSettings.$inferSelect;
+
+// ============================================================
+// PUBLIC ASSET ACCESS TOKENS (for QR Code DVIR)
+// ============================================================
+export const publicAssetTokens = pgTable("public_asset_tokens", {
+  id: serial("id").primaryKey(),
+  orgId: integer("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  assetId: integer("asset_id").notNull().references(() => assets.id, { onDelete: "cascade" }),
+  token: varchar("token", { length: 64 }).notNull().unique(),
+  isActive: boolean("is_active").default(true),
+  expiresAt: timestamp("expires_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_public_asset_tokens_org").on(table.orgId),
+  index("idx_public_asset_tokens_asset").on(table.assetId),
+  index("idx_public_asset_tokens_token").on(table.token),
+]);
+
+export const insertPublicAssetTokenSchema = createInsertSchema(publicAssetTokens).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertPublicAssetToken = z.infer<typeof insertPublicAssetTokenSchema>;
+export type PublicAssetToken = typeof publicAssetTokens.$inferSelect;
 
 // ============================================================
 // MESSAGES / CONVERSATIONS

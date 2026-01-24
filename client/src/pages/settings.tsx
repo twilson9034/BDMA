@@ -170,6 +170,10 @@ export default function Settings() {
             <Settings2 className="h-4 w-4" />
             Customization
           </TabsTrigger>
+          <TabsTrigger value="tire-settings" className="gap-2" data-testid="tab-tire-settings">
+            <Settings2 className="h-4 w-4" />
+            Tire Settings
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="profile">
@@ -714,7 +718,284 @@ export default function Settings() {
             </Card>
           </div>
         </TabsContent>
+
+        <TabsContent value="tire-settings">
+          <TireReplacementSettingsTab />
+        </TabsContent>
       </Tabs>
+    </div>
+  );
+}
+
+interface TireReplacementSetting {
+  id: number;
+  orgId: number;
+  position: string;
+  minTreadDepth: string;
+  warningTreadDepth: string;
+  maxMiles: number | null;
+  maxAge: number | null;
+  isActive: boolean;
+}
+
+const positionLabels: Record<string, string> = {
+  steer: "Steer Tires",
+  drive: "Drive Tires",
+  trailer: "Trailer Tires",
+  all_position: "All Position",
+  spare: "Spare Tires",
+};
+
+function TireReplacementSettingsTab() {
+  const { toast } = useToast();
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [formData, setFormData] = useState({
+    position: "steer",
+    minTreadDepth: "4.0",
+    warningTreadDepth: "5.0",
+    maxMiles: "",
+    maxAge: "",
+  });
+
+  const { data: settings = [], isLoading } = useQuery<TireReplacementSetting[]>({
+    queryKey: ["/api/tire-replacement-settings"],
+  });
+
+  const createMutation = useMutation({
+    mutationFn: (data: any) => apiRequest("/api/tire-replacement-settings", { method: "POST", body: JSON.stringify(data), headers: { "Content-Type": "application/json" } }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tire-replacement-settings"] });
+      toast({ title: "Setting created", description: "Tire replacement setting has been added." });
+      setShowAddForm(false);
+      resetForm();
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to create setting.", variant: "destructive" });
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }: { id: number; data: any }) => apiRequest(`/api/tire-replacement-settings/${id}`, { method: "PATCH", body: JSON.stringify(data), headers: { "Content-Type": "application/json" } }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tire-replacement-settings"] });
+      toast({ title: "Setting updated", description: "Tire replacement setting has been updated." });
+      setEditingId(null);
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to update setting.", variant: "destructive" });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => apiRequest(`/api/tire-replacement-settings/${id}`, { method: "DELETE" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tire-replacement-settings"] });
+      toast({ title: "Setting deleted", description: "Tire replacement setting has been removed." });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to delete setting.", variant: "destructive" });
+    },
+  });
+
+  const resetForm = () => {
+    setFormData({
+      position: "steer",
+      minTreadDepth: "4.0",
+      warningTreadDepth: "5.0",
+      maxMiles: "",
+      maxAge: "",
+    });
+  };
+
+  const handleSubmit = () => {
+    const data = {
+      position: formData.position,
+      minTreadDepth: formData.minTreadDepth,
+      warningTreadDepth: formData.warningTreadDepth,
+      maxMiles: formData.maxMiles ? parseInt(formData.maxMiles) : null,
+      maxAge: formData.maxAge ? parseInt(formData.maxAge) : null,
+    };
+
+    if (editingId) {
+      updateMutation.mutate({ id: editingId, data });
+    } else {
+      createMutation.mutate(data);
+    }
+  };
+
+  const startEdit = (setting: TireReplacementSetting) => {
+    setEditingId(setting.id);
+    setFormData({
+      position: setting.position,
+      minTreadDepth: setting.minTreadDepth,
+      warningTreadDepth: setting.warningTreadDepth,
+      maxMiles: setting.maxMiles?.toString() || "",
+      maxAge: setting.maxAge?.toString() || "",
+    });
+    setShowAddForm(true);
+  };
+
+  const usedPositions = settings.map(s => s.position);
+  const availablePositions = Object.keys(positionLabels).filter(p => !usedPositions.includes(p) || (editingId && settings.find(s => s.id === editingId)?.position === p));
+
+  return (
+    <div className="grid gap-6">
+      <Card data-testid="card-tire-settings">
+        <CardHeader className="flex flex-row items-center justify-between gap-4">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <Settings2 className="h-5 w-5" />
+              Tire Replacement Thresholds
+            </CardTitle>
+            <CardDescription>
+              Configure minimum tread depth and other thresholds for tire replacement predictions by position
+            </CardDescription>
+          </div>
+          {!showAddForm && availablePositions.length > 0 && (
+            <Button onClick={() => setShowAddForm(true)} data-testid="button-add-tire-setting">
+              <Plus className="h-4 w-4 mr-2" />
+              Add Setting
+            </Button>
+          )}
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {showAddForm && (
+            <Card className="border-primary">
+              <CardHeader>
+                <CardTitle className="text-lg">{editingId ? "Edit" : "Add"} Tire Replacement Setting</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  <div className="space-y-2">
+                    <Label>Tire Position</Label>
+                    <Select value={formData.position} onValueChange={(v) => setFormData({ ...formData, position: v })} disabled={!!editingId}>
+                      <SelectTrigger data-testid="select-tire-position">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {availablePositions.map((pos) => (
+                          <SelectItem key={pos} value={pos} data-testid={`select-item-${pos}`}>
+                            {positionLabels[pos]}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Minimum Tread Depth (32nds)</Label>
+                    <Input
+                      type="number"
+                      step="0.5"
+                      value={formData.minTreadDepth}
+                      onChange={(e) => setFormData({ ...formData, minTreadDepth: e.target.value })}
+                      data-testid="input-min-tread-depth"
+                    />
+                    <p className="text-xs text-muted-foreground">Tires below this depth require replacement</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Warning Tread Depth (32nds)</Label>
+                    <Input
+                      type="number"
+                      step="0.5"
+                      value={formData.warningTreadDepth}
+                      onChange={(e) => setFormData({ ...formData, warningTreadDepth: e.target.value })}
+                      data-testid="input-warning-tread-depth"
+                    />
+                    <p className="text-xs text-muted-foreground">Tires below this depth show a warning</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Max Miles (optional)</Label>
+                    <Input
+                      type="number"
+                      placeholder="e.g., 80000"
+                      value={formData.maxMiles}
+                      onChange={(e) => setFormData({ ...formData, maxMiles: e.target.value })}
+                      data-testid="input-max-miles"
+                    />
+                    <p className="text-xs text-muted-foreground">Maximum miles before replacement</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Max Age (months, optional)</Label>
+                    <Input
+                      type="number"
+                      placeholder="e.g., 60"
+                      value={formData.maxAge}
+                      onChange={(e) => setFormData({ ...formData, maxAge: e.target.value })}
+                      data-testid="input-max-age"
+                    />
+                    <p className="text-xs text-muted-foreground">Maximum age before replacement</p>
+                  </div>
+                </div>
+                <div className="flex gap-2 justify-end">
+                  <Button variant="outline" onClick={() => { setShowAddForm(false); setEditingId(null); resetForm(); }} data-testid="button-cancel-tire-setting">
+                    Cancel
+                  </Button>
+                  <Button onClick={handleSubmit} disabled={createMutation.isPending || updateMutation.isPending} data-testid="button-save-tire-setting">
+                    {(createMutation.isPending || updateMutation.isPending) && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                    {editingId ? "Update" : "Create"} Setting
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {isLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : settings.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <Settings2 className="h-12 w-12 mx-auto mb-4 opacity-50" />
+              <p>No tire replacement settings configured yet.</p>
+              <p className="text-sm">Add settings to define replacement thresholds for each tire position.</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {settings.map((setting) => (
+                <div key={setting.id} className="flex items-center justify-between p-4 border rounded-lg hover-elevate" data-testid={`tire-setting-${setting.id}`}>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-3">
+                      <Badge variant="outline">{positionLabels[setting.position] || setting.position}</Badge>
+                      <span className="text-sm">
+                        Min: <strong>{setting.minTreadDepth}/32"</strong>
+                      </span>
+                      <span className="text-sm text-muted-foreground">|</span>
+                      <span className="text-sm">
+                        Warning: <strong>{setting.warningTreadDepth}/32"</strong>
+                      </span>
+                      {setting.maxMiles && (
+                        <>
+                          <span className="text-sm text-muted-foreground">|</span>
+                          <span className="text-sm">
+                            Max: <strong>{setting.maxMiles.toLocaleString()}</strong> mi
+                          </span>
+                        </>
+                      )}
+                      {setting.maxAge && (
+                        <>
+                          <span className="text-sm text-muted-foreground">|</span>
+                          <span className="text-sm">
+                            Age: <strong>{setting.maxAge}</strong> mo
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button variant="ghost" size="sm" onClick={() => startEdit(setting)} data-testid={`button-edit-tire-setting-${setting.id}`}>
+                      Edit
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => deleteMutation.mutate(setting.id)} disabled={deleteMutation.isPending} data-testid={`button-delete-tire-setting-${setting.id}`}>
+                      <Trash2 className="h-4 w-4 text-destructive" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

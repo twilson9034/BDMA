@@ -37,7 +37,7 @@ import OpenAI from "openai";
 import { z } from "zod";
 import { setupAuth, registerAuthRoutes } from "./replit_integrations/auth";
 import { tenantMiddleware, getUserOrgMemberships, getOrgId } from "./tenant";
-import { organizations, orgMemberships, insertOrganizationSchema, insertOrgMembershipSchema, updateOrganizationSchema, updateOrgMemberRoleSchema, tires, insertTireSchema, conversations, messages, insertConversationSchema, insertMessageSchema, savedReports, insertSavedReportSchema, gpsLocations, insertGpsLocationSchema } from "@shared/schema";
+import { organizations, orgMemberships, insertOrganizationSchema, insertOrgMembershipSchema, updateOrganizationSchema, updateOrgMemberRoleSchema, tires, insertTireSchema, conversations, messages, insertConversationSchema, insertMessageSchema, savedReports, insertSavedReportSchema, gpsLocations, insertGpsLocationSchema, tireReplacementSettings, insertTireReplacementSettingSchema, publicAssetTokens, insertPublicAssetTokenSchema } from "@shared/schema";
 import { db } from "./db";
 import { eq, and } from "drizzle-orm";
 import { users } from "@shared/schema";
@@ -714,6 +714,148 @@ export async function registerRoutes(
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete asset document" });
+    }
+  });
+
+  // Public Asset Tokens (for DVIR QR codes)
+  app.get("/api/assets/:assetId/dvir-token", requireAuth, tenantMiddleware({ required: false }), async (req, res) => {
+    try {
+      const assetId = parseInt(req.params.assetId);
+      const orgId = getOrgId(req);
+      
+      // Verify asset belongs to org
+      const asset = await storage.getAsset(assetId);
+      if (!asset) return res.status(404).json({ error: "Asset not found" });
+      if (orgId && asset.orgId !== orgId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      
+      const token = await storage.getPublicAssetTokenByAsset(assetId);
+      if (!token) {
+        return res.json(null);
+      }
+      res.json(token);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get DVIR token" });
+    }
+  });
+
+  app.post("/api/assets/:assetId/dvir-token", requireAuth, tenantMiddleware({ required: false }), async (req, res) => {
+    try {
+      const assetId = parseInt(req.params.assetId);
+      const orgId = getOrgId(req);
+      
+      // Verify asset belongs to org
+      const asset = await storage.getAsset(assetId);
+      if (!asset) return res.status(404).json({ error: "Asset not found" });
+      if (orgId && asset.orgId !== orgId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      
+      // Deactivate existing tokens for this asset
+      const existingToken = await storage.getPublicAssetTokenByAsset(assetId);
+      if (existingToken) {
+        await storage.updatePublicAssetToken(existingToken.id, { isActive: false });
+      }
+      
+      // Generate new token - expires in 30 days
+      const crypto = await import("crypto");
+      const tokenValue = crypto.randomBytes(32).toString("hex");
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + 30);
+      
+      const newToken = await storage.createPublicAssetToken({
+        assetId,
+        orgId: orgId || asset.orgId,
+        token: tokenValue,
+        expiresAt,
+        isActive: true,
+      });
+      
+      res.json(newToken);
+    } catch (error) {
+      console.error("Error creating DVIR token:", error);
+      res.status(500).json({ error: "Failed to create DVIR token" });
+    }
+  });
+
+  // Public DVIR submission (no auth required)
+  app.get("/api/public/dvir/:token", async (req, res) => {
+    try {
+      const tokenRecord = await storage.getPublicAssetTokenByToken(req.params.token);
+      if (!tokenRecord) {
+        return res.status(404).json({ error: "Invalid or expired token" });
+      }
+      
+      // Check expiration
+      if (new Date(tokenRecord.expiresAt) < new Date()) {
+        return res.status(410).json({ error: "Token has expired" });
+      }
+      
+      // Get asset info
+      const asset = await storage.getAsset(tokenRecord.assetId);
+      if (!asset) {
+        return res.status(404).json({ error: "Asset not found" });
+      }
+      
+      res.json({
+        assetId: asset.id,
+        assetNumber: asset.assetNumber,
+        assetName: asset.name,
+        assetType: asset.type,
+        manufacturer: asset.manufacturer,
+        model: asset.model,
+        currentMeterReading: asset.currentMeterReading,
+        meterType: asset.meterType,
+      });
+    } catch (error) {
+      console.error("Error getting public DVIR info:", error);
+      res.status(500).json({ error: "Failed to get asset info" });
+    }
+  });
+
+  app.post("/api/public/dvir/:token", async (req, res) => {
+    try {
+      const tokenRecord = await storage.getPublicAssetTokenByToken(req.params.token);
+      if (!tokenRecord) {
+        return res.status(404).json({ error: "Invalid or expired token" });
+      }
+      
+      // Check expiration
+      if (new Date(tokenRecord.expiresAt) < new Date()) {
+        return res.status(410).json({ error: "Token has expired" });
+      }
+      
+      const asset = await storage.getAsset(tokenRecord.assetId);
+      if (!asset) {
+        return res.status(404).json({ error: "Asset not found" });
+      }
+      
+      // Create DVIR
+      const { inspectorName, meterReading, defects, signature, notes, status } = req.body;
+      
+      const dvir = await storage.createDvir({
+        assetId: tokenRecord.assetId,
+        orgId: tokenRecord.orgId,
+        inspectorName: inspectorName || "Unknown Driver",
+        inspectionDate: new Date(),
+        meterReading: meterReading || asset.currentMeterReading,
+        status: status || (defects?.length > 0 ? "defects_found" : "passed"),
+        defects: defects || [],
+        signature: signature || null,
+        notes: notes || null,
+        isPublicSubmission: true,
+      });
+      
+      // Update asset meter reading if provided
+      if (meterReading && meterReading !== asset.currentMeterReading) {
+        await storage.updateAsset(asset.id, { currentMeterReading: meterReading });
+      }
+      
+      res.status(201).json(dvir);
+    } catch (error) {
+      console.error("Error creating public DVIR:", error);
+      res.status(500).json({ error: "Failed to create DVIR" });
     }
   });
 
@@ -3910,6 +4052,220 @@ Example: [{"partNumber": "BP-001", "reason": "Standard brake pads for this model
       res.json(instance);
     } catch (error) {
       res.status(500).json({ error: "Failed to complete PM" });
+    }
+  });
+
+  // ==============================================
+  // TIRE REPLACEMENT SETTINGS
+  // ==============================================
+  app.get("/api/tire-replacement-settings", tenantMiddleware({ required: false }), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      if (!orgId) return res.json([]);
+      const settings = await storage.getTireReplacementSettingsByOrg(orgId);
+      res.json(settings);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch tire replacement settings" });
+    }
+  });
+
+  app.post("/api/tire-replacement-settings", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      if (!orgId) return res.status(403).json({ error: "Organization context required" });
+      const validated = insertTireReplacementSettingSchema.parse({
+        ...req.body,
+        orgId,
+      });
+      const setting = await storage.createTireReplacementSetting(validated);
+      res.status(201).json(setting);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: "Failed to create tire replacement setting" });
+    }
+  });
+
+  app.patch("/api/tire-replacement-settings/:id", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      if (!orgId) return res.status(403).json({ error: "Organization context required" });
+      const id = parseInt(req.params.id);
+      const existing = await storage.getTireReplacementSetting(id);
+      if (!existing || existing.orgId !== orgId) {
+        return res.status(404).json({ error: "Setting not found" });
+      }
+      const updated = await storage.updateTireReplacementSetting(id, req.body);
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update tire replacement setting" });
+    }
+  });
+
+  app.delete("/api/tire-replacement-settings/:id", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      if (!orgId) return res.status(403).json({ error: "Organization context required" });
+      const id = parseInt(req.params.id);
+      const existing = await storage.getTireReplacementSetting(id);
+      if (!existing || existing.orgId !== orgId) {
+        return res.status(404).json({ error: "Setting not found" });
+      }
+      await storage.deleteTireReplacementSetting(id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete tire replacement setting" });
+    }
+  });
+
+  // ==============================================
+  // PUBLIC ASSET TOKENS (for QR Code DVIR)
+  // ==============================================
+  app.get("/api/public-asset-tokens", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      if (!orgId) return res.status(403).json({ error: "Organization context required" });
+      const tokens = await storage.getPublicAssetTokensByOrg(orgId);
+      res.json(tokens);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch public asset tokens" });
+    }
+  });
+
+  app.get("/api/assets/:id/public-token", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      if (!orgId) return res.status(403).json({ error: "Organization context required" });
+      const assetId = parseInt(req.params.id);
+      const token = await storage.getPublicAssetTokenByAsset(assetId);
+      res.json(token || null);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch public asset token" });
+    }
+  });
+
+  app.post("/api/assets/:id/generate-qr-token", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      if (!orgId) return res.status(403).json({ error: "Organization context required" });
+      const assetId = parseInt(req.params.id);
+      
+      // Check if asset exists and belongs to org
+      const asset = await storage.getAsset(assetId);
+      if (!asset) return res.status(404).json({ error: "Asset not found" });
+      
+      // Deactivate any existing tokens for this asset
+      const existingToken = await storage.getPublicAssetTokenByAsset(assetId);
+      if (existingToken) {
+        await storage.updatePublicAssetToken(existingToken.id, { isActive: false });
+      }
+      
+      // Generate new token
+      const crypto = await import("crypto");
+      const token = crypto.randomBytes(32).toString("hex");
+      
+      const newToken = await storage.createPublicAssetToken({
+        orgId,
+        assetId,
+        token,
+        isActive: true,
+      });
+      
+      res.status(201).json(newToken);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to generate QR token" });
+    }
+  });
+
+  app.delete("/api/public-asset-tokens/:id", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      if (!orgId) return res.status(403).json({ error: "Organization context required" });
+      const id = parseInt(req.params.id);
+      await storage.deletePublicAssetToken(id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete public asset token" });
+    }
+  });
+
+  // ==============================================
+  // PUBLIC DVIR SUBMISSION (NO AUTH REQUIRED)
+  // ==============================================
+  app.get("/api/public/dvir/:token", async (req, res) => {
+    try {
+      const { token } = req.params;
+      const data = await storage.getAssetForPublicDvir(token);
+      if (!data) {
+        return res.status(404).json({ error: "Invalid or expired QR code" });
+      }
+      // Return asset info for the DVIR form
+      res.json({
+        asset: {
+          id: data.asset.id,
+          name: data.asset.name,
+          assetNumber: data.asset.assetNumber,
+          type: data.asset.type,
+          make: data.asset.make,
+          model: data.asset.model,
+          year: data.asset.year,
+        },
+        organization: {
+          id: data.org.id,
+          name: data.org.name,
+        },
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch asset information" });
+    }
+  });
+
+  app.post("/api/public/dvir/:token", async (req, res) => {
+    try {
+      const { token } = req.params;
+      const tokenRecord = await storage.getPublicAssetTokenByToken(token);
+      if (!tokenRecord) {
+        return res.status(404).json({ error: "Invalid or expired QR code" });
+      }
+      
+      const { inspectorName, status, meterReading, preTrip, notes, signature, defects } = req.body;
+      
+      if (!inspectorName || !status) {
+        return res.status(400).json({ error: "Inspector name and status are required" });
+      }
+      
+      // Create the DVIR
+      const dvir = await storage.createDvir({
+        orgId: tokenRecord.orgId,
+        assetId: tokenRecord.assetId,
+        inspectorName,
+        inspectorId: null, // Anonymous submission
+        status,
+        meterReading: meterReading || null,
+        preTrip: preTrip ?? true,
+        notes: notes || null,
+        signature: signature || null,
+        isPublicSubmission: true,
+      });
+      
+      // Create defects if any
+      if (defects && Array.isArray(defects) && defects.length > 0) {
+        for (const defect of defects) {
+          await storage.createDvirDefect({
+            dvirId: dvir.id,
+            category: defect.category,
+            description: defect.description,
+            severity: defect.severity || "minor",
+            photoUrl: defect.photoUrl || null,
+          });
+        }
+      }
+      
+      res.status(201).json({ success: true, dvirId: dvir.id });
+    } catch (error) {
+      console.error("Public DVIR submission error:", error);
+      res.status(500).json({ error: "Failed to submit DVIR" });
     }
   });
 

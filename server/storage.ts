@@ -127,6 +127,8 @@ import {
   messages,
   savedReports,
   gpsLocations,
+  tireReplacementSettings,
+  publicAssetTokens,
   type Organization,
   type OrgMembership,
   type Tire,
@@ -139,6 +141,10 @@ import {
   type InsertSavedReport,
   type GpsLocation,
   type InsertGpsLocation,
+  type TireReplacementSetting,
+  type InsertTireReplacementSetting,
+  type PublicAssetToken,
+  type InsertPublicAssetToken,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -2892,6 +2898,81 @@ export class DatabaseStorage implements IStorage {
   async createGpsLocation(data: InsertGpsLocation & { orgId?: number }): Promise<GpsLocation> {
     const [loc] = await db.insert(gpsLocations).values(data).returning();
     return loc;
+  }
+
+  // Tire Replacement Settings
+  async getTireReplacementSettingsByOrg(orgId: number): Promise<TireReplacementSetting[]> {
+    return db.select().from(tireReplacementSettings).where(eq(tireReplacementSettings.orgId, orgId));
+  }
+
+  async getTireReplacementSetting(id: number): Promise<TireReplacementSetting | undefined> {
+    const [setting] = await db.select().from(tireReplacementSettings).where(eq(tireReplacementSettings.id, id));
+    return setting;
+  }
+
+  async createTireReplacementSetting(data: InsertTireReplacementSetting): Promise<TireReplacementSetting> {
+    const [setting] = await db.insert(tireReplacementSettings).values(data).returning();
+    return setting;
+  }
+
+  async updateTireReplacementSetting(id: number, data: Partial<InsertTireReplacementSetting>): Promise<TireReplacementSetting | undefined> {
+    const [updated] = await db.update(tireReplacementSettings)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(tireReplacementSettings.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteTireReplacementSetting(id: number): Promise<void> {
+    await db.delete(tireReplacementSettings).where(eq(tireReplacementSettings.id, id));
+  }
+
+  // Public Asset Tokens (for QR Code DVIR)
+  async getPublicAssetTokensByOrg(orgId: number): Promise<PublicAssetToken[]> {
+    return db.select().from(publicAssetTokens).where(eq(publicAssetTokens.orgId, orgId));
+  }
+
+  async getPublicAssetTokenByAsset(assetId: number): Promise<PublicAssetToken | undefined> {
+    const [token] = await db.select().from(publicAssetTokens)
+      .where(and(eq(publicAssetTokens.assetId, assetId), eq(publicAssetTokens.isActive, true)));
+    return token;
+  }
+
+  async getPublicAssetTokenByToken(token: string): Promise<PublicAssetToken | undefined> {
+    const [tokenRecord] = await db.select().from(publicAssetTokens)
+      .where(and(eq(publicAssetTokens.token, token), eq(publicAssetTokens.isActive, true)));
+    return tokenRecord;
+  }
+
+  async createPublicAssetToken(data: InsertPublicAssetToken): Promise<PublicAssetToken> {
+    const [token] = await db.insert(publicAssetTokens).values(data).returning();
+    return token;
+  }
+
+  async updatePublicAssetToken(id: number, data: Partial<InsertPublicAssetToken>): Promise<PublicAssetToken | undefined> {
+    const [updated] = await db.update(publicAssetTokens)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(publicAssetTokens.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deletePublicAssetToken(id: number): Promise<void> {
+    await db.delete(publicAssetTokens).where(eq(publicAssetTokens.id, id));
+  }
+
+  // Get asset details for public DVIR submission
+  async getAssetForPublicDvir(token: string): Promise<{ asset: Asset; org: Organization } | undefined> {
+    const tokenRecord = await this.getPublicAssetTokenByToken(token);
+    if (!tokenRecord) return undefined;
+    
+    const asset = await this.getAsset(tokenRecord.assetId);
+    if (!asset) return undefined;
+    
+    const org = await this.getOrganization(tokenRecord.orgId);
+    if (!org) return undefined;
+    
+    return { asset, org };
   }
 }
 

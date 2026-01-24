@@ -7,8 +7,9 @@ import {
   ArrowLeft, Save, Loader2, Edit, Trash2, Truck, 
   MapPin, Calendar, Settings, FileText, Wrench, X,
   Gauge, Fuel, Thermometer, Battery, AlertTriangle, Activity, Radio,
-  Brain, Sparkles, RefreshCw
+  Brain, Sparkles, RefreshCw, QrCode, Printer, Copy, Check
 } from "lucide-react";
+import { QRCodeSVG } from "qrcode.react";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -61,6 +62,228 @@ const assetFormSchema = z.object({
 });
 
 type AssetFormValues = z.infer<typeof assetFormSchema>;
+
+interface DvirQrCodeSectionProps {
+  assetId: number;
+  assetName: string;
+  assetNumber: string;
+}
+
+function DvirQrCodeSection({ assetId, assetName, assetNumber }: DvirQrCodeSectionProps) {
+  const { toast } = useToast();
+  const [copied, setCopied] = useState(false);
+  const [showQrDialog, setShowQrDialog] = useState(false);
+
+  const { data: tokenData, isLoading: isLoadingToken } = useQuery<{ token: string; expiresAt: string }>({
+    queryKey: ["/api/assets", assetId, "dvir-token"],
+    enabled: !!assetId,
+  });
+
+  const generateTokenMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/assets/${assetId}/dvir-token`);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/assets", assetId, "dvir-token"] });
+      toast({
+        title: "QR Code Generated",
+        description: "A new QR code has been generated for public DVIR submissions.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const dvirUrl = tokenData?.token 
+    ? `${window.location.origin}/dvir/${tokenData.token}`
+    : null;
+
+  const handleCopyUrl = async () => {
+    if (dvirUrl) {
+      await navigator.clipboard.writeText(dvirUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+      toast({
+        title: "Copied",
+        description: "DVIR URL copied to clipboard.",
+      });
+    }
+  };
+
+  const handlePrint = () => {
+    const printWindow = window.open("", "_blank");
+    if (printWindow && dvirUrl) {
+      printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>DVIR QR Code - ${assetNumber}</title>
+          <style>
+            body { 
+              font-family: Arial, sans-serif; 
+              text-align: center; 
+              padding: 40px; 
+            }
+            .qr-container { 
+              display: inline-block; 
+              padding: 20px; 
+              border: 2px solid #333; 
+              border-radius: 8px; 
+            }
+            h1 { margin-bottom: 8px; font-size: 24px; }
+            h2 { margin-bottom: 24px; font-size: 18px; color: #666; }
+            p { margin-top: 16px; font-size: 14px; color: #666; }
+            .asset-info { margin-bottom: 16px; }
+          </style>
+        </head>
+        <body>
+          <div class="qr-container">
+            <h1>Scan for DVIR</h1>
+            <div class="asset-info">
+              <h2>${assetNumber} - ${assetName}</h2>
+            </div>
+            <img src="data:image/svg+xml;base64,${btoa(document.getElementById("dvir-qr-svg")?.outerHTML || "")}" width="200" height="200" />
+            <p>Scan this QR code to submit a Driver Vehicle Inspection Report</p>
+          </div>
+          <script>window.print(); window.close();</script>
+        </body>
+        </html>
+      `);
+      printWindow.document.close();
+    }
+  };
+
+  const isExpired = tokenData?.expiresAt 
+    ? new Date(tokenData.expiresAt) < new Date() 
+    : false;
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between gap-2 flex-wrap">
+        <CardTitle className="flex items-center gap-2">
+          <QrCode className="h-5 w-5" />
+          DVIR QR Code
+        </CardTitle>
+        {tokenData?.token && !isExpired && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleCopyUrl}
+              data-testid="button-copy-dvir-url"
+            >
+              {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+              <span className="ml-1">{copied ? "Copied" : "Copy URL"}</span>
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowQrDialog(true)}
+              data-testid="button-view-qr"
+            >
+              <QrCode className="h-4 w-4 mr-1" />
+              View QR
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handlePrint}
+              data-testid="button-print-qr"
+            >
+              <Printer className="h-4 w-4 mr-1" />
+              Print
+            </Button>
+          </div>
+        )}
+      </CardHeader>
+      <CardContent>
+        {isLoadingToken ? (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          </div>
+        ) : tokenData?.token && !isExpired ? (
+          <div className="space-y-4">
+            <div className="flex items-center justify-center p-4 bg-white rounded-lg">
+              <div id="dvir-qr-svg">
+                <QRCodeSVG value={dvirUrl!} size={180} level="H" />
+              </div>
+            </div>
+            <div className="text-center space-y-2">
+              <p className="text-sm text-muted-foreground">
+                Scan this QR code to submit a Driver Vehicle Inspection Report
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Valid until: {new Date(tokenData.expiresAt).toLocaleDateString()} at {new Date(tokenData.expiresAt).toLocaleTimeString()}
+              </p>
+            </div>
+            <div className="flex justify-center">
+              <Button
+                variant="outline"
+                onClick={() => generateTokenMutation.mutate()}
+                disabled={generateTokenMutation.isPending}
+                data-testid="button-regenerate-qr"
+              >
+                {generateTokenMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Regenerate QR Code
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="text-center py-8 space-y-4">
+            <QrCode className="h-12 w-12 mx-auto text-muted-foreground" />
+            <div>
+              <p className="text-muted-foreground mb-2">
+                {isExpired 
+                  ? "The QR code has expired. Generate a new one to allow public DVIR submissions."
+                  : "Generate a QR code to allow anyone to submit DVIRs for this asset without logging in."}
+              </p>
+            </div>
+            <Button
+              onClick={() => generateTokenMutation.mutate()}
+              disabled={generateTokenMutation.isPending}
+              data-testid="button-generate-qr"
+            >
+              {generateTokenMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              <QrCode className="h-4 w-4 mr-2" />
+              Generate QR Code
+            </Button>
+          </div>
+        )}
+      </CardContent>
+
+      <Dialog open={showQrDialog} onOpenChange={setShowQrDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>DVIR QR Code</DialogTitle>
+            <DialogDescription>
+              {assetNumber} - {assetName}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex items-center justify-center p-8 bg-white rounded-lg">
+            <QRCodeSVG value={dvirUrl || ""} size={280} level="H" />
+          </div>
+          <DialogFooter className="flex-row gap-2 justify-center">
+            <Button variant="outline" onClick={handleCopyUrl} data-testid="dialog-button-copy-url">
+              {copied ? <Check className="h-4 w-4 mr-2" /> : <Copy className="h-4 w-4 mr-2" />}
+              {copied ? "Copied" : "Copy URL"}
+            </Button>
+            <Button onClick={handlePrint} data-testid="dialog-button-print">
+              <Printer className="h-4 w-4 mr-2" />
+              Print
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </Card>
+  );
+}
 
 export default function AssetDetail() {
   const [, params] = useRoute("/assets/:id");
@@ -811,6 +1034,8 @@ export default function AssetDetail() {
           <AssetImages assetId={assetId!} />
           <AssetDocuments assetId={assetId!} />
         </div>
+
+        <DvirQrCodeSection assetId={assetId!} assetName={asset.name} assetNumber={asset.assetNumber} />
         </>
       )}
 

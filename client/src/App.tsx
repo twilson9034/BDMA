@@ -67,6 +67,7 @@ import Tires from "@/pages/tires";
 import Messages from "@/pages/messages";
 import PublicDashboards from "@/pages/public-dashboards";
 import AdminTools from "@/pages/admin-tools";
+import PublicDvir from "@/pages/public-dvir";
 import NotFound from "@/pages/not-found";
 
 function AuthenticatedRouter() {
@@ -165,6 +166,11 @@ function AuthenticatedLayout() {
 function AppContent() {
   const { isAuthenticated, isLoading } = useAuth();
   const [location] = useLocation();
+
+  // Public routes that don't require authentication
+  if (location.startsWith("/dvir/")) {
+    return <PublicDvir />;
+  }
 
   if (isLoading) {
     return (
