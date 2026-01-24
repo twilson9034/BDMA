@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
-import { Plus, Search, Package, AlertTriangle, BarChart3, Download, Barcode, ChevronLeft, ChevronRight } from "lucide-react";
+import { Plus, Search, Package, AlertTriangle, BarChart3, Download, Barcode, ChevronLeft, ChevronRight, MapPin } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,7 +18,7 @@ import { DataTable, Column } from "@/components/DataTable";
 import { EmptyState } from "@/components/EmptyState";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import type { Part } from "@shared/schema";
+import type { Part, Location } from "@shared/schema";
 
 interface PartWithVendor extends Part {
   vendorName?: string;
@@ -37,9 +37,14 @@ export default function Inventory() {
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [stockFilter, setStockFilter] = useState<string>("all");
   const [abcFilter, setAbcFilter] = useState<string>("all");
+  const [locationFilter, setLocationFilter] = useState<string>("all");
   const [page, setPage] = useState(1);
   const [limit] = useState(50);
   const { toast } = useToast();
+
+  const { data: locations } = useQuery<Location[]>({
+    queryKey: ["/api/locations"],
+  });
 
   // Debounce search input
   useEffect(() => {
@@ -76,13 +81,15 @@ export default function Inventory() {
     return "normal";
   };
 
-  // Client-side filtering for category, stock level, and ABC class (search is server-side)
+  // Client-side filtering for category, stock level, ABC class, and location (search is server-side)
   const filteredParts = parts.filter((part) => {
     const matchesCategory = categoryFilter === "all" || part.category === categoryFilter;
     const stockLevel = getStockLevel(part);
     const matchesStock = stockFilter === "all" || stockLevel === stockFilter;
     const matchesAbc = abcFilter === "all" || part.abcClass === abcFilter;
-    return matchesCategory && matchesStock && matchesAbc;
+    const matchesLocation = locationFilter === "all" || 
+      (locationFilter === "unassigned" ? !part.locationId : part.locationId?.toString() === locationFilter);
+    return matchesCategory && matchesStock && matchesAbc && matchesLocation;
   });
 
   const handleExportCSV = () => {
@@ -399,6 +406,21 @@ export default function Inventory() {
               <SelectItem value="A">Class A</SelectItem>
               <SelectItem value="B">Class B</SelectItem>
               <SelectItem value="C">Class C</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={locationFilter} onValueChange={setLocationFilter}>
+            <SelectTrigger className="w-[160px]" data-testid="select-location">
+              <MapPin className="h-4 w-4 mr-2" />
+              <SelectValue placeholder="Location" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Locations</SelectItem>
+              <SelectItem value="unassigned">Unassigned</SelectItem>
+              {locations?.map((loc) => (
+                <SelectItem key={loc.id} value={loc.id.toString()}>
+                  {loc.name}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>

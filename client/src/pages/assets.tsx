@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
-import { Plus, Search, Truck, Filter, Gauge, Download } from "lucide-react";
+import { Plus, Search, Truck, Filter, Gauge, Download, MapPin } from "lucide-react";
 import { BatchMeterUpdate } from "@/components/BatchMeterUpdate";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -19,7 +19,7 @@ import { DataTable, Column } from "@/components/DataTable";
 import { StatusBadge } from "@/components/StatusBadge";
 import { EmptyState } from "@/components/EmptyState";
 import { Badge } from "@/components/ui/badge";
-import type { Asset } from "@shared/schema";
+import type { Asset, Location } from "@shared/schema";
 
 interface AssetWithLocation extends Asset {
   locationName?: string;
@@ -39,12 +39,17 @@ export default function Assets() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [lifecycleFilter, setLifecycleFilter] = useState<string>("all");
+  const [locationFilter, setLocationFilter] = useState<string>("all");
   const [viewMode, setViewMode] = useState<"table" | "grid">("table");
   const [showBatchMeter, setShowBatchMeter] = useState(false);
   const { toast } = useToast();
 
   const { data: assets, isLoading } = useQuery<AssetWithLocation[]>({
     queryKey: ["/api/assets"],
+  });
+
+  const { data: locations } = useQuery<Location[]>({
+    queryKey: ["/api/locations"],
   });
 
   const mockAssets: AssetWithLocation[] = [
@@ -196,7 +201,9 @@ export default function Assets() {
     const matchesStatus = statusFilter === "all" || asset.status === statusFilter;
     const matchesType = typeFilter === "all" || asset.type === typeFilter;
     const matchesLifecycle = lifecycleFilter === "all" || asset.lifecycleStatus === lifecycleFilter;
-    return matchesSearch && matchesStatus && matchesType && matchesLifecycle;
+    const matchesLocation = locationFilter === "all" || 
+      (locationFilter === "unassigned" ? !asset.locationId : asset.locationId?.toString() === locationFilter);
+    return matchesSearch && matchesStatus && matchesType && matchesLifecycle && matchesLocation;
   });
 
   const handleExportCSV = () => {
@@ -500,6 +507,21 @@ export default function Assets() {
               <SelectItem value="sold">Sold</SelectItem>
               <SelectItem value="transferred">Transferred</SelectItem>
               <SelectItem value="scrapped">Scrapped</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={locationFilter} onValueChange={setLocationFilter}>
+            <SelectTrigger className="w-[160px]" data-testid="select-location">
+              <MapPin className="h-4 w-4 mr-2" />
+              <SelectValue placeholder="Location" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Locations</SelectItem>
+              <SelectItem value="unassigned">Unassigned</SelectItem>
+              {locations?.map((loc) => (
+                <SelectItem key={loc.id} value={loc.id.toString()}>
+                  {loc.name}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>

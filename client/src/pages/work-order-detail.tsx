@@ -46,7 +46,7 @@ import { LaborTracker } from "@/components/LaborTracker";
 import { DeferredLines } from "@/components/DeferredLines";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import type { WorkOrder, Asset, WorkOrderLine, Part, VmrsCode, WorkOrderTransaction } from "@shared/schema";
+import type { WorkOrder, Asset, WorkOrderLine, Part, VmrsCode, WorkOrderTransaction, Location } from "@shared/schema";
 
 const workOrderFormSchema = z.object({
   description: z.string().optional(),
@@ -148,8 +148,13 @@ export default function WorkOrderDetail() {
     queryKey: ["/api/parts"],
   });
 
+  const { data: locations } = useQuery<Location[]>({
+    queryKey: ["/api/locations"],
+  });
+
   // Compute linked asset early for smart suggestions
   const linkedAsset = assets?.find(a => a.id === workOrder?.assetId);
+  const assetLocation = locations?.find(l => l.id === linkedAsset?.locationId);
 
   // Smart part suggestions based on VMRS code and asset make/model
   const suggestionsQueryParams = suggestionsVmrs ? new URLSearchParams({
@@ -851,7 +856,12 @@ export default function WorkOrderDetail() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <p className="text-sm text-muted-foreground">Asset</p>
-                  <p className="font-medium">{linkedAsset ? `${linkedAsset.assetNumber} - ${linkedAsset.name}` : "-"}</p>
+                  <p className="font-medium">
+                    {linkedAsset ? `${linkedAsset.assetNumber} - ${linkedAsset.name}` : "-"}
+                    {assetLocation && (
+                      <span className="text-muted-foreground ml-1">({assetLocation.name})</span>
+                    )}
+                  </p>
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">Due Date</p>

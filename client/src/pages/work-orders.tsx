@@ -19,7 +19,7 @@ import { PriorityBadge } from "@/components/PriorityBadge";
 import { EmptyState } from "@/components/EmptyState";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import type { WorkOrder } from "@shared/schema";
+import type { WorkOrder, Location } from "@shared/schema";
 
 interface WorkOrderWithAsset extends WorkOrder {
   assetName?: string;
@@ -41,6 +41,7 @@ export default function WorkOrders() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [priorityFilter, setPriorityFilter] = useState<string>("all");
+  const [locationFilter, setLocationFilter] = useState<string>("all");
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [bulkStatus, setBulkStatus] = useState<string>("");
   const [sortField, setSortField] = useState<SortField>("createdAt");
@@ -49,6 +50,10 @@ export default function WorkOrders() {
 
   const { data: workOrders, isLoading } = useQuery<WorkOrderWithAsset[]>({
     queryKey: ["/api/work-orders"],
+  });
+
+  const { data: locations } = useQuery<Location[]>({
+    queryKey: ["/api/locations"],
   });
 
   const batchUpdateMutation = useMutation({
@@ -107,7 +112,9 @@ export default function WorkOrders() {
       wo.title.toLowerCase().includes(search.toLowerCase());
     const matchesStatus = statusFilter === "all" || wo.status === statusFilter;
     const matchesPriority = priorityFilter === "all" || wo.priority === priorityFilter;
-    return matchesSearch && matchesStatus && matchesPriority;
+    const matchesLocation = locationFilter === "all" || 
+      (locationFilter === "unassigned" ? !wo.locationId : wo.locationId?.toString() === locationFilter);
+    return matchesSearch && matchesStatus && matchesPriority && matchesLocation;
   });
 
   const sortWorkOrders = (data: WorkOrderWithAsset[]) => {
@@ -505,6 +512,21 @@ export default function WorkOrders() {
               <SelectItem value="high">High</SelectItem>
               <SelectItem value="medium">Medium</SelectItem>
               <SelectItem value="low">Low</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={locationFilter} onValueChange={setLocationFilter}>
+            <SelectTrigger className="w-[160px]" data-testid="select-location">
+              <MapPin className="h-4 w-4 mr-2" />
+              <SelectValue placeholder="Location" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Locations</SelectItem>
+              <SelectItem value="unassigned">Unassigned</SelectItem>
+              {locations?.map((loc) => (
+                <SelectItem key={loc.id} value={loc.id.toString()}>
+                  {loc.name}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
           <Select value={`${sortField}-${sortDirection}`} onValueChange={(val) => {

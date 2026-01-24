@@ -36,7 +36,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import type { Asset, InsertWorkOrder, VmrsCode, WorkOrder } from "@shared/schema";
+import type { Asset, InsertWorkOrder, VmrsCode, WorkOrder, Location } from "@shared/schema";
 
 const workOrderFormSchema = z.object({
   title: z.string().optional(),
@@ -77,6 +77,16 @@ export default function WorkOrderNew() {
   const { data: assets } = useQuery<Asset[]>({
     queryKey: ["/api/assets"],
   });
+
+  const { data: locations } = useQuery<Location[]>({
+    queryKey: ["/api/locations"],
+  });
+
+  const getLocationName = (locationId: number | null | undefined) => {
+    if (!locationId || !locations) return null;
+    const location = locations.find(l => l.id === locationId);
+    return location?.name;
+  };
 
   const { data: vmrsCodes = [] } = useQuery<VmrsCode[]>({
     queryKey: ["/api/vmrs-codes"],
@@ -347,11 +357,15 @@ export default function WorkOrderNew() {
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          {assets?.map((asset) => (
-                            <SelectItem key={asset.id} value={asset.id.toString()}>
-                              {asset.assetNumber} - {asset.name}
-                            </SelectItem>
-                          ))}
+                          {assets?.map((asset) => {
+                            const locationName = getLocationName(asset.locationId);
+                            return (
+                              <SelectItem key={asset.id} value={asset.id.toString()}>
+                                {asset.assetNumber} - {asset.name}
+                                {locationName && <span className="text-muted-foreground ml-1">({locationName})</span>}
+                              </SelectItem>
+                            );
+                          })}
                         </SelectContent>
                       </Select>
                       <FormMessage />

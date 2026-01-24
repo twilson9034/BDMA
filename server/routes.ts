@@ -2240,13 +2240,23 @@ export async function registerRoutes(
   // DVIRs (tenant-scoped)
   app.get("/api/dvirs", tenantMiddleware({ required: false }), async (req, res) => {
     const orgId = getOrgId(req);
+    let dvirList;
     if (orgId) {
-      const dvirs = await storage.getDvirsByOrg(orgId);
-      res.json(dvirs);
+      dvirList = await storage.getDvirsByOrg(orgId);
     } else {
-      const dvirs = await storage.getDvirs();
-      res.json(dvirs);
+      dvirList = await storage.getDvirs();
     }
+    // Enrich with asset info including location
+    const enrichedDvirs = await Promise.all(dvirList.map(async (dvir) => {
+      const asset = await storage.getAsset(dvir.assetId);
+      return {
+        ...dvir,
+        assetName: asset?.name,
+        assetNumber: asset?.assetNumber,
+        assetLocationId: asset?.locationId,
+      };
+    }));
+    res.json(enrichedDvirs);
   });
 
   app.get("/api/dvirs/:id", tenantMiddleware({ required: false }), async (req, res) => {
