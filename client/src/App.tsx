@@ -54,6 +54,7 @@ import BulkImport from "@/pages/bulk-import";
 import Receiving from "@/pages/receiving";
 import PartRequests from "@/pages/part-requests";
 import ReadyForReview from "@/pages/ready-for-review";
+import ReorderAlerts from "@/pages/reorder-alerts";
 import NotFound from "@/pages/not-found";
 
 function AuthenticatedRouter() {
@@ -99,6 +100,7 @@ function AuthenticatedRouter() {
       <Route path="/receiving" component={Receiving} />
       <Route path="/part-requests" component={PartRequests} />
       <Route path="/ready-for-review" component={ReadyForReview} />
+      <Route path="/reorder-alerts" component={ReorderAlerts} />
       <Route path="/settings" component={Settings} />
       <Route path="/settings/vmrs" component={VmrsSettings} />
       <Route path="/landing" component={LandingPage} />

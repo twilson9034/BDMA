@@ -269,7 +269,7 @@ export type WorkOrderLine = typeof workOrderLines.$inferSelect;
 // ============================================================
 // WORK ORDER TRANSACTIONS (Audit Trail)
 // ============================================================
-export const transactionTypeEnum = ["part_consumption", "time_entry", "status_change", "note", "attachment"] as const;
+export const transactionTypeEnum = ["part_consumption", "part_return", "time_entry", "time_adjustment", "status_change", "note", "attachment", "reversal"] as const;
 
 export const workOrderTransactions = pgTable("work_order_transactions", {
   id: serial("id").primaryKey(),
@@ -283,6 +283,8 @@ export const workOrderTransactions = pgTable("work_order_transactions", {
   hours: decimal("hours", { precision: 8, scale: 2 }),
   description: text("description"),
   performedById: varchar("performed_by_id"),
+  reversedTransactionId: integer("reversed_transaction_id"),
+  isReversed: boolean("is_reversed").default(false),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -292,7 +294,12 @@ export const workOrderTransactionsRelations = relations(workOrderTransactions, (
   part: one(parts, { fields: [workOrderTransactions.partId], references: [parts.id] }),
 }));
 
-export const insertWorkOrderTransactionSchema = createInsertSchema(workOrderTransactions).omit({ id: true, createdAt: true });
+export const insertWorkOrderTransactionSchema = createInsertSchema(workOrderTransactions).omit({ 
+  id: true, 
+  createdAt: true, 
+  isReversed: true,
+  reversedTransactionId: true,
+});
 export type InsertWorkOrderTransaction = z.infer<typeof insertWorkOrderTransactionSchema>;
 export type WorkOrderTransaction = typeof workOrderTransactions.$inferSelect;
 

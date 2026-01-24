@@ -270,6 +270,8 @@ export interface IStorage {
   consumePartFromInventory(partId: number, quantity: number, workOrderId: number, lineId: number): Promise<void>;
   getWorkOrderTransactions(workOrderId: number): Promise<WorkOrderTransaction[]>;
   getLineTransactions(lineId: number): Promise<WorkOrderTransaction[]>;
+  getTransaction(id: number): Promise<WorkOrderTransaction | undefined>;
+  reverseTransaction(transactionId: number, performedById: string | null, reason: string): Promise<WorkOrderTransaction>;
   addLineItem(lineId: number, data: { description: string; quantity: number; unitCost: number; partId?: number }): Promise<void>;
   getSimilarAssets(manufacturer: string, model: string, excludeAssetId: number): Promise<Asset[]>;
   getFleetPartReplacementPatterns(): Promise<{ partId: number; partNumber: string; partName: string; replacementCount: number; avgMeterReading: number }[]>;
@@ -1041,6 +1043,75 @@ export class DatabaseStorage implements IStorage {
 
   async getLineTransactions(lineId: number): Promise<WorkOrderTransaction[]> {
     return db.select().from(workOrderTransactions).where(eq(workOrderTransactions.workOrderLineId, lineId)).orderBy(desc(workOrderTransactions.createdAt));
+  }
+
+  async getTransaction(id: number): Promise<WorkOrderTransaction | undefined> {
+    const result = await db.select().from(workOrderTransactions).where(eq(workOrderTransactions.id, id));
+    return result[0];
+  }
+
+  async reverseTransaction(transactionId: number, performedById: string | null, reason: string): Promise<WorkOrderTransaction> {
+    const original = await this.getTransaction(transactionId);
+    if (!original) throw new Error("Transaction not found");
+    if (original.isReversed) throw new Error("Transaction already reversed");
+
+    const reversalType = original.type === "part_consumption" ? "part_return" 
+                        : original.type === "time_entry" ? "time_adjustment" 
+                        : "reversal";
+
+    const result = await db.transaction(async (tx) => {
+      await tx.update(workOrderTransactions)
+        .set({ isReversed: true })
+        .where(eq(workOrderTransactions.id, transactionId));
+
+      if (original.type === "part_consumption" && original.partId && original.quantity) {
+        const [part] = await tx.select().from(parts).where(eq(parts.id, original.partId));
+        if (part) {
+          const newQty = Number(part.quantityOnHand || 0) + Number(original.quantity);
+          await tx.update(parts)
+            .set({ quantityOnHand: String(newQty), updatedAt: new Date() })
+            .where(eq(parts.id, original.partId));
+        }
+
+        if (original.workOrderLineId) {
+          const [line] = await tx.select().from(workOrderLines).where(eq(workOrderLines.id, original.workOrderLineId));
+          if (line) {
+            const newPartsCost = Math.max(0, Number(line.partsCost || 0) - Number(original.totalCost || 0));
+            await tx.update(workOrderLines)
+              .set({ partsCost: String(newPartsCost), updatedAt: new Date() })
+              .where(eq(workOrderLines.id, original.workOrderLineId));
+          }
+        }
+      }
+
+      if (original.type === "time_entry" && original.hours && original.workOrderLineId) {
+        const [line] = await tx.select().from(workOrderLines).where(eq(workOrderLines.id, original.workOrderLineId));
+        if (line) {
+          const newLaborHours = Math.max(0, Number(line.laborHours || 0) - Number(original.hours));
+          await tx.update(workOrderLines)
+            .set({ laborHours: String(newLaborHours), updatedAt: new Date() })
+            .where(eq(workOrderLines.id, original.workOrderLineId));
+        }
+      }
+
+      const [reversalTransaction] = await tx.insert(workOrderTransactions).values({
+        workOrderId: original.workOrderId,
+        workOrderLineId: original.workOrderLineId,
+        type: reversalType,
+        partId: original.partId,
+        quantity: original.quantity ? String(-Number(original.quantity)) : null,
+        unitCost: original.unitCost,
+        totalCost: original.totalCost ? String(-Number(original.totalCost)) : null,
+        hours: original.hours ? String(-Number(original.hours)) : null,
+        description: `REVERSAL: ${reason}. Original: ${original.description || 'N/A'}`,
+        performedById,
+        reversedTransactionId: transactionId,
+      }).returning();
+
+      return reversalTransaction;
+    });
+
+    return result;
   }
 
   async addLineItem(lineId: number, data: { description: string; quantity: number; unitCost: number; partId?: number }): Promise<void> {

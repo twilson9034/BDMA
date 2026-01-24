@@ -1713,6 +1713,49 @@ export async function registerRoutes(
     }
   });
 
+  // Get a single transaction
+  app.get("/api/transactions/:id", async (req, res) => {
+    try {
+      const transaction = await storage.getTransaction(parseInt(req.params.id));
+      if (!transaction) return res.status(404).json({ error: "Transaction not found" });
+      res.json(transaction);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get transaction" });
+    }
+  });
+
+  // Reverse a transaction
+  app.post("/api/transactions/:id/reverse", requireAuth, async (req, res) => {
+    try {
+      const reverseSchema = z.object({
+        reason: z.string().min(1, "Reason is required"),
+      });
+      
+      const { reason } = reverseSchema.parse(req.body);
+      const user = (req as any).user;
+      
+      const reversal = await storage.reverseTransaction(
+        parseInt(req.params.id),
+        user?.id || null,
+        reason
+      );
+      
+      res.status(201).json(reversal);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      if (error.message === "Transaction not found") {
+        return res.status(404).json({ error: "Transaction not found" });
+      }
+      if (error.message === "Transaction already reversed") {
+        return res.status(400).json({ error: "Transaction has already been reversed" });
+      }
+      console.error("Reverse transaction error:", error);
+      res.status(500).json({ error: "Failed to reverse transaction" });
+    }
+  });
+
   // ============================================================
   // CHECKLIST TEMPLATES
   // ============================================================

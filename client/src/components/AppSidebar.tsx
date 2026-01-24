@@ -21,6 +21,7 @@ import {
   PackageCheck,
   PackageSearch,
   ListChecks,
+  Bell,
 } from "lucide-react";
 import {
   Sidebar,
@@ -62,6 +63,7 @@ const procurementItems = [
   { title: "Requisitions", url: "/requisitions", icon: FileText },
   { title: "Purchase Orders", url: "/purchase-orders", icon: ShoppingCart },
   { title: "Receiving", url: "/receiving", icon: PackageCheck },
+  { title: "Reorder Alerts", url: "/reorder-alerts", icon: Bell },
   { title: "Part Requests", url: "/part-requests", icon: PackageSearch },
   { title: "Vendors", url: "/vendors", icon: Users },
 ];
