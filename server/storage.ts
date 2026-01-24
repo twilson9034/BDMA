@@ -179,6 +179,11 @@ export interface IStorage {
   addMemberLocation(data: InsertMemberLocation): Promise<MemberLocation>;
   removeMemberLocation(membershipId: number, locationId: number): Promise<void>;
   countOrgOwners(orgId: number): Promise<number>;
+  getSubsidiaryOrgs(parentOrgId: number): Promise<Organization[]>;
+  setParentOrg(orgId: number, parentOrgId: number | null): Promise<Organization | undefined>;
+  getOrgsForCorporateAdmin(userId: string): Promise<Organization[]>;
+  updateMemberCorporateAdmin(orgId: number, memberId: number, isCorporateAdmin: boolean): Promise<OrgMembership | undefined>;
+  hasCorporateAdminMembership(userId: string): Promise<boolean>;
   
   // Locations
   getLocations(): Promise<Location[]>;
@@ -626,6 +631,66 @@ export class DatabaseStorage implements IStorage {
     const owners = await db.select().from(orgMemberships)
       .where(and(eq(orgMemberships.orgId, orgId), eq(orgMemberships.role, "owner")));
     return owners.length;
+  }
+
+  async getSubsidiaryOrgs(parentOrgId: number): Promise<Organization[]> {
+    return db.select().from(organizations)
+      .where(eq(organizations.parentOrgId, parentOrgId));
+  }
+
+  async setParentOrg(orgId: number, parentOrgId: number | null): Promise<Organization | undefined> {
+    const [updated] = await db.update(organizations)
+      .set({ parentOrgId, updatedAt: new Date() })
+      .where(eq(organizations.id, orgId))
+      .returning();
+    return updated;
+  }
+
+  async getOrgsForCorporateAdmin(userId: string): Promise<Organization[]> {
+    // Find all memberships where user is corporate admin
+    const adminMemberships = await db.select()
+      .from(orgMemberships)
+      .where(and(eq(orgMemberships.userId, userId), eq(orgMemberships.isCorporateAdmin, true)));
+    
+    if (adminMemberships.length === 0) return [];
+    
+    // Get all parent orgs and their subsidiaries
+    const allOrgs: Organization[] = [];
+    for (const membership of adminMemberships) {
+      const parentOrg = await this.getOrganization(membership.orgId);
+      if (parentOrg) {
+        allOrgs.push(parentOrg);
+        const subsidiaries = await this.getSubsidiaryOrgs(parentOrg.id);
+        allOrgs.push(...subsidiaries);
+      }
+    }
+    
+    // Remove duplicates
+    const uniqueOrgs = Array.from(new Map(allOrgs.map(org => [org.id, org])).values());
+    return uniqueOrgs;
+  }
+
+  async updateMemberCorporateAdmin(orgId: number, memberId: number, isCorporateAdmin: boolean): Promise<OrgMembership | undefined> {
+    // Verify member belongs to this org
+    const [member] = await db.select().from(orgMemberships)
+      .where(and(eq(orgMemberships.id, memberId), eq(orgMemberships.orgId, orgId)));
+    
+    if (!member) return undefined;
+    
+    const [updated] = await db.update(orgMemberships)
+      .set({ isCorporateAdmin })
+      .where(and(eq(orgMemberships.id, memberId), eq(orgMemberships.orgId, orgId)))
+      .returning();
+    
+    return updated;
+  }
+
+  async hasCorporateAdminMembership(userId: string): Promise<boolean> {
+    const [membership] = await db.select()
+      .from(orgMemberships)
+      .where(and(eq(orgMemberships.userId, userId), eq(orgMemberships.isCorporateAdmin, true)))
+      .limit(1);
+    return !!membership;
   }
 
   async updateMemberPrimaryLocation(memberId: number, primaryLocationId: number | null): Promise<OrgMembership | undefined> {

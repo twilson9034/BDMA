@@ -71,9 +71,17 @@ export const updateOrgMemberRoleSchema = z.object({
 export const updateMemberLocationSchema = z.object({
   primaryLocationId: z.number().nullable(),
 });
+export const setParentOrgSchema = z.object({
+  parentOrgId: z.number().nullable(),
+});
+export const updateCorporateAdminSchema = z.object({
+  isCorporateAdmin: z.boolean(),
+});
 export type InsertOrgMembership = z.infer<typeof insertOrgMembershipSchema>;
 export type UpdateOrgMemberRole = z.infer<typeof updateOrgMemberRoleSchema>;
 export type UpdateMemberLocation = z.infer<typeof updateMemberLocationSchema>;
+export type SetParentOrg = z.infer<typeof setParentOrgSchema>;
+export type UpdateCorporateAdmin = z.infer<typeof updateCorporateAdminSchema>;
 export type OrgMembership = typeof orgMemberships.$inferSelect;
 
 // ============================================================

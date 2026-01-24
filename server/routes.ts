@@ -37,7 +37,7 @@ import OpenAI from "openai";
 import { z } from "zod";
 import { setupAuth, registerAuthRoutes } from "./replit_integrations/auth";
 import { tenantMiddleware, getUserOrgMemberships, getOrgId } from "./tenant";
-import { organizations, orgMemberships, insertOrganizationSchema, insertOrgMembershipSchema, updateOrganizationSchema, updateOrgMemberRoleSchema, tires, insertTireSchema, conversations, messages, insertConversationSchema, insertMessageSchema, savedReports, insertSavedReportSchema, gpsLocations, insertGpsLocationSchema, tireReplacementSettings, insertTireReplacementSettingSchema, publicAssetTokens, insertPublicAssetTokenSchema } from "@shared/schema";
+import { organizations, orgMemberships, insertOrganizationSchema, insertOrgMembershipSchema, updateOrganizationSchema, updateOrgMemberRoleSchema, setParentOrgSchema, updateCorporateAdminSchema, tires, insertTireSchema, conversations, messages, insertConversationSchema, insertMessageSchema, savedReports, insertSavedReportSchema, gpsLocations, insertGpsLocationSchema, tireReplacementSettings, insertTireReplacementSettingSchema, publicAssetTokens, insertPublicAssetTokenSchema } from "@shared/schema";
 import { db } from "./db";
 import { eq, and } from "drizzle-orm";
 import { users } from "@shared/schema";
@@ -476,6 +476,148 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Get my membership error:", error);
       res.status(500).json({ error: "Failed to get membership" });
+    }
+  });
+
+  // Get subsidiary organizations (requires owner/admin or corporate admin)
+  app.get("/api/organizations/current/subsidiaries", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const userId = (req.user as any)?.claims?.sub;
+      if (!userId) return res.status(401).json({ error: "User not found" });
+      
+      const orgId = getOrgId(req);
+      if (!orgId) return res.status(403).json({ error: "No organization context" });
+      
+      const membership = await storage.getOrgMembership(orgId, userId);
+      if (!membership || (!["owner", "admin"].includes(membership.role) && !req.tenant?.isCorporateAdmin)) {
+        return res.status(403).json({ error: "Only owners, admins, or corporate admins can view subsidiaries" });
+      }
+      
+      const subsidiaries = await storage.getSubsidiaryOrgs(orgId);
+      res.json(subsidiaries);
+    } catch (error) {
+      console.error("Get subsidiaries error:", error);
+      res.status(500).json({ error: "Failed to get subsidiary organizations" });
+    }
+  });
+
+  // Set parent organization (requires owner of current org)
+  app.patch("/api/organizations/current/parent", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const userId = (req.user as any)?.claims?.sub;
+      if (!userId) return res.status(401).json({ error: "User not found" });
+      
+      const orgId = getOrgId(req);
+      if (!orgId) return res.status(403).json({ error: "No organization context" });
+      
+      const membership = await storage.getOrgMembership(orgId, userId);
+      if (!membership || membership.role !== "owner") {
+        return res.status(403).json({ error: "Only owners can set parent organization" });
+      }
+      
+      // Validate request body with Zod
+      const validationResult = setParentOrgSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ error: "Invalid request body", details: validationResult.error.errors });
+      }
+      
+      const { parentOrgId } = validationResult.data;
+      
+      // Validate parent org exists if provided
+      if (parentOrgId !== null && parentOrgId !== undefined) {
+        const parentOrg = await storage.getOrganization(parentOrgId);
+        if (!parentOrg) {
+          return res.status(400).json({ error: "Parent organization not found" });
+        }
+        // Prevent self-reference
+        if (parentOrgId === orgId) {
+          return res.status(400).json({ error: "Organization cannot be its own parent" });
+        }
+        
+        // User must be owner/admin of parent org or corporate admin to link (prevents unauthorized linking)
+        const parentMembership = await storage.getOrgMembership(parentOrgId, userId);
+        if (!parentMembership || (!["owner", "admin"].includes(parentMembership.role) && !parentMembership.isCorporateAdmin)) {
+          return res.status(403).json({ error: "You must be an owner, admin, or corporate admin of the parent organization to link" });
+        }
+        
+        // Prevent circular references by checking if parent org has this org as ancestor
+        let currentParent = parentOrg;
+        const visited = new Set<number>([orgId]);
+        while (currentParent?.parentOrgId) {
+          if (visited.has(currentParent.parentOrgId)) {
+            return res.status(400).json({ error: "Cannot create circular parent-child relationship" });
+          }
+          visited.add(currentParent.parentOrgId);
+          currentParent = await storage.getOrganization(currentParent.parentOrgId);
+        }
+      }
+      
+      const updated = await storage.setParentOrg(orgId, parentOrgId ?? null);
+      res.json(updated);
+    } catch (error) {
+      console.error("Set parent org error:", error);
+      res.status(500).json({ error: "Failed to set parent organization" });
+    }
+  });
+
+  // Get all organizations for corporate admin (requires corporate admin status)
+  app.get("/api/organizations/corporate-admin", requireAuth, async (req, res) => {
+    try {
+      const userId = (req.user as any)?.claims?.sub;
+      if (!userId) return res.status(401).json({ error: "User not found" });
+      
+      // Verify user has at least one corporate admin membership
+      const isCorporateAdmin = await storage.hasCorporateAdminMembership(userId);
+      if (!isCorporateAdmin) {
+        return res.status(403).json({ error: "Access denied. Corporate admin status required." });
+      }
+      
+      const orgs = await storage.getOrgsForCorporateAdmin(userId);
+      res.json(orgs);
+    } catch (error) {
+      console.error("Get corporate admin orgs error:", error);
+      res.status(500).json({ error: "Failed to get organizations" });
+    }
+  });
+
+  // Update member corporate admin status (requires owner)
+  app.patch("/api/organizations/current/members/:memberId/corporate-admin", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const userId = (req.user as any)?.claims?.sub;
+      if (!userId) return res.status(401).json({ error: "User not found" });
+      
+      const orgId = getOrgId(req);
+      if (!orgId) return res.status(403).json({ error: "No organization context" });
+      
+      const membership = await storage.getOrgMembership(orgId, userId);
+      if (!membership || membership.role !== "owner") {
+        return res.status(403).json({ error: "Only owners can set corporate admin status" });
+      }
+      
+      const memberId = parseInt(req.params.memberId);
+      if (isNaN(memberId)) {
+        return res.status(400).json({ error: "Invalid member ID" });
+      }
+      
+      // Validate request body with Zod
+      const validationResult = updateCorporateAdminSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ error: "Invalid request body", details: validationResult.error.errors });
+      }
+      
+      const { isCorporateAdmin } = validationResult.data;
+      
+      // Use storage method with tenant-scoped validation
+      const updated = await storage.updateMemberCorporateAdmin(orgId, memberId, isCorporateAdmin);
+      
+      if (!updated) {
+        return res.status(404).json({ error: "Member not found in this organization" });
+      }
+      
+      res.json(updated);
+    } catch (error) {
+      console.error("Update corporate admin status error:", error);
+      res.status(500).json({ error: "Failed to update corporate admin status" });
     }
   });
 

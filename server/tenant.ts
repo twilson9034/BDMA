@@ -7,6 +7,7 @@ export interface TenantContext {
   orgId: number;
   userId: string;
   role: "owner" | "admin" | "manager" | "technician" | "viewer";
+  isCorporateAdmin: boolean;
   organization: {
     id: number;
     name: string;
@@ -36,6 +37,7 @@ export async function getUserOrgMembership(userId: string, orgId?: number) {
       orgId: orgMemberships.orgId,
       userId: orgMemberships.userId,
       role: orgMemberships.role,
+      isCorporateAdmin: orgMemberships.isCorporateAdmin,
       orgName: organizations.name,
       orgSlug: organizations.slug,
       orgPlan: organizations.plan,
@@ -55,6 +57,7 @@ export async function getUserOrgMembership(userId: string, orgId?: number) {
     orgId: m.orgId,
     userId: m.userId,
     role: m.role as TenantContext["role"],
+    isCorporateAdmin: m.isCorporateAdmin ?? false,
     organization: {
       id: m.orgId,
       name: m.orgName,
@@ -73,6 +76,7 @@ export async function getUserOrgMemberships(userId: string) {
       orgId: orgMemberships.orgId,
       userId: orgMemberships.userId,
       role: orgMemberships.role,
+      isCorporateAdmin: orgMemberships.isCorporateAdmin,
       orgName: organizations.name,
       orgSlug: organizations.slug,
       orgPlan: organizations.plan,
@@ -88,6 +92,7 @@ export async function getUserOrgMemberships(userId: string) {
     orgId: m.orgId,
     userId: m.userId,
     role: m.role as TenantContext["role"],
+    isCorporateAdmin: m.isCorporateAdmin ?? false,
     organization: {
       id: m.orgId,
       name: m.orgName,
@@ -140,6 +145,7 @@ export function tenantMiddleware(options?: { required?: boolean }) {
           orgId: defaultMembership.orgId,
           userId,
           role: defaultMembership.role,
+          isCorporateAdmin: defaultMembership.isCorporateAdmin,
           organization: defaultMembership.organization,
         };
       } else {
@@ -147,6 +153,7 @@ export function tenantMiddleware(options?: { required?: boolean }) {
           orgId: membership.orgId,
           userId,
           role: membership.role,
+          isCorporateAdmin: membership.isCorporateAdmin,
           organization: membership.organization,
         };
       }

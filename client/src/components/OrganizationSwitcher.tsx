@@ -28,6 +28,7 @@ interface OrgMembership {
   orgId: number;
   userId: string;
   role: string;
+  isCorporateAdmin?: boolean;
   organization: {
     id: number;
     name: string;
@@ -42,6 +43,7 @@ interface CurrentTenant {
   orgId: number;
   userId: string;
   role: string;
+  isCorporateAdmin?: boolean;
   organization: {
     id: number;
     name: string;
@@ -134,6 +136,14 @@ export function OrganizationSwitcher() {
         Loading...
       </Button>
     );
+  }
+
+  // Only show org switcher if user has multiple orgs or is a corporate admin
+  const hasMultipleOrgs = organizations.length > 1;
+  const isCorporateAdmin = currentTenant?.isCorporateAdmin || organizations.some(m => m.isCorporateAdmin);
+  
+  if (!hasMultipleOrgs && !isCorporateAdmin) {
+    return null;
   }
 
   return (
