@@ -59,6 +59,15 @@ Preferred communication style: Simple, everyday language.
 - **Asset Lifecycle Tracking**: Lifecycle status (active, disposed, sold, transferred, scrapped), disposition date, salvage value, depreciation tracking.
 - **Batch Meter Updates**: Update meters for multiple assets simultaneously.
 - **Enhanced Parts Fields**: Max quantity, critical flag, and serialization tracking.
+- **Multi-Tenant Architecture**: Organizations with isolated data, user memberships with role-based access (owner/admin/manager/technician/viewer), and plan-based pricing (starter/professional/enterprise with fleet size limits).
+
+### Multi-Tenant Architecture
+- **Organizations Table**: Stores organization data with name, slug, plan, status, and maxAssets limit.
+- **Org Memberships Table**: Links users to organizations with roles (owner/admin/manager/technician/viewer).
+- **Tenant Scoping**: All tenant-scoped tables have an orgId column. Storage methods filter by orgId.
+- **Tenant Middleware**: Express middleware (server/tenant.ts) that extracts org context from session and adds to request.
+- **Organization Switcher**: UI component in the header for switching between organizations.
+- **Data Isolation**: Routes validate orgId on entity access to prevent cross-tenant data leakage.
 
 ## External Dependencies
 

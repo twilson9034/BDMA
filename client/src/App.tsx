@@ -11,6 +11,7 @@ import { AppSidebar } from "@/components/AppSidebar";
 import { PageLoader } from "@/components/LoadingSpinner";
 import { BarcodeScanner } from "@/components/BarcodeScanner";
 import { NotificationBell } from "@/components/NotificationBell";
+import { OrganizationSwitcher } from "@/components/OrganizationSwitcher";
 
 import LandingPage from "@/pages/landing";
 import Dashboard from "@/pages/dashboard";
@@ -132,6 +133,7 @@ function AuthenticatedLayout() {
           <header className="flex items-center justify-between gap-2 px-4 py-2 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
             <SidebarTrigger data-testid="button-sidebar-toggle" />
             <div className="flex items-center gap-2">
+              <OrganizationSwitcher />
               <BarcodeScanner />
               <NotificationBell />
               <ThemeToggle />

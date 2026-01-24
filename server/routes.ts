@@ -266,15 +266,25 @@ export async function registerRoutes(
     }
   });
 
-  // Locations
-  app.get("/api/locations", async (req, res) => {
-    const locations = await storage.getLocations();
-    res.json(locations);
+  // Locations (tenant-scoped)
+  app.get("/api/locations", tenantMiddleware({ required: false }), async (req, res) => {
+    const orgId = getOrgId(req);
+    if (orgId) {
+      const locs = await storage.getLocationsByOrg(orgId);
+      res.json(locs);
+    } else {
+      const locs = await storage.getLocations();
+      res.json(locs);
+    }
   });
 
-  app.get("/api/locations/:id", async (req, res) => {
+  app.get("/api/locations/:id", tenantMiddleware({ required: false }), async (req, res) => {
     const location = await storage.getLocation(parseInt(req.params.id));
     if (!location) return res.status(404).json({ error: "Location not found" });
+    const orgId = getOrgId(req);
+    if (orgId && location.orgId !== orgId) {
+      return res.status(403).json({ error: "Access denied" });
+    }
     res.json(location);
   });
 
@@ -324,22 +334,33 @@ export async function registerRoutes(
     }
   });
 
-  // Assets
-  app.get("/api/assets", async (req, res) => {
-    const assets = await storage.getAssets();
-    res.json(assets);
+  // Assets (tenant-scoped)
+  app.get("/api/assets", tenantMiddleware({ required: false }), async (req, res) => {
+    const orgId = getOrgId(req);
+    if (orgId) {
+      const assets = await storage.getAssetsByOrg(orgId);
+      res.json(assets);
+    } else {
+      const assets = await storage.getAssets();
+      res.json(assets);
+    }
   });
 
-  app.get("/api/assets/:id", async (req, res) => {
+  app.get("/api/assets/:id", tenantMiddleware({ required: false }), async (req, res) => {
     const asset = await storage.getAsset(parseInt(req.params.id));
     if (!asset) return res.status(404).json({ error: "Asset not found" });
+    const orgId = getOrgId(req);
+    if (orgId && asset.orgId !== orgId) {
+      return res.status(403).json({ error: "Access denied" });
+    }
     res.json(asset);
   });
 
-  app.post("/api/assets", requireAuth, async (req, res) => {
+  app.post("/api/assets", requireAuth, tenantMiddleware(), async (req, res) => {
     try {
+      const orgId = getOrgId(req);
       const validated = insertAssetSchema.parse(req.body);
-      const asset = await storage.createAsset(validated);
+      const asset = await storage.createAsset({ ...validated, orgId });
       res.status(201).json(asset);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -520,22 +541,33 @@ export async function registerRoutes(
     }
   });
 
-  // Parts
-  app.get("/api/parts", async (req, res) => {
-    const parts = await storage.getParts();
-    res.json(parts);
+  // Parts (tenant-scoped)
+  app.get("/api/parts", tenantMiddleware({ required: false }), async (req, res) => {
+    const orgId = getOrgId(req);
+    if (orgId) {
+      const parts = await storage.getPartsByOrg(orgId);
+      res.json(parts);
+    } else {
+      const parts = await storage.getParts();
+      res.json(parts);
+    }
   });
 
-  app.get("/api/parts/:id", async (req, res) => {
+  app.get("/api/parts/:id", tenantMiddleware({ required: false }), async (req, res) => {
     const part = await storage.getPart(parseInt(req.params.id));
     if (!part) return res.status(404).json({ error: "Part not found" });
+    const orgId = getOrgId(req);
+    if (orgId && part.orgId !== orgId) {
+      return res.status(403).json({ error: "Access denied" });
+    }
     res.json(part);
   });
 
-  app.post("/api/parts", requireAuth, async (req, res) => {
+  app.post("/api/parts", requireAuth, tenantMiddleware(), async (req, res) => {
     try {
+      const orgId = getOrgId(req);
       const validated = insertPartSchema.parse(req.body);
-      const part = await storage.createPart(validated);
+      const part = await storage.createPart({ ...validated, orgId });
       res.status(201).json(part);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -555,21 +587,32 @@ export async function registerRoutes(
     }
   });
 
-  // Work Orders
-  app.get("/api/work-orders", async (req, res) => {
-    const workOrders = await storage.getWorkOrders();
-    res.json(workOrders);
+  // Work Orders (tenant-scoped)
+  app.get("/api/work-orders", tenantMiddleware({ required: false }), async (req, res) => {
+    const orgId = getOrgId(req);
+    if (orgId) {
+      const workOrders = await storage.getWorkOrdersByOrg(orgId);
+      res.json(workOrders);
+    } else {
+      const workOrders = await storage.getWorkOrders();
+      res.json(workOrders);
+    }
   });
 
-  app.get("/api/work-orders/recent", async (req, res) => {
+  app.get("/api/work-orders/recent", tenantMiddleware({ required: false }), async (req, res) => {
     const limit = parseInt(req.query.limit as string) || 10;
     const workOrders = await storage.getRecentWorkOrders(limit);
     res.json(workOrders);
   });
 
-  app.get("/api/work-orders/:id", async (req, res) => {
+  app.get("/api/work-orders/:id", tenantMiddleware({ required: false }), async (req, res) => {
     const wo = await storage.getWorkOrder(parseInt(req.params.id));
     if (!wo) return res.status(404).json({ error: "Work order not found" });
+    
+    const orgId = getOrgId(req);
+    if (orgId && wo.orgId !== orgId) {
+      return res.status(403).json({ error: "Access denied" });
+    }
     
     // Explicitly update actual cost and hours before returning
     // @ts-ignore
@@ -580,8 +623,9 @@ export async function registerRoutes(
     res.json(updatedWo);
   });
 
-  app.post("/api/work-orders", requireAuth, async (req, res) => {
+  app.post("/api/work-orders", requireAuth, tenantMiddleware(), async (req, res) => {
     try {
+      const orgId = getOrgId(req);
       const workOrderNumber = await generateWorkOrderNumber();
       
       // Auto-generate title: WO# | Asset#
@@ -598,7 +642,7 @@ export async function registerRoutes(
         workOrderNumber,
         title: req.body.title || autoTitle,
       });
-      const wo = await storage.createWorkOrder(validated);
+      const wo = await storage.createWorkOrder({ ...validated, orgId });
       res.status(201).json(wo);
     } catch (error) {
       if (error instanceof z.ZodError) {
