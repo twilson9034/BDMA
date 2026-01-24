@@ -26,7 +26,13 @@ import {
   Shield,
   Wrench,
   Eye,
-  Loader2
+  Loader2,
+  Palette,
+  List,
+  Tags,
+  Settings2,
+  Plus,
+  Trash2
 } from "lucide-react";
 import { Link } from "wouter";
 
@@ -159,6 +165,10 @@ export default function Settings() {
           <TabsTrigger value="team" className="gap-2" data-testid="tab-team">
             <Users className="h-4 w-4" />
             Team
+          </TabsTrigger>
+          <TabsTrigger value="customization" className="gap-2" data-testid="tab-customization">
+            <Settings2 className="h-4 w-4" />
+            Customization
           </TabsTrigger>
         </TabsList>
 
@@ -534,6 +544,175 @@ export default function Settings() {
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="customization">
+          <div className="grid gap-6">
+            {/* VMRS Codes Management */}
+            <Card data-testid="card-vmrs-codes">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Code2 className="h-5 w-5" />
+                  VMRS Codes
+                </CardTitle>
+                <CardDescription>
+                  Manage Vehicle Maintenance Reporting Standards codes for categorization
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {[
+                    { code: "001", description: "Engine Systems" },
+                    { code: "002", description: "Electrical Systems" },
+                    { code: "003", description: "Frame/Chassis" },
+                    { code: "004", description: "Suspension" },
+                    { code: "005", description: "Brake Systems" },
+                    { code: "006", description: "Wheels/Tires" },
+                  ].map((vmrs) => (
+                    <div key={vmrs.code} className="flex items-center justify-between p-3 rounded-lg border" data-testid={`vmrs-${vmrs.code}`}>
+                      <div>
+                        <Badge variant="outline" className="font-mono">{vmrs.code}</Badge>
+                        <span className="ml-2 text-sm">{vmrs.description}</span>
+                      </div>
+                      <Button variant="ghost" size="icon" data-testid={`button-edit-vmrs-${vmrs.code}`}>
+                        <ChevronRight className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+                <Button variant="outline" className="w-full" data-testid="button-add-vmrs">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add VMRS Code
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* Custom Fields */}
+            <Card data-testid="card-custom-fields">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Tags className="h-5 w-5" />
+                  Custom Fields
+                </CardTitle>
+                <CardDescription>
+                  Define custom fields for assets, work orders, and parts
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Asset Custom Fields</Label>
+                  <div className="space-y-2">
+                    {[
+                      { name: "DOT Number", type: "Text", entity: "asset" },
+                      { name: "Insurance Expiry", type: "Date", entity: "asset" },
+                      { name: "License Plate State", type: "Dropdown", entity: "asset" },
+                    ].map((field, index) => (
+                      <div key={index} className="flex items-center justify-between p-2 rounded border" data-testid={`custom-field-${index}`}>
+                        <div className="flex items-center gap-3">
+                          <span className="font-medium text-sm">{field.name}</span>
+                          <Badge variant="secondary" className="text-xs">{field.type}</Badge>
+                        </div>
+                        <Button variant="ghost" size="icon" data-testid={`button-delete-field-${index}`}>
+                          <Trash2 className="h-4 w-4 text-muted-foreground" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <Button variant="outline" className="w-full" data-testid="button-add-custom-field">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Custom Field
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* Configurable Dropdowns */}
+            <Card data-testid="card-dropdown-config">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <List className="h-5 w-5" />
+                  Dropdown Options
+                </CardTitle>
+                <CardDescription>
+                  Customize dropdown values for statuses, priorities, and categories
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>Work Order Priorities</Label>
+                    <div className="space-y-1">
+                      {["Low", "Medium", "High", "Critical"].map((priority, index) => (
+                        <div key={priority} className="flex items-center justify-between p-2 rounded border text-sm" data-testid={`priority-option-${index}`}>
+                          <span>{priority}</span>
+                          <Button variant="ghost" size="icon" className="h-6 w-6">
+                            <ChevronRight className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Asset Categories</Label>
+                    <div className="space-y-1">
+                      {["Vehicle", "Trailer", "Equipment", "Tool"].map((category, index) => (
+                        <div key={category} className="flex items-center justify-between p-2 rounded border text-sm" data-testid={`category-option-${index}`}>
+                          <span>{category}</span>
+                          <Button variant="ghost" size="icon" className="h-6 w-6">
+                            <ChevronRight className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Brand Customization */}
+            <Card data-testid="card-branding">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Palette className="h-5 w-5" />
+                  Brand Customization
+                </CardTitle>
+                <CardDescription>
+                  Customize the appearance with your brand colors and logo
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="primary-color">Primary Color</Label>
+                    <div className="flex gap-2">
+                      <Input id="primary-color" type="color" defaultValue="#3B82F6" className="w-12 h-10 p-1" data-testid="input-primary-color" />
+                      <Input defaultValue="#3B82F6" className="font-mono" data-testid="input-primary-color-hex" />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="accent-color">Accent Color</Label>
+                    <div className="flex gap-2">
+                      <Input id="accent-color" type="color" defaultValue="#10B981" className="w-12 h-10 p-1" data-testid="input-accent-color" />
+                      <Input defaultValue="#10B981" className="font-mono" data-testid="input-accent-color-hex" />
+                    </div>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label>Company Logo</Label>
+                  <div className="border-2 border-dashed rounded-lg p-6 text-center">
+                    <Palette className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
+                    <p className="text-sm text-muted-foreground">Drag and drop your logo here, or click to browse</p>
+                    <Button variant="outline" className="mt-3" data-testid="button-upload-logo">
+                      Upload Logo
+                    </Button>
+                  </div>
+                </div>
+                <div className="flex justify-end pt-4">
+                  <Button data-testid="button-save-branding">Save Branding</Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
       </Tabs>
     </div>

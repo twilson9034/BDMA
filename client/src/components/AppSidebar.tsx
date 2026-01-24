@@ -27,6 +27,8 @@ import {
   Clock,
   Circle,
   Mail,
+  Share2,
+  Database,
 } from "lucide-react";
 import {
   Sidebar,
@@ -69,6 +71,7 @@ const operationsItems = [
 ];
 
 const procurementItems = [
+  { title: "Analytics", url: "/procurement-analytics", icon: BarChart3 },
   { title: "Requisitions", url: "/requisitions", icon: FileText },
   { title: "Purchase Orders", url: "/purchase-orders", icon: ShoppingCart },
   { title: "Receiving", url: "/receiving", icon: PackageCheck },
@@ -83,6 +86,8 @@ const resourceItems = [
   { title: "Messages", url: "/messages", icon: Mail },
   { title: "Feedback", url: "/feedback", icon: MessageSquare },
   { title: "Data Import", url: "/import", icon: Upload },
+  { title: "Public Dashboards", url: "/public-dashboards", icon: Share2 },
+  { title: "Admin Tools", url: "/admin-tools", icon: Database },
 ];
 
 export function AppSidebar() {

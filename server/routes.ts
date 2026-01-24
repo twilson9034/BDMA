@@ -1385,6 +1385,27 @@ export async function registerRoutes(
         orgId,
         requestedById: (req.user as any)?.id || null,
       });
+      
+      // Create notification for new requisition (simulates email notification)
+      const userId = (req.user as any)?.id;
+      if (userId) {
+        try {
+          await storage.createNotification({
+            orgId,
+            userId,
+            type: "requisition_created",
+            title: "New Requisition Created",
+            message: `Requisition ${requisitionNumber} has been submitted for review: ${validated.title}`,
+            priority: "normal",
+            entityType: "requisition",
+            entityId: requisition.id,
+          });
+          console.log(`[Email Notification] New requisition ${requisitionNumber} created - notification sent`);
+        } catch (notifError) {
+          console.log("Failed to create requisition notification:", notifError);
+        }
+      }
+      
       res.status(201).json(requisition);
     } catch (error) {
       console.error("Requisition creation error:", error);
@@ -1410,8 +1431,49 @@ export async function registerRoutes(
         data.approvedAt = new Date(data.approvedAt);
       }
 
+      const previousStatus = req_.status;
       console.log("Updating requisition status to:", data.status);
       const updated = await storage.updateRequisition(id, data);
+      
+      // Create notification for status changes (simulates email notification)
+      if (data.status && data.status !== previousStatus) {
+        try {
+          let notifType = "requisition_updated";
+          let notifTitle = "Requisition Updated";
+          let notifMessage = `Requisition ${req_.requisitionNumber} status changed to ${data.status}`;
+          let priority: "normal" | "high" | "low" = "normal";
+          
+          if (data.status === "approved") {
+            notifType = "requisition_approved";
+            notifTitle = "Requisition Approved";
+            notifMessage = `Requisition ${req_.requisitionNumber} has been approved and is ready for ordering`;
+            priority = "high";
+          } else if (data.status === "rejected") {
+            notifType = "requisition_rejected";
+            notifTitle = "Requisition Rejected";
+            notifMessage = `Requisition ${req_.requisitionNumber} has been rejected`;
+            priority = "high";
+          }
+          
+          const notifyUserId = req_.requestedById || (req.user as any)?.id;
+          if (notifyUserId) {
+            await storage.createNotification({
+              orgId: req_.orgId,
+              userId: notifyUserId,
+              type: notifType,
+              title: notifTitle,
+              message: notifMessage,
+              priority,
+              entityType: "requisition",
+              entityId: id,
+            });
+          }
+          console.log(`[Email Notification] Requisition ${req_.requisitionNumber} ${data.status} - notification sent`);
+        } catch (notifError) {
+          console.log("Failed to create requisition update notification:", notifError);
+        }
+      }
+      
       res.json(updated);
     } catch (error) {
       console.error("Update requisition error:", error);

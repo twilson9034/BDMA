@@ -41,6 +41,11 @@ import {
   PieChart,
   Pie,
   Cell,
+  LineChart,
+  Line,
+  Legend,
+  BarChart,
+  Bar,
 } from "recharts";
 
 interface DashboardStats {
@@ -107,6 +112,23 @@ const workOrderTrendData = [
   { month: "Apr", completed: 58, opened: 62 },
   { month: "May", completed: 72, opened: 68 },
   { month: "Jun", completed: 78, opened: 75 },
+];
+
+// Historical KPI trend data for analytics
+const kpiTrendData = [
+  { month: "Jan", mttr: 4.2, uptime: 92, pmCompliance: 85, avgCost: 285 },
+  { month: "Feb", mttr: 3.8, uptime: 93, pmCompliance: 88, avgCost: 275 },
+  { month: "Mar", mttr: 3.5, uptime: 94, pmCompliance: 90, avgCost: 260 },
+  { month: "Apr", mttr: 3.9, uptime: 91, pmCompliance: 87, avgCost: 290 },
+  { month: "May", mttr: 3.2, uptime: 95, pmCompliance: 92, avgCost: 245 },
+  { month: "Jun", mttr: 2.8, uptime: 96, pmCompliance: 94, avgCost: 230 },
+];
+
+// Tire prediction data
+const tirePredictionData = [
+  { tireId: 1, position: "Front Left", asset: "Truck #1024", predictedReplacement: "14 days", confidence: 92, treadDepth: 4.2 },
+  { tireId: 2, position: "Rear Right", asset: "Van #3012", predictedReplacement: "21 days", confidence: 87, treadDepth: 5.1 },
+  { tireId: 3, position: "Front Right", asset: "Truck #1025", predictedReplacement: "30 days", confidence: 78, treadDepth: 6.0 },
 ];
 
 const assetStatusData = [
@@ -236,7 +258,7 @@ export default function Dashboard() {
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-2">
+          <CardHeader className="flex flex-row items-center justify-between gap-2 flex-wrap">
             <CardTitle className="text-base font-medium">Work Order Trend</CardTitle>
             <Button variant="ghost" size="sm" asChild>
               <Link href="/reports">View Report</Link>
@@ -289,7 +311,7 @@ export default function Dashboard() {
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-2">
+          <CardHeader className="flex flex-row items-center justify-between gap-2 flex-wrap">
             <CardTitle className="text-base font-medium">Asset Status</CardTitle>
             <Button variant="ghost" size="sm" asChild>
               <Link href="/assets">View All</Link>
@@ -318,7 +340,7 @@ export default function Dashboard() {
               </div>
               <div className="flex-1 space-y-3">
                 {assetStatusData.map((item) => (
-                  <div key={item.name} className="flex items-center justify-between">
+                  <div key={item.name} className="flex items-center justify-between gap-2 flex-wrap">
                     <div className="flex items-center gap-2">
                       <div
                         className="h-3 w-3 rounded-full"
@@ -335,9 +357,74 @@ export default function Dashboard() {
         </Card>
       </div>
 
+      {/* KPI Trends Analytics Section */}
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Card data-testid="card-kpi-trends">
+          <CardHeader className="flex flex-row items-center justify-between gap-2 flex-wrap">
+            <CardTitle className="text-base font-medium" data-testid="text-kpi-trends-title">KPI Trends (6 Months)</CardTitle>
+            <Button variant="ghost" size="sm" asChild data-testid="link-kpi-drill-down">
+              <Link href="/reports">Drill Down</Link>
+            </Button>
+          </CardHeader>
+          <CardContent>
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={kpiTrendData}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                  <XAxis dataKey="month" className="text-xs" />
+                  <YAxis yAxisId="left" className="text-xs" />
+                  <YAxis yAxisId="right" orientation="right" className="text-xs" />
+                  <Tooltip 
+                    contentStyle={{ 
+                      backgroundColor: "hsl(var(--card))", 
+                      borderColor: "hsl(var(--border))",
+                      borderRadius: "8px"
+                    }} 
+                  />
+                  <Legend />
+                  <Line yAxisId="left" type="monotone" dataKey="uptime" stroke="hsl(var(--chart-1))" strokeWidth={2} name="Uptime %" />
+                  <Line yAxisId="left" type="monotone" dataKey="pmCompliance" stroke="hsl(var(--chart-2))" strokeWidth={2} name="PM Compliance %" />
+                  <Line yAxisId="right" type="monotone" dataKey="mttr" stroke="hsl(var(--chart-3))" strokeWidth={2} name="MTTR (hrs)" />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card data-testid="card-tire-predictions">
+          <CardHeader className="flex flex-row items-center justify-between gap-2 flex-wrap">
+            <CardTitle className="text-base font-medium" data-testid="text-tire-predictions-title">Tire Replacement Predictions</CardTitle>
+            <Button variant="ghost" size="sm" asChild data-testid="link-tire-management">
+              <Link href="/tires">View All Tires</Link>
+            </Button>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {tirePredictionData.map((tire) => (
+                <div key={tire.tireId} className="p-3 rounded-lg border border-border hover-elevate" data-testid={`tire-prediction-${tire.tireId}`}>
+                  <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
+                    <div>
+                      <span className="font-medium text-sm" data-testid={`text-tire-asset-${tire.tireId}`}>{tire.asset}</span>
+                      <span className="text-muted-foreground text-xs ml-2" data-testid={`text-tire-position-${tire.tireId}`}>({tire.position})</span>
+                    </div>
+                    <span className={`text-sm font-medium ${tire.confidence >= 90 ? 'text-green-600 dark:text-green-400' : tire.confidence >= 80 ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'}`} data-testid={`text-tire-confidence-${tire.tireId}`}>
+                      {tire.confidence}% confidence
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2 text-xs flex-wrap">
+                    <span className="text-muted-foreground" data-testid={`text-tire-tread-${tire.tireId}`}>Tread Depth: <span className="font-medium text-foreground">{tire.treadDepth}/32"</span></span>
+                    <span className="text-amber-600 dark:text-amber-400 font-medium" data-testid={`text-tire-replacement-${tire.tireId}`}>Replace in {tire.predictedReplacement}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
       <div className="grid gap-6 lg:grid-cols-3">
         <Card className="lg:col-span-2">
-          <CardHeader className="flex flex-row items-center justify-between gap-2">
+          <CardHeader className="flex flex-row items-center justify-between gap-2 flex-wrap">
             <CardTitle className="text-base font-medium">Recent Work Orders</CardTitle>
             <Button variant="ghost" size="sm" asChild>
               <Link href="/work-orders" className="flex items-center gap-1">
@@ -363,7 +450,7 @@ export default function Dashboard() {
                   <Link
                     key={wo.id}
                     href={`/work-orders/${wo.id}`}
-                    className="flex items-center justify-between p-3 rounded-lg border border-border hover-elevate transition-all"
+                    className="flex items-center justify-between gap-4 flex-wrap p-3 rounded-lg border border-border hover-elevate transition-all"
                     data-testid={`work-order-${wo.id}`}
                   >
                     <div className="flex items-center gap-4">
@@ -427,7 +514,7 @@ export default function Dashboard() {
 
       <div className="grid gap-6 lg:grid-cols-3">
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-2">
+          <CardHeader className="flex flex-row items-center justify-between gap-2 flex-wrap">
             <CardTitle className="text-base font-medium flex items-center gap-2">
               <ShoppingCart className="h-4 w-4" />
               Parts Fulfillment
@@ -448,7 +535,7 @@ export default function Dashboard() {
                   <Link
                     key={part.id}
                     href={`/estimates/${part.estimateId}`}
-                    className="flex items-center justify-between p-3 rounded-lg bg-orange-500/10 border border-orange-500/20 hover-elevate"
+                    className="flex items-center justify-between gap-4 flex-wrap p-3 rounded-lg bg-orange-500/10 border border-orange-500/20 hover-elevate"
                     data-testid={`unfulfilled-part-${part.id}`}
                   >
                     <div>
@@ -483,7 +570,7 @@ export default function Dashboard() {
 
         {/* Procurement Overview Widget */}
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-2">
+          <CardHeader className="flex flex-row items-center justify-between gap-2 flex-wrap">
             <CardTitle className="text-base font-medium flex items-center gap-2">
               <FileText className="h-4 w-4" />
               Procurement Overview
@@ -516,7 +603,7 @@ export default function Dashboard() {
 
         {/* Parts Analytics Widget */}
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-2">
+          <CardHeader className="flex flex-row items-center justify-between gap-2 flex-wrap">
             <CardTitle className="text-base font-medium flex items-center gap-2">
               <Package className="h-4 w-4" />
               Top Used Parts
@@ -534,7 +621,7 @@ export default function Dashboard() {
             ) : (
               <div className="space-y-3">
                 {partsAnalytics.topUsedParts.map((part, index) => (
-                  <div key={part.partId} className="flex items-center justify-between p-2 rounded-lg border border-border">
+                  <div key={part.partId} className="flex items-center justify-between gap-4 flex-wrap p-2 rounded-lg border border-border">
                     <div className="flex items-center gap-3">
                       <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-sm font-medium">
                         {index + 1}
@@ -556,7 +643,7 @@ export default function Dashboard() {
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-2">
+          <CardHeader className="flex flex-row items-center justify-between gap-2 flex-wrap">
             <CardTitle className="text-base font-medium">Upcoming PM</CardTitle>
             <Button variant="ghost" size="sm" asChild>
               <Link href="/pm-schedules">View All</Link>
@@ -569,7 +656,7 @@ export default function Dashboard() {
                 { name: "Brake Inspection", asset: "Van #3012", dueIn: "5 days", type: "days" },
                 { name: "Tire Rotation", asset: "Bus #5001", dueIn: "1 week", type: "miles" },
               ].map((pm, index) => (
-                <div key={index} className="flex items-center justify-between p-3 rounded-lg border border-border">
+                <div key={index} className="flex items-center justify-between gap-4 flex-wrap p-3 rounded-lg border border-border">
                   <div className="flex items-center gap-3">
                     <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
                       <Clock className="h-5 w-5 text-primary" />

@@ -1,21 +1,55 @@
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { useRoute, useLocation } from "wouter";
-import { ArrowLeft, FileText, Download, ExternalLink, Calendar, User, Clock, Book, HardDrive } from "lucide-react";
+import { ArrowLeft, FileText, Download, ExternalLink, Calendar, Clock, Book, HardDrive, Sparkles, List, Car, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/PageHeader";
+import { queryClient, apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 import type { Manual } from "@shared/schema";
+
+interface ExtractedSection {
+  title: string;
+  page: number;
+  summary: string;
+}
 
 export default function ManualDetail() {
   const [, navigate] = useLocation();
   const [match, params] = useRoute("/manuals/:id");
+  const [isExtracting, setIsExtracting] = useState(false);
+  const [extractedSections, setExtractedSections] = useState<ExtractedSection[]>([]);
+  const [showPdfViewer, setShowPdfViewer] = useState(false);
+  const { toast } = useToast();
 
   const { data: manual, isLoading, error } = useQuery<Manual>({
     queryKey: ["/api/manuals", params?.id],
     enabled: !!params?.id,
   });
+
+  const handleAiExtraction = async () => {
+    setIsExtracting(true);
+    // Simulate AI section extraction
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    const mockSections: ExtractedSection[] = [
+      { title: "Engine Oil Change Procedure", page: 45, summary: "Step-by-step guide for engine oil replacement including specifications and torque values." },
+      { title: "Brake System Inspection", page: 112, summary: "Complete brake inspection checklist with measurement tolerances and replacement criteria." },
+      { title: "Electrical System Diagnostics", page: 178, summary: "Troubleshooting guide for common electrical faults with diagnostic codes." },
+      { title: "Transmission Service", page: 234, summary: "Transmission fluid replacement and adjustment procedures." },
+      { title: "Cooling System Maintenance", page: 156, summary: "Coolant flush procedure and thermostat testing instructions." },
+    ];
+    
+    setExtractedSections(mockSections);
+    setIsExtracting(false);
+    toast({
+      title: "AI Extraction Complete",
+      description: `Found ${mockSections.length} key sections in this manual.`,
+    });
+  };
 
   const mockManuals: Manual[] = [
     {
@@ -195,18 +229,84 @@ export default function ManualDetail() {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
+          <Card data-testid="card-pdf-viewer">
+            <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle>Document Preview</CardTitle>
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={() => setShowPdfViewer(!showPdfViewer)}
+                data-testid="button-toggle-pdf"
+              >
+                {showPdfViewer ? "Hide Viewer" : "Show Viewer"}
+              </Button>
             </CardHeader>
             <CardContent>
-              <div className="aspect-[16/10] bg-muted rounded-lg flex items-center justify-center">
-                <div className="text-center text-muted-foreground">
-                  <FileText className="h-16 w-16 mx-auto mb-4 opacity-50" />
-                  <p className="text-sm">PDF preview not available</p>
-                  <p className="text-xs mt-1">Click "Open" to view the full document</p>
+              {showPdfViewer && displayManual.fileUrl ? (
+                <iframe
+                  src={displayManual.fileUrl}
+                  className="w-full h-[600px] border rounded-lg"
+                  title={displayManual.title}
+                  data-testid="iframe-pdf-viewer"
+                />
+              ) : (
+                <div className="aspect-[16/10] bg-muted rounded-lg flex items-center justify-center">
+                  <div className="text-center text-muted-foreground">
+                    <FileText className="h-16 w-16 mx-auto mb-4 opacity-50" />
+                    <p className="text-sm">Click "Show Viewer" to preview the document</p>
+                    <p className="text-xs mt-1">Or click "Open" to view in a new tab</p>
+                  </div>
                 </div>
-              </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card data-testid="card-ai-extraction">
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle className="flex items-center gap-2">
+                <Sparkles className="h-5 w-5" />
+                AI Section Extraction
+              </CardTitle>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleAiExtraction}
+                disabled={isExtracting}
+                data-testid="button-extract-sections"
+              >
+                {isExtracting ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Extracting...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="h-4 w-4 mr-2" />
+                    Extract Sections
+                  </>
+                )}
+              </Button>
+            </CardHeader>
+            <CardContent>
+              {extractedSections.length === 0 ? (
+                <div className="text-center text-muted-foreground py-8">
+                  <List className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                  <p className="text-sm">No sections extracted yet</p>
+                  <p className="text-xs mt-1">Click "Extract Sections" to use AI to identify key sections</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {extractedSections.map((section, index) => (
+                    <div key={index} className="p-3 rounded-lg border hover-elevate" data-testid={`section-${index}`}>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-medium text-sm" data-testid={`text-section-title-${index}`}>{section.title}</span>
+                        <Badge variant="outline" data-testid={`badge-section-page-${index}`}>Page {section.page}</Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground" data-testid={`text-section-summary-${index}`}>{section.summary}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -255,23 +355,51 @@ export default function ManualDetail() {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card data-testid="card-vehicle-info">
             <CardHeader>
               <CardTitle>Vehicle Information</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Manufacturer</span>
-                <span className="font-medium">{displayManual.manufacturer || "-"}</span>
+                <span className="font-medium" data-testid="text-manufacturer">{displayManual.manufacturer || "-"}</span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Model</span>
-                <span className="font-medium">{displayManual.model || "-"}</span>
+                <span className="font-medium" data-testid="text-model">{displayManual.model || "-"}</span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Year</span>
-                <span className="font-medium">{displayManual.year || "-"}</span>
+                <span className="font-medium" data-testid="text-year">{displayManual.year || "-"}</span>
               </div>
+            </CardContent>
+          </Card>
+
+          <Card data-testid="card-vin-patterns">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Car className="h-5 w-5" />
+                VIN Patterns
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {(displayManual as any).vinPatterns && (displayManual as any).vinPatterns.length > 0 ? (
+                <div className="space-y-2">
+                  {((displayManual as any).vinPatterns as string[]).map((pattern, index) => (
+                    <Badge key={index} variant="outline" className="mr-2" data-testid={`badge-vin-pattern-${index}`}>
+                      {pattern}
+                    </Badge>
+                  ))}
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Assets with VINs matching these patterns will be auto-associated.
+                  </p>
+                </div>
+              ) : (
+                <div className="text-center text-muted-foreground py-4">
+                  <p className="text-sm">No VIN patterns configured</p>
+                  <p className="text-xs mt-1">Add patterns like "1FUJG*" to auto-link assets</p>
+                </div>
+              )}
             </CardContent>
           </Card>
 

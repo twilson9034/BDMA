@@ -35,6 +35,7 @@ import Predictions from "@/pages/predictions";
 import Requisitions from "@/pages/requisitions";
 import RequisitionDetail from "@/pages/requisition-detail";
 import RequisitionNew from "@/pages/requisition-new";
+import ProcurementAnalytics from "@/pages/procurement-analytics";
 import PurchaseOrders from "@/pages/purchase-orders";
 import PurchaseOrderDetail from "@/pages/purchase-order-detail";
 import PurchaseOrderNew from "@/pages/purchase-order-new";
@@ -64,6 +65,8 @@ import CycleCounts from "@/pages/cycle-counts";
 import PmDues from "@/pages/pm-dues";
 import Tires from "@/pages/tires";
 import Messages from "@/pages/messages";
+import PublicDashboards from "@/pages/public-dashboards";
+import AdminTools from "@/pages/admin-tools";
 import NotFound from "@/pages/not-found";
 
 function AuthenticatedRouter() {
@@ -89,6 +92,7 @@ function AuthenticatedRouter() {
       <Route path="/requisitions" component={Requisitions} />
       <Route path="/requisitions/new" component={RequisitionNew} />
       <Route path="/requisitions/:id" component={RequisitionDetail} />
+      <Route path="/procurement-analytics" component={ProcurementAnalytics} />
       <Route path="/purchase-orders" component={PurchaseOrders} />
       <Route path="/purchase-orders/new" component={PurchaseOrderNew} />
       <Route path="/purchase-orders/:id" component={PurchaseOrderDetail} />
@@ -118,6 +122,8 @@ function AuthenticatedRouter() {
       <Route path="/pm-dues" component={PmDues} />
       <Route path="/settings" component={Settings} />
       <Route path="/settings/vmrs" component={VmrsSettings} />
+      <Route path="/public-dashboards" component={PublicDashboards} />
+      <Route path="/admin-tools" component={AdminTools} />
       <Route path="/landing" component={LandingPage} />
       <Route component={NotFound} />
     </Switch>

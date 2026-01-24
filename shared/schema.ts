@@ -691,6 +691,8 @@ export const manuals = pgTable("manuals", {
   model: text("model"),
   year: integer("year"),
   version: text("version"),
+  vinPatterns: text("vin_patterns").array(), // VIN patterns for auto-association (e.g., "1FUJG*", "3FALF*")
+  aiExtractedSections: jsonb("ai_extracted_sections"), // AI-extracted sections from PDF
   isActive: boolean("is_active").default(true),
   uploadedById: varchar("uploaded_by_id"),
   createdAt: timestamp("created_at").defaultNow(),
