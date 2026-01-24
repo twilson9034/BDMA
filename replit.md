@@ -60,6 +60,11 @@ Preferred communication style: Simple, everyday language.
 - **Batch Meter Updates**: Update meters for multiple assets simultaneously.
 - **Enhanced Parts Fields**: Max quantity, critical flag, and serialization tracking.
 - **Multi-Tenant Architecture**: Organizations with isolated data, user memberships with role-based access (owner/admin/manager/technician/viewer), and plan-based pricing (starter/professional/enterprise with fleet size limits).
+- **Tire Management**: Complete tire inventory with specifications (make, model, size, DOT code), condition tracking, lifecycle management (new/installed/retreaded/scrapped), and TPMS-ready monitoring fields.
+- **Messaging System**: In-app direct messages and group conversations with entity tagging, priority levels, and conversation-based threading.
+- **GPS & Location Tracking**: GPS location capture and storage with lat/lng coordinates, speed, heading, and provider integration fields.
+- **Saved Reports**: Custom report definitions with parameters, output formats, and optional scheduling.
+- **Customizable Dashboard**: Drag-and-drop widget layout with persistence, including Tire Health Widget and Parts Usage Analytics.
 
 ### Multi-Tenant Architecture
 - **Organizations Table**: Stores organization data with name, slug, plan, status, and maxAssets limit.
