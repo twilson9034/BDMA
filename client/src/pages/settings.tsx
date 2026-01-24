@@ -465,8 +465,7 @@ export default function Settings() {
                     <p className="text-sm text-muted-foreground py-4 text-center">No locations configured</p>
                   )}
                 </div>
-                {canManageOrg && (
-                  <Dialog open={addLocationOpen} onOpenChange={setAddLocationOpen}>
+                <Dialog open={addLocationOpen} onOpenChange={setAddLocationOpen}>
                     <DialogTrigger asChild>
                       <Button variant="outline" className="mt-4 w-full" data-testid="button-add-location">
                         <Plus className="h-4 w-4 mr-2" />
@@ -527,7 +526,6 @@ export default function Settings() {
                       </DialogFooter>
                     </DialogContent>
                   </Dialog>
-                )}
               </CardContent>
             </Card>
 
