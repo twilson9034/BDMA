@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
-import { Plus, Search, Truck, Filter } from "lucide-react";
+import { Plus, Search, Truck, Filter, Gauge } from "lucide-react";
+import { BatchMeterUpdate } from "@/components/BatchMeterUpdate";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -37,6 +38,7 @@ export default function Assets() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [viewMode, setViewMode] = useState<"table" | "grid">("table");
+  const [showBatchMeter, setShowBatchMeter] = useState(false);
 
   const { data: assets, isLoading } = useQuery<AssetWithLocation[]>({
     queryKey: ["/api/assets"],
@@ -66,6 +68,13 @@ export default function Assets() {
       imageUrl: null,
       notes: null,
       customFields: null,
+      lifecycleStatus: "active",
+      dispositionDate: null,
+      dispositionReason: null,
+      salvageValue: null,
+      depreciationMethod: null,
+      usefulLifeYears: null,
+      residualValue: null,
       createdAt: new Date("2022-03-15"),
       updatedAt: new Date("2024-01-15"),
     },
@@ -92,6 +101,13 @@ export default function Assets() {
       imageUrl: null,
       notes: null,
       customFields: null,
+      lifecycleStatus: "active",
+      dispositionDate: null,
+      dispositionReason: null,
+      salvageValue: null,
+      depreciationMethod: null,
+      usefulLifeYears: null,
+      residualValue: null,
       createdAt: new Date("2021-06-20"),
       updatedAt: new Date("2024-01-14"),
     },
@@ -118,6 +134,13 @@ export default function Assets() {
       imageUrl: null,
       notes: null,
       customFields: null,
+      lifecycleStatus: "active",
+      dispositionDate: null,
+      dispositionReason: null,
+      salvageValue: null,
+      depreciationMethod: null,
+      usefulLifeYears: null,
+      residualValue: null,
       createdAt: new Date("2023-01-10"),
       updatedAt: new Date("2024-01-15"),
     },
@@ -144,6 +167,13 @@ export default function Assets() {
       imageUrl: null,
       notes: null,
       customFields: null,
+      lifecycleStatus: "active",
+      dispositionDate: null,
+      dispositionReason: null,
+      salvageValue: null,
+      depreciationMethod: null,
+      usefulLifeYears: null,
+      residualValue: null,
       createdAt: new Date("2020-08-15"),
       updatedAt: new Date("2024-01-15"),
     },
@@ -232,12 +262,18 @@ export default function Assets() {
         title="Assets"
         description="Manage your fleet vehicles, equipment, and facilities"
         actions={
-          <Button asChild data-testid="button-new-asset">
-            <Link href="/assets/new">
-              <Plus className="h-4 w-4 mr-2" />
-              Add Asset
-            </Link>
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => setShowBatchMeter(true)} data-testid="button-batch-meter">
+              <Gauge className="h-4 w-4 mr-2" />
+              Batch Meters
+            </Button>
+            <Button asChild data-testid="button-new-asset">
+              <Link href="/assets/new">
+                <Plus className="h-4 w-4 mr-2" />
+                Add Asset
+              </Link>
+            </Button>
+          </div>
         }
       />
 
@@ -365,6 +401,8 @@ export default function Assets() {
           emptyMessage="No assets found"
         />
       )}
+
+      <BatchMeterUpdate isOpen={showBatchMeter} onClose={() => setShowBatchMeter(false)} />
     </div>
   );
 }

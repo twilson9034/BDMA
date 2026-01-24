@@ -26,6 +26,8 @@ import {
   insertReceivingTransactionSchema,
   insertPartRequestSchema,
   insertNotificationSchema,
+  insertAssetImageSchema,
+  insertAssetDocumentSchema,
   insertPartKitSchema,
   insertPartKitLineSchema,
   insertCycleCountSchema,
@@ -289,6 +291,123 @@ export async function registerRoutes(
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete asset" });
+    }
+  });
+
+  // Batch meter updates
+  const batchMeterUpdateSchema = z.object({
+    updates: z.array(z.object({
+      assetId: z.number(),
+      meterReading: z.string(),
+      meterType: z.string().optional(),
+    })).min(1, "At least one update is required"),
+  });
+  
+  app.post("/api/assets/batch-meters", requireAuth, async (req, res) => {
+    try {
+      const validated = batchMeterUpdateSchema.parse(req.body);
+      const updatedAssets = await storage.batchUpdateAssetMeters(validated.updates);
+      res.json(updatedAssets);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: "Failed to batch update meters" });
+    }
+  });
+
+  // Asset Images
+  app.get("/api/assets/:assetId/images", requireAuth, async (req, res) => {
+    try {
+      const images = await storage.getAssetImages(parseInt(req.params.assetId));
+      res.json(images);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch asset images" });
+    }
+  });
+
+  app.post("/api/assets/:assetId/images", requireAuth, async (req, res) => {
+    try {
+      const validated = insertAssetImageSchema.parse({
+        ...req.body,
+        assetId: parseInt(req.params.assetId),
+      });
+      const image = await storage.createAssetImage(validated);
+      res.status(201).json(image);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: "Failed to create asset image" });
+    }
+  });
+
+  app.delete("/api/asset-images/:id", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteAssetImage(parseInt(req.params.id));
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete asset image" });
+    }
+  });
+
+  app.post("/api/assets/:assetId/images/:imageId/primary", requireAuth, async (req, res) => {
+    try {
+      await storage.setPrimaryAssetImage(
+        parseInt(req.params.assetId),
+        parseInt(req.params.imageId)
+      );
+      res.status(200).json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to set primary image" });
+    }
+  });
+
+  // Asset Documents
+  app.get("/api/assets/:assetId/documents", requireAuth, async (req, res) => {
+    try {
+      const documents = await storage.getAssetDocuments(parseInt(req.params.assetId));
+      res.json(documents);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch asset documents" });
+    }
+  });
+
+  app.post("/api/assets/:assetId/documents", requireAuth, async (req, res) => {
+    try {
+      const validated = insertAssetDocumentSchema.parse({
+        ...req.body,
+        assetId: parseInt(req.params.assetId),
+      });
+      const document = await storage.createAssetDocument(validated);
+      res.status(201).json(document);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: "Failed to create asset document" });
+    }
+  });
+
+  app.patch("/api/asset-documents/:id", requireAuth, async (req, res) => {
+    try {
+      const validated = insertAssetDocumentSchema.partial().parse(req.body);
+      const document = await storage.updateAssetDocument(parseInt(req.params.id), validated);
+      res.json(document);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: "Failed to update asset document" });
+    }
+  });
+
+  app.delete("/api/asset-documents/:id", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteAssetDocument(parseInt(req.params.id));
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete asset document" });
     }
   });
 

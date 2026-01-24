@@ -43,6 +43,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { Asset, Location, WorkOrder, TelematicsData, FaultCode, Prediction } from "@shared/schema";
+import { AssetImages, AssetDocuments } from "@/components/AssetImagesDocuments";
 
 const assetFormSchema = z.object({
   name: z.string().min(1, "Name is required"),
@@ -194,7 +195,7 @@ export default function AssetDetail() {
       toast({
         title: "AI Analysis Complete",
         description: prediction 
-          ? `Generated ${prediction.severity} severity prediction: ${prediction.title}`
+          ? `Generated ${prediction.severity} severity prediction: ${prediction.predictionType}`
           : `Generated ${data.count} prediction(s)`,
       });
     },
@@ -548,6 +549,7 @@ export default function AssetDetail() {
           </form>
         </Form>
       ) : (
+        <>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <Card className="glass-card">
             <CardHeader>
@@ -804,6 +806,12 @@ export default function AssetDetail() {
             </CardContent>
           </Card>
         </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <AssetImages assetId={assetId!} />
+          <AssetDocuments assetId={assetId!} />
+        </div>
+        </>
       )}
 
       <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>

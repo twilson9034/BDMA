@@ -53,6 +53,7 @@ export type VmrsCode = typeof vmrsCodes.$inferSelect;
 // ============================================================
 export const assetStatusEnum = ["operational", "in_maintenance", "down", "retired", "pending_inspection"] as const;
 export const assetTypeEnum = ["vehicle", "equipment", "facility", "tool", "other"] as const;
+export const assetLifecycleStatusEnum = ["active", "disposed", "sold", "transferred", "scrapped"] as const;
 
 export const assets = pgTable("assets", {
   id: serial("id").primaryKey(),
@@ -76,12 +77,21 @@ export const assets = pgTable("assets", {
   imageUrl: text("image_url"),
   notes: text("notes"),
   customFields: jsonb("custom_fields").$type<Record<string, any>>(),
+  // Lifecycle fields
+  lifecycleStatus: text("lifecycle_status").default("active").$type<typeof assetLifecycleStatusEnum[number]>(),
+  dispositionDate: timestamp("disposition_date"),
+  dispositionReason: text("disposition_reason"),
+  salvageValue: decimal("salvage_value", { precision: 12, scale: 2 }),
+  depreciationMethod: text("depreciation_method"),
+  usefulLifeYears: integer("useful_life_years"),
+  residualValue: decimal("residual_value", { precision: 12, scale: 2 }),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [
   index("idx_assets_status").on(table.status),
   index("idx_assets_location").on(table.locationId),
   index("idx_assets_type").on(table.type),
+  index("idx_assets_lifecycle").on(table.lifecycleStatus),
 ]);
 
 export const assetsRelations = relations(assets, ({ one, many }) => ({
@@ -89,11 +99,66 @@ export const assetsRelations = relations(assets, ({ one, many }) => ({
   parentAsset: one(assets, { fields: [assets.parentAssetId], references: [assets.id] }),
   workOrders: many(workOrders),
   pmSchedules: many(pmAssetInstances),
+  images: many(assetImages),
+  documents: many(assetDocuments),
 }));
 
 export const insertAssetSchema = createInsertSchema(assets).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertAsset = z.infer<typeof insertAssetSchema>;
 export type Asset = typeof assets.$inferSelect;
+
+// ============================================================
+// ASSET IMAGES
+// ============================================================
+export const assetImages = pgTable("asset_images", {
+  id: serial("id").primaryKey(),
+  assetId: integer("asset_id").notNull().references(() => assets.id, { onDelete: "cascade" }),
+  imageUrl: text("image_url").notNull(),
+  caption: text("caption"),
+  isPrimary: boolean("is_primary").default(false),
+  uploadedBy: text("uploaded_by"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_asset_images_asset").on(table.assetId),
+]);
+
+export const assetImagesRelations = relations(assetImages, ({ one }) => ({
+  asset: one(assets, { fields: [assetImages.assetId], references: [assets.id] }),
+}));
+
+export const insertAssetImageSchema = createInsertSchema(assetImages).omit({ id: true, createdAt: true });
+export type InsertAssetImage = z.infer<typeof insertAssetImageSchema>;
+export type AssetImage = typeof assetImages.$inferSelect;
+
+// ============================================================
+// ASSET DOCUMENTS
+// ============================================================
+export const assetDocumentTypeEnum = ["manual", "warranty", "certificate", "inspection_report", "insurance", "registration", "maintenance_record", "other"] as const;
+
+export const assetDocuments = pgTable("asset_documents", {
+  id: serial("id").primaryKey(),
+  assetId: integer("asset_id").notNull().references(() => assets.id, { onDelete: "cascade" }),
+  documentUrl: text("document_url").notNull(),
+  fileName: text("file_name").notNull(),
+  documentType: text("document_type").$type<typeof assetDocumentTypeEnum[number]>(),
+  description: text("description"),
+  expirationDate: timestamp("expiration_date"),
+  uploadedBy: text("uploaded_by"),
+  fileSize: integer("file_size"),
+  mimeType: text("mime_type"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_asset_documents_asset").on(table.assetId),
+  index("idx_asset_documents_type").on(table.documentType),
+]);
+
+export const assetDocumentsRelations = relations(assetDocuments, ({ one }) => ({
+  asset: one(assets, { fields: [assetDocuments.assetId], references: [assets.id] }),
+}));
+
+export const insertAssetDocumentSchema = createInsertSchema(assetDocuments).omit({ id: true, createdAt: true });
+export type InsertAssetDocument = z.infer<typeof insertAssetDocumentSchema>;
+export type AssetDocument = typeof assetDocuments.$inferSelect;
 
 // ============================================================
 // VENDORS
@@ -143,6 +208,9 @@ export const parts = pgTable("parts", {
   quantityReserved: decimal("quantity_reserved", { precision: 12, scale: 2 }).default("0"),
   reorderPoint: decimal("reorder_point", { precision: 12, scale: 2 }).default("0"),
   reorderQuantity: decimal("reorder_quantity", { precision: 12, scale: 2 }).default("0"),
+  maxQuantity: decimal("max_quantity", { precision: 12, scale: 2 }),
+  isCritical: boolean("is_critical").default(false),
+  isSerialized: boolean("is_serialized").default(false),
   unitCost: decimal("unit_cost", { precision: 12, scale: 4 }),
   locationId: integer("location_id").references(() => locations.id),
   binLocation: text("bin_location"),
@@ -169,6 +237,7 @@ export const parts = pgTable("parts", {
 }, (table) => [
   index("idx_parts_category").on(table.category),
   index("idx_parts_location").on(table.locationId),
+  index("idx_parts_critical").on(table.isCritical),
 ]);
 
 export const partsRelations = relations(parts, ({ one }) => ({

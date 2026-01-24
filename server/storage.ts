@@ -37,6 +37,8 @@ import {
   partKitLines,
   pmScheduleKits,
   cycleCounts,
+  assetImages,
+  assetDocuments,
   type User,
   type UpsertUser,
   type InsertLocation,
@@ -45,6 +47,10 @@ import {
   type VmrsCode,
   type InsertAsset,
   type Asset,
+  type InsertAssetImage,
+  type AssetImage,
+  type InsertAssetDocument,
+  type AssetDocument,
   type InsertVendor,
   type Vendor,
   type InsertPart,
@@ -140,6 +146,19 @@ export interface IStorage {
   createAsset(asset: InsertAsset): Promise<Asset>;
   updateAsset(id: number, asset: Partial<InsertAsset>): Promise<Asset | undefined>;
   deleteAsset(id: number): Promise<void>;
+  batchUpdateAssetMeters(updates: Array<{ assetId: number; meterReading: string; meterType?: string }>): Promise<Asset[]>;
+  
+  // Asset Images
+  getAssetImages(assetId: number): Promise<AssetImage[]>;
+  createAssetImage(image: InsertAssetImage): Promise<AssetImage>;
+  deleteAssetImage(id: number): Promise<void>;
+  setPrimaryAssetImage(assetId: number, imageId: number): Promise<void>;
+  
+  // Asset Documents
+  getAssetDocuments(assetId: number): Promise<AssetDocument[]>;
+  createAssetDocument(document: InsertAssetDocument): Promise<AssetDocument>;
+  updateAssetDocument(id: number, document: Partial<InsertAssetDocument>): Promise<AssetDocument | undefined>;
+  deleteAssetDocument(id: number): Promise<void>;
   
   // Vendors
   getVendors(): Promise<Vendor[]>;
@@ -482,6 +501,70 @@ export class DatabaseStorage implements IStorage {
 
   async deleteAsset(id: number): Promise<void> {
     await db.delete(assets).where(eq(assets.id, id));
+  }
+
+  async batchUpdateAssetMeters(updates: Array<{ assetId: number; meterReading: string; meterType?: string }>): Promise<Asset[]> {
+    const updatedAssets: Asset[] = [];
+    for (const update of updates) {
+      const [updated] = await db.update(assets)
+        .set({
+          currentMeterReading: update.meterReading,
+          ...(update.meterType && { meterType: update.meterType }),
+          lastMeterUpdate: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(assets.id, update.assetId))
+        .returning();
+      if (updated) updatedAssets.push(updated);
+    }
+    return updatedAssets;
+  }
+
+  // Asset Images
+  async getAssetImages(assetId: number): Promise<AssetImage[]> {
+    return db.select().from(assetImages).where(eq(assetImages.assetId, assetId)).orderBy(desc(assetImages.isPrimary));
+  }
+
+  async createAssetImage(image: InsertAssetImage): Promise<AssetImage> {
+    const [created] = await db.insert(assetImages).values(image).returning();
+    return created;
+  }
+
+  async deleteAssetImage(id: number): Promise<void> {
+    await db.delete(assetImages).where(eq(assetImages.id, id));
+  }
+
+  async setPrimaryAssetImage(assetId: number, imageId: number): Promise<void> {
+    // First, unset any existing primary images for this asset
+    await db.update(assetImages)
+      .set({ isPrimary: false })
+      .where(eq(assetImages.assetId, assetId));
+    // Then set the new primary image
+    await db.update(assetImages)
+      .set({ isPrimary: true })
+      .where(eq(assetImages.id, imageId));
+  }
+
+  // Asset Documents
+  async getAssetDocuments(assetId: number): Promise<AssetDocument[]> {
+    return db.select().from(assetDocuments).where(eq(assetDocuments.assetId, assetId)).orderBy(desc(assetDocuments.createdAt));
+  }
+
+  async createAssetDocument(document: InsertAssetDocument): Promise<AssetDocument> {
+    const [created] = await db.insert(assetDocuments).values(document).returning();
+    return created;
+  }
+
+  async updateAssetDocument(id: number, document: Partial<InsertAssetDocument>): Promise<AssetDocument | undefined> {
+    const [updated] = await db.update(assetDocuments)
+      .set(document)
+      .where(eq(assetDocuments.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteAssetDocument(id: number): Promise<void> {
+    await db.delete(assetDocuments).where(eq(assetDocuments.id, id));
   }
 
   // Vendors

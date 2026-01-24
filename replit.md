@@ -54,6 +54,11 @@ Preferred communication style: Simple, everyday language.
 - **Multi-User Labor Tracking**: Timer-based labor tracking per technician with hourly rates, start/pause/stop functionality, and calculated labor costs.
 - **Deferred Lines Display**: Visualization of work order lines that have been rescheduled from other work orders.
 - **Notification Center**: In-app notifications with bell icon, unread count badge, real-time polling, priority levels, and entity linking.
+- **Asset Images**: Multiple photo uploads per asset with primary image selection.
+- **Asset Documents**: Document attachments (manuals, warranties, certificates) with expiration tracking.
+- **Asset Lifecycle Tracking**: Lifecycle status (active, disposed, sold, transferred, scrapped), disposition date, salvage value, depreciation tracking.
+- **Batch Meter Updates**: Update meters for multiple assets simultaneously.
+- **Enhanced Parts Fields**: Max quantity, critical flag, and serialization tracking.
 
 ## External Dependencies
 
