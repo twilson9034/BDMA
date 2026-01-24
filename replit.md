@@ -75,6 +75,18 @@ Preferred communication style: Simple, everyday language.
 - Tenant middleware pattern: `tenantMiddleware()` for writes, `tenantMiddleware({ required: false })` for reads
 - Major routes tenant-scoped: assets, parts, work orders, locations, vendors, requisitions, POs, estimates, DVIRs, PM schedules, manuals, notifications, predictions, feedback, dashboard
 - Org-scoped storage methods for all major entities including dashboard analytics
+- Organization Settings page with editable name/slug (owners/admins only)
+- Team Member Management with role display and role editing (owners/admins only)
+- Protection against demoting the only organization owner
+- PM due calculation uses pmAssetInstances.nextDueDate within 7-day window
+
+**Storage Layer Methods for Organization Management:**
+- `getOrganization(orgId)` - Get organization by ID
+- `updateOrganization(orgId, data)` - Update organization (validated with updateOrganizationSchema)
+- `getOrgMembers(orgId)` - Get all members with user details
+- `getOrgMembership(orgId, userId)` - Get specific membership
+- `updateOrgMemberRole(membershipId, role)` - Update member role (validated with updateOrgMemberRoleSchema)
+- `countOrgOwners(orgId)` - Count owners (for protection logic)
 
 **Remaining Work for Complete Isolation:**
 - Helper generators (work order/PO/requisition/estimate numbers) still use unscoped storage
