@@ -134,6 +134,10 @@ export const parts = pgTable("parts", {
   description: text("description"),
   category: text("category").$type<typeof partCategoryEnum[number]>(),
   abcClass: text("abc_class").$type<typeof abcClassEnum[number]>(),
+  annualUsageQuantity: decimal("annual_usage_quantity", { precision: 12, scale: 2 }).default("0"),
+  annualUsageValue: decimal("annual_usage_value", { precision: 12, scale: 2 }).default("0"),
+  lastCycleCountDate: timestamp("last_cycle_count_date"),
+  nextCycleCountDate: timestamp("next_cycle_count_date"),
   unitOfMeasure: text("unit_of_measure").default("each"),
   quantityOnHand: decimal("quantity_on_hand", { precision: 12, scale: 2 }).default("0"),
   quantityReserved: decimal("quantity_reserved", { precision: 12, scale: 2 }).default("0"),
@@ -314,6 +318,9 @@ export const pmSchedules = pgTable("pm_schedules", {
   description: text("description"),
   intervalType: text("interval_type").notNull().$type<typeof pmIntervalTypeEnum[number]>(),
   intervalValue: integer("interval_value").notNull(),
+  toleranceValue: integer("tolerance_value"),
+  gracePeriodValue: integer("grace_period_value"),
+  parentPmId: integer("parent_pm_id"),
   estimatedHours: decimal("estimated_hours", { precision: 8, scale: 2 }),
   estimatedCost: decimal("estimated_cost", { precision: 12, scale: 2 }),
   priority: text("priority").default("medium").$type<typeof workOrderPriorityEnum[number]>(),
@@ -1038,3 +1045,109 @@ export const partRequestsRelations = relations(partRequests, ({ one }) => ({
 export const insertPartRequestSchema = createInsertSchema(partRequests).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertPartRequest = z.infer<typeof insertPartRequestSchema>;
 export type PartRequest = typeof partRequests.$inferSelect;
+
+// ============================================================
+// PART KITS (Bundled part sets for PM/repair/inspection)
+// ============================================================
+export const partKitCategoryEnum = ["pm", "repair", "inspection", "seasonal", "other"] as const;
+
+export const partKits = pgTable("part_kits", {
+  id: serial("id").primaryKey(),
+  kitNumber: text("kit_number").notNull().unique(),
+  name: text("name").notNull(),
+  description: text("description"),
+  category: text("category").notNull().$type<typeof partKitCategoryEnum[number]>(),
+  totalCost: decimal("total_cost", { precision: 12, scale: 2 }).default("0"),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const partKitsRelations = relations(partKits, ({ many }) => ({
+  lines: many(partKitLines),
+  pmScheduleKits: many(pmScheduleKits),
+}));
+
+export const insertPartKitSchema = createInsertSchema(partKits).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertPartKit = z.infer<typeof insertPartKitSchema>;
+export type PartKit = typeof partKits.$inferSelect;
+
+// ============================================================
+// PART KIT LINES (Parts included in a kit)
+// ============================================================
+export const partKitLines = pgTable("part_kit_lines", {
+  id: serial("id").primaryKey(),
+  kitId: integer("kit_id").notNull().references(() => partKits.id, { onDelete: "cascade" }),
+  partId: integer("part_id").notNull().references(() => parts.id),
+  quantity: decimal("quantity", { precision: 12, scale: 2 }).notNull().default("1"),
+  unitCost: decimal("unit_cost", { precision: 12, scale: 4 }),
+  lineCost: decimal("line_cost", { precision: 12, scale: 2 }),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const partKitLinesRelations = relations(partKitLines, ({ one }) => ({
+  kit: one(partKits, { fields: [partKitLines.kitId], references: [partKits.id] }),
+  part: one(parts, { fields: [partKitLines.partId], references: [parts.id] }),
+}));
+
+export const insertPartKitLineSchema = createInsertSchema(partKitLines).omit({ id: true, createdAt: true });
+export type InsertPartKitLine = z.infer<typeof insertPartKitLineSchema>;
+export type PartKitLine = typeof partKitLines.$inferSelect;
+
+// ============================================================
+// PM SCHEDULE KITS (Link kits to PM schedules)
+// ============================================================
+export const pmScheduleKits = pgTable("pm_schedule_kits", {
+  id: serial("id").primaryKey(),
+  pmScheduleId: integer("pm_schedule_id").notNull().references(() => pmSchedules.id, { onDelete: "cascade" }),
+  kitId: integer("kit_id").notNull().references(() => partKits.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const pmScheduleKitsRelations = relations(pmScheduleKits, ({ one }) => ({
+  pmSchedule: one(pmSchedules, { fields: [pmScheduleKits.pmScheduleId], references: [pmSchedules.id] }),
+  kit: one(partKits, { fields: [pmScheduleKits.kitId], references: [partKits.id] }),
+}));
+
+export const insertPmScheduleKitSchema = createInsertSchema(pmScheduleKits).omit({ id: true, createdAt: true });
+export type InsertPmScheduleKit = z.infer<typeof insertPmScheduleKitSchema>;
+export type PmScheduleKit = typeof pmScheduleKits.$inferSelect;
+
+// ============================================================
+// CYCLE COUNTS (Inventory cycle counting)
+// ============================================================
+export const cycleCountStatusEnum = ["scheduled", "in_progress", "completed", "cancelled"] as const;
+
+export const cycleCounts = pgTable("cycle_counts", {
+  id: serial("id").primaryKey(),
+  countNumber: text("count_number").notNull().unique(),
+  partId: integer("part_id").notNull().references(() => parts.id),
+  locationId: integer("location_id").references(() => locations.id),
+  status: text("status").notNull().default("scheduled").$type<typeof cycleCountStatusEnum[number]>(),
+  scheduledDate: timestamp("scheduled_date").notNull(),
+  countedDate: timestamp("counted_date"),
+  expectedQuantity: decimal("expected_quantity", { precision: 12, scale: 2 }),
+  actualQuantity: decimal("actual_quantity", { precision: 12, scale: 2 }),
+  variance: decimal("variance", { precision: 12, scale: 2 }),
+  variancePercent: decimal("variance_percent", { precision: 8, scale: 2 }),
+  varianceCost: decimal("variance_cost", { precision: 12, scale: 2 }),
+  isReconciled: boolean("is_reconciled").default(false),
+  reconciledAt: timestamp("reconciled_at"),
+  countedById: varchar("counted_by_id"),
+  countedByName: text("counted_by_name"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_cycle_counts_status").on(table.status),
+  index("idx_cycle_counts_scheduled").on(table.scheduledDate),
+]);
+
+export const cycleCountsRelations = relations(cycleCounts, ({ one }) => ({
+  part: one(parts, { fields: [cycleCounts.partId], references: [parts.id] }),
+  location: one(locations, { fields: [cycleCounts.locationId], references: [locations.id] }),
+}));
+
+export const insertCycleCountSchema = createInsertSchema(cycleCounts).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertCycleCount = z.infer<typeof insertCycleCountSchema>;
+export type CycleCount = typeof cycleCounts.$inferSelect;

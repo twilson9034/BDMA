@@ -22,6 +22,9 @@ import {
   PackageSearch,
   ListChecks,
   Bell,
+  Boxes,
+  RefreshCw,
+  Clock,
 } from "lucide-react";
 import {
   Sidebar,
@@ -48,10 +51,13 @@ const mainNavItems = [
   { title: "Work Orders", url: "/work-orders", icon: Wrench },
   { title: "Assets", url: "/assets", icon: Truck },
   { title: "Inventory", url: "/inventory", icon: Package },
+  { title: "Part Kits", url: "/part-kits", icon: Boxes },
+  { title: "Cycle Counts", url: "/cycle-counts", icon: RefreshCw },
 ];
 
 const operationsItems = [
   { title: "PM Schedules", url: "/pm-schedules", icon: Calendar },
+  { title: "PM Dues", url: "/pm-dues", icon: Clock },
   { title: "Checklists", url: "/checklist-templates", icon: ClipboardCheck },
   { title: "DVIRs", url: "/dvirs", icon: ClipboardList },
   { title: "Ready for Review", url: "/ready-for-review", icon: ListChecks },

@@ -55,6 +55,10 @@ import Receiving from "@/pages/receiving";
 import PartRequests from "@/pages/part-requests";
 import ReadyForReview from "@/pages/ready-for-review";
 import ReorderAlerts from "@/pages/reorder-alerts";
+import PartKits from "@/pages/part-kits";
+import PartKitDetail from "@/pages/part-kit-detail";
+import CycleCounts from "@/pages/cycle-counts";
+import PmDues from "@/pages/pm-dues";
 import NotFound from "@/pages/not-found";
 
 function AuthenticatedRouter() {
@@ -101,6 +105,10 @@ function AuthenticatedRouter() {
       <Route path="/part-requests" component={PartRequests} />
       <Route path="/ready-for-review" component={ReadyForReview} />
       <Route path="/reorder-alerts" component={ReorderAlerts} />
+      <Route path="/part-kits" component={PartKits} />
+      <Route path="/part-kits/:id" component={PartKitDetail} />
+      <Route path="/cycle-counts" component={CycleCounts} />
+      <Route path="/pm-dues" component={PmDues} />
       <Route path="/settings" component={Settings} />
       <Route path="/settings/vmrs" component={VmrsSettings} />
       <Route path="/landing" component={LandingPage} />

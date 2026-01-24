@@ -25,6 +25,9 @@ import {
   insertChecklistMakeModelAssignmentSchema,
   insertReceivingTransactionSchema,
   insertPartRequestSchema,
+  insertPartKitSchema,
+  insertPartKitLineSchema,
+  insertCycleCountSchema,
   type ImportErrorSummary,
 } from "@shared/schema";
 import OpenAI from "openai";
@@ -2405,6 +2408,318 @@ Example: [{"partNumber": "BP-001", "reason": "Standard brake pads for this model
     } catch (error) {
       console.error("Error recording part usage:", error);
       res.status(500).json({ error: "Failed to record part usage" });
+    }
+  });
+
+  // ============================================================
+  // PART KITS
+  // ============================================================
+  app.get("/api/part-kits", async (req, res) => {
+    try {
+      const kits = await storage.getPartKits();
+      res.json(kits);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get part kits" });
+    }
+  });
+
+  app.get("/api/part-kits/:id", async (req, res) => {
+    try {
+      const kit = await storage.getPartKit(parseInt(req.params.id));
+      if (!kit) return res.status(404).json({ error: "Part kit not found" });
+      res.json(kit);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get part kit" });
+    }
+  });
+
+  app.post("/api/part-kits", requireAuth, async (req, res) => {
+    try {
+      const kitNumber = await storage.getNextKitNumber();
+      const validated = insertPartKitSchema.parse({ ...req.body, kitNumber });
+      const kit = await storage.createPartKit(validated);
+      res.status(201).json(kit);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: "Failed to create part kit" });
+    }
+  });
+
+  app.patch("/api/part-kits/:id", requireAuth, async (req, res) => {
+    try {
+      const partialSchema = insertPartKitSchema.partial();
+      const validated = partialSchema.parse(req.body);
+      const kit = await storage.updatePartKit(parseInt(req.params.id), validated);
+      if (!kit) return res.status(404).json({ error: "Part kit not found" });
+      res.json(kit);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: "Failed to update part kit" });
+    }
+  });
+
+  app.delete("/api/part-kits/:id", requireAuth, async (req, res) => {
+    try {
+      await storage.deletePartKit(parseInt(req.params.id));
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete part kit" });
+    }
+  });
+
+  // Part Kit Lines
+  app.get("/api/part-kits/:id/lines", async (req, res) => {
+    try {
+      const lines = await storage.getPartKitLines(parseInt(req.params.id));
+      res.json(lines);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get kit lines" });
+    }
+  });
+
+  app.post("/api/part-kits/:id/lines", requireAuth, async (req, res) => {
+    try {
+      const kitId = parseInt(req.params.id);
+      const part = await storage.getPart(req.body.partId);
+      if (!part) return res.status(400).json({ error: "Part not found" });
+      
+      const quantity = Number(req.body.quantity || 1);
+      const unitCost = Number(part.unitCost || 0);
+      const lineCost = quantity * unitCost;
+      
+      const validated = insertPartKitLineSchema.parse({
+        ...req.body,
+        kitId,
+        unitCost: String(unitCost),
+        lineCost: String(lineCost),
+      });
+      const line = await storage.createPartKitLine(validated);
+      res.status(201).json(line);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: "Failed to add kit line" });
+    }
+  });
+
+  app.delete("/api/part-kit-lines/:id", requireAuth, async (req, res) => {
+    try {
+      await storage.deletePartKitLine(parseInt(req.params.id));
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete kit line" });
+    }
+  });
+
+  // Consume kit on work order
+  app.post("/api/work-order-lines/:id/consume-kit", requireAuth, async (req, res) => {
+    try {
+      const lineId = parseInt(req.params.id);
+      const { kitId } = req.body;
+      
+      const line = await storage.getWorkOrderLine(lineId);
+      if (!line) return res.status(404).json({ error: "Work order line not found" });
+      
+      const result = await storage.consumeKitOnWorkOrder(
+        kitId,
+        line.workOrderId,
+        lineId,
+        (req.user as any)?.id
+      );
+      
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to consume kit" });
+    }
+  });
+
+  // PM Schedule Kits
+  app.get("/api/pm-schedules/:id/kits", async (req, res) => {
+    try {
+      const kits = await storage.getPmScheduleKits(parseInt(req.params.id));
+      res.json(kits);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get PM schedule kits" });
+    }
+  });
+
+  app.post("/api/pm-schedules/:id/kits", requireAuth, async (req, res) => {
+    try {
+      const pmScheduleId = parseInt(req.params.id);
+      const { kitId } = req.body;
+      const link = await storage.addKitToPmSchedule(pmScheduleId, kitId);
+      res.status(201).json(link);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to add kit to PM schedule" });
+    }
+  });
+
+  app.delete("/api/pm-schedule-kits/:id", requireAuth, async (req, res) => {
+    try {
+      await storage.removeKitFromPmSchedule(parseInt(req.params.id));
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to remove kit from PM schedule" });
+    }
+  });
+
+  // ============================================================
+  // CYCLE COUNTS
+  // ============================================================
+  app.get("/api/cycle-counts", async (req, res) => {
+    try {
+      const status = req.query.status as string | undefined;
+      const counts = await storage.getCycleCounts(status);
+      res.json(counts);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get cycle counts" });
+    }
+  });
+
+  app.get("/api/cycle-counts/:id", async (req, res) => {
+    try {
+      const count = await storage.getCycleCount(parseInt(req.params.id));
+      if (!count) return res.status(404).json({ error: "Cycle count not found" });
+      res.json(count);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get cycle count" });
+    }
+  });
+
+  app.post("/api/cycle-counts", requireAuth, async (req, res) => {
+    try {
+      const countNumber = await storage.getNextCycleCountNumber();
+      const validated = insertCycleCountSchema.parse({ ...req.body, countNumber });
+      const count = await storage.createCycleCount(validated);
+      res.status(201).json(count);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: "Failed to create cycle count" });
+    }
+  });
+
+  app.post("/api/cycle-counts/:id/execute", requireAuth, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { actualQuantity, notes } = req.body;
+      const user = req.user as any;
+      
+      const count = await storage.executeCycleCount(
+        id,
+        Number(actualQuantity),
+        user?.id || null,
+        user?.firstName && user?.lastName ? `${user.firstName} ${user.lastName}` : null,
+        notes
+      );
+      
+      if (!count) return res.status(404).json({ error: "Cycle count not found" });
+      res.json(count);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to execute cycle count" });
+    }
+  });
+
+  app.post("/api/cycle-counts/:id/reconcile", requireAuth, async (req, res) => {
+    try {
+      const count = await storage.reconcileCycleCount(parseInt(req.params.id));
+      if (!count) return res.status(400).json({ error: "Cannot reconcile count" });
+      res.json(count);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to reconcile cycle count" });
+    }
+  });
+
+  // Generate cycle count schedule based on ABC classification
+  app.post("/api/cycle-counts/generate-schedule", requireAuth, async (req, res) => {
+    try {
+      const result = await storage.scheduleCycleCountsForParts();
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to generate cycle count schedule" });
+    }
+  });
+
+  // ============================================================
+  // ABC CLASSIFICATION
+  // ============================================================
+  app.post("/api/parts/recalculate-abc", requireAuth, async (req, res) => {
+    try {
+      const result = await storage.recalculateABCClassification();
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to recalculate ABC classification" });
+    }
+  });
+
+  // ============================================================
+  // PM DUES & COMPLETION
+  // ============================================================
+  app.get("/api/pm-dues", async (req, res) => {
+    try {
+      const dues = await storage.getPmDueList();
+      res.json(dues);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get PM dues" });
+    }
+  });
+
+  app.post("/api/pm-dues/batch-create-work-orders", requireAuth, async (req, res) => {
+    try {
+      const { instanceIds } = req.body;
+      if (!Array.isArray(instanceIds) || instanceIds.length === 0) {
+        return res.status(400).json({ error: "Instance IDs required" });
+      }
+
+      const createdWorkOrders: any[] = [];
+      
+      for (const instanceId of instanceIds) {
+        const dues = await storage.getPmDueList();
+        const instance = dues.find(d => d.id === instanceId);
+        if (!instance || !instance.asset || !instance.pmSchedule) continue;
+
+        const workOrderNumber = await generateWorkOrderNumber();
+        const wo = await storage.createWorkOrder({
+          workOrderNumber,
+          title: `PM: ${instance.pmSchedule.name} - ${instance.asset.name}`,
+          description: `Preventive maintenance for ${instance.asset.name}`,
+          type: "preventive",
+          status: "open",
+          priority: instance.pmSchedule.priority || "medium",
+          assetId: instance.assetId,
+          dueDate: instance.nextDueDate || new Date(),
+        });
+        
+        createdWorkOrders.push(wo);
+      }
+
+      res.status(201).json({ created: createdWorkOrders.length, workOrders: createdWorkOrders });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create work orders" });
+    }
+  });
+
+  app.post("/api/pm-instances/:id/complete", requireAuth, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { completionDate, meterReading } = req.body;
+      
+      const instance = await storage.completePmFromWorkOrder(
+        id,
+        new Date(completionDate || Date.now()),
+        meterReading ? Number(meterReading) : undefined
+      );
+      
+      if (!instance) return res.status(404).json({ error: "PM instance not found" });
+      res.json(instance);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to complete PM" });
     }
   });
 

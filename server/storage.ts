@@ -33,6 +33,10 @@ import {
   checklistMakeModelAssignments,
   receivingTransactions,
   partRequests,
+  partKits,
+  partKitLines,
+  pmScheduleKits,
+  cycleCounts,
   type User,
   type UpsertUser,
   type InsertLocation,
@@ -90,6 +94,14 @@ import {
   type ReceivingTransaction,
   type InsertPartRequest,
   type PartRequest,
+  type InsertPartKit,
+  type PartKit,
+  type InsertPartKitLine,
+  type PartKitLine,
+  type InsertPmScheduleKit,
+  type PmScheduleKit,
+  type InsertCycleCount,
+  type CycleCount,
   importJobs,
   type InsertImportJob,
   type ImportJob,
@@ -1501,6 +1513,349 @@ export class DatabaseStorage implements IStorage {
       }
     }
     return `PR-${year}-${String(nextNum).padStart(4, '0')}`;
+  }
+
+  // Part Kits
+  async getPartKits(): Promise<PartKit[]> {
+    return await db.select().from(partKits).orderBy(desc(partKits.createdAt));
+  }
+
+  async getPartKit(id: number): Promise<PartKit | undefined> {
+    const [result] = await db.select().from(partKits).where(eq(partKits.id, id));
+    return result;
+  }
+
+  async createPartKit(kit: InsertPartKit): Promise<PartKit> {
+    const [result] = await db.insert(partKits).values(kit).returning();
+    return result;
+  }
+
+  async updatePartKit(id: number, kit: Partial<InsertPartKit>): Promise<PartKit | undefined> {
+    const [result] = await db.update(partKits).set({ ...kit, updatedAt: new Date() }).where(eq(partKits.id, id)).returning();
+    return result;
+  }
+
+  async deletePartKit(id: number): Promise<void> {
+    await db.delete(partKits).where(eq(partKits.id, id));
+  }
+
+  async getNextKitNumber(): Promise<string> {
+    const year = new Date().getFullYear();
+    const [latest] = await db
+      .select({ kitNumber: partKits.kitNumber })
+      .from(partKits)
+      .where(sql`${partKits.kitNumber} LIKE ${'KIT-' + year + '-%'}`)
+      .orderBy(desc(partKits.kitNumber))
+      .limit(1);
+    
+    let nextNum = 1;
+    if (latest?.kitNumber) {
+      const kitParts = latest.kitNumber.split('-');
+      const lastNum = parseInt(kitParts[2], 10);
+      if (!isNaN(lastNum)) nextNum = lastNum + 1;
+    }
+    return `KIT-${year}-${String(nextNum).padStart(4, '0')}`;
+  }
+
+  // Part Kit Lines
+  async getPartKitLines(kitId: number): Promise<PartKitLine[]> {
+    return await db.select().from(partKitLines).where(eq(partKitLines.kitId, kitId));
+  }
+
+  async createPartKitLine(line: InsertPartKitLine): Promise<PartKitLine> {
+    const [result] = await db.insert(partKitLines).values(line).returning();
+    await this.recalculateKitTotal(line.kitId);
+    return result;
+  }
+
+  async updatePartKitLine(id: number, line: Partial<InsertPartKitLine>): Promise<PartKitLine | undefined> {
+    const [existing] = await db.select().from(partKitLines).where(eq(partKitLines.id, id));
+    if (!existing) return undefined;
+    const [result] = await db.update(partKitLines).set(line).where(eq(partKitLines.id, id)).returning();
+    await this.recalculateKitTotal(existing.kitId);
+    return result;
+  }
+
+  async deletePartKitLine(id: number): Promise<void> {
+    const [existing] = await db.select().from(partKitLines).where(eq(partKitLines.id, id));
+    if (existing) {
+      await db.delete(partKitLines).where(eq(partKitLines.id, id));
+      await this.recalculateKitTotal(existing.kitId);
+    }
+  }
+
+  async recalculateKitTotal(kitId: number): Promise<void> {
+    const lines = await this.getPartKitLines(kitId);
+    let total = 0;
+    for (const line of lines) {
+      total += Number(line.lineCost || 0);
+    }
+    await db.update(partKits).set({ totalCost: String(total), updatedAt: new Date() }).where(eq(partKits.id, kitId));
+  }
+
+  // PM Schedule Kits
+  async getPmScheduleKits(pmScheduleId: number): Promise<PmScheduleKit[]> {
+    return await db.select().from(pmScheduleKits).where(eq(pmScheduleKits.pmScheduleId, pmScheduleId));
+  }
+
+  async addKitToPmSchedule(pmScheduleId: number, kitId: number): Promise<PmScheduleKit> {
+    const [result] = await db.insert(pmScheduleKits).values({ pmScheduleId, kitId }).returning();
+    return result;
+  }
+
+  async removeKitFromPmSchedule(id: number): Promise<void> {
+    await db.delete(pmScheduleKits).where(eq(pmScheduleKits.id, id));
+  }
+
+  // Cycle Counts
+  async getCycleCounts(status?: string): Promise<CycleCount[]> {
+    if (status) {
+      return await db.select().from(cycleCounts).where(eq(cycleCounts.status, status as any)).orderBy(desc(cycleCounts.scheduledDate));
+    }
+    return await db.select().from(cycleCounts).orderBy(desc(cycleCounts.scheduledDate));
+  }
+
+  async getCycleCount(id: number): Promise<CycleCount | undefined> {
+    const [result] = await db.select().from(cycleCounts).where(eq(cycleCounts.id, id));
+    return result;
+  }
+
+  async createCycleCount(count: InsertCycleCount): Promise<CycleCount> {
+    const [result] = await db.insert(cycleCounts).values(count).returning();
+    return result;
+  }
+
+  async updateCycleCount(id: number, count: Partial<InsertCycleCount>): Promise<CycleCount | undefined> {
+    const [result] = await db.update(cycleCounts).set({ ...count, updatedAt: new Date() }).where(eq(cycleCounts.id, id)).returning();
+    return result;
+  }
+
+  async getNextCycleCountNumber(): Promise<string> {
+    const year = new Date().getFullYear();
+    const [latest] = await db
+      .select({ countNumber: cycleCounts.countNumber })
+      .from(cycleCounts)
+      .where(sql`${cycleCounts.countNumber} LIKE ${'CC-' + year + '-%'}`)
+      .orderBy(desc(cycleCounts.countNumber))
+      .limit(1);
+    
+    let nextNum = 1;
+    if (latest?.countNumber) {
+      const countParts = latest.countNumber.split('-');
+      const lastNum = parseInt(countParts[2], 10);
+      if (!isNaN(lastNum)) nextNum = lastNum + 1;
+    }
+    return `CC-${year}-${String(nextNum).padStart(4, '0')}`;
+  }
+
+  async executeCycleCount(id: number, actualQuantity: number, countedById: string | null, countedByName: string | null, notes?: string): Promise<CycleCount | undefined> {
+    const count = await this.getCycleCount(id);
+    if (!count) return undefined;
+
+    const part = await this.getPart(count.partId);
+    if (!part) return undefined;
+
+    const expected = Number(part.quantityOnHand || 0);
+    const variance = actualQuantity - expected;
+    const variancePercent = expected !== 0 ? (variance / expected) * 100 : 0;
+    const varianceCost = variance * Number(part.unitCost || 0);
+
+    const [result] = await db.update(cycleCounts).set({
+      status: "completed",
+      countedDate: new Date(),
+      expectedQuantity: String(expected),
+      actualQuantity: String(actualQuantity),
+      variance: String(variance),
+      variancePercent: String(variancePercent),
+      varianceCost: String(varianceCost),
+      countedById,
+      countedByName,
+      notes,
+      updatedAt: new Date(),
+    }).where(eq(cycleCounts.id, id)).returning();
+
+    return result;
+  }
+
+  async reconcileCycleCount(id: number): Promise<CycleCount | undefined> {
+    const count = await this.getCycleCount(id);
+    if (!count || count.status !== "completed" || count.isReconciled) return undefined;
+
+    await db.transaction(async (tx) => {
+      await tx.update(parts).set({
+        quantityOnHand: count.actualQuantity,
+        lastCycleCountDate: new Date(),
+        updatedAt: new Date(),
+      }).where(eq(parts.id, count.partId));
+
+      await tx.update(cycleCounts).set({
+        isReconciled: true,
+        reconciledAt: new Date(),
+        updatedAt: new Date(),
+      }).where(eq(cycleCounts.id, id));
+    });
+
+    return await this.getCycleCount(id);
+  }
+
+  // ABC Classification
+  async recalculateABCClassification(): Promise<{ updated: number }> {
+    const allParts = await this.getParts();
+    const partsWithValue = allParts.map(p => ({
+      id: p.id,
+      value: Number(p.annualUsageValue || 0),
+    })).sort((a, b) => b.value - a.value);
+
+    const totalValue = partsWithValue.reduce((sum, p) => sum + p.value, 0);
+    let cumulativeValue = 0;
+    let updated = 0;
+
+    for (const p of partsWithValue) {
+      cumulativeValue += p.value;
+      const cumPercent = totalValue > 0 ? (cumulativeValue / totalValue) * 100 : 100;
+      
+      let abcClass: "A" | "B" | "C";
+      if (cumPercent <= 80) abcClass = "A";
+      else if (cumPercent <= 95) abcClass = "B";
+      else abcClass = "C";
+
+      await db.update(parts).set({ abcClass, updatedAt: new Date() }).where(eq(parts.id, p.id));
+      updated++;
+    }
+
+    return { updated };
+  }
+
+  async scheduleCycleCountsForParts(): Promise<{ scheduled: number }> {
+    const allParts = await this.getParts();
+    const now = new Date();
+    let scheduled = 0;
+
+    for (const part of allParts) {
+      let monthsInterval: number;
+      switch (part.abcClass) {
+        case "A": monthsInterval = 1; break;
+        case "B": monthsInterval = 3; break;
+        default: monthsInterval = 12; break;
+      }
+
+      const lastCount = part.lastCycleCountDate ? new Date(part.lastCycleCountDate) : null;
+      const nextDue = lastCount 
+        ? new Date(lastCount.getTime() + monthsInterval * 30 * 24 * 60 * 60 * 1000)
+        : now;
+
+      if (nextDue <= now || !part.nextCycleCountDate) {
+        const existingScheduled = await db.select().from(cycleCounts)
+          .where(and(eq(cycleCounts.partId, part.id), eq(cycleCounts.status, "scheduled")));
+        
+        if (existingScheduled.length === 0) {
+          const countNumber = await this.getNextCycleCountNumber();
+          await this.createCycleCount({
+            countNumber,
+            partId: part.id,
+            locationId: part.locationId,
+            status: "scheduled",
+            scheduledDate: nextDue,
+          });
+          
+          await db.update(parts).set({ 
+            nextCycleCountDate: nextDue, 
+            updatedAt: new Date() 
+          }).where(eq(parts.id, part.id));
+          
+          scheduled++;
+        }
+      }
+    }
+
+    return { scheduled };
+  }
+
+  // PM Due List
+  async getPmDueList(): Promise<Array<PmAssetInstance & { pmSchedule?: PmSchedule; asset?: Asset }>> {
+    const instances = await db.select().from(pmAssetInstances).orderBy(pmAssetInstances.nextDueDate);
+    const results: Array<PmAssetInstance & { pmSchedule?: PmSchedule; asset?: Asset }> = [];
+
+    for (const instance of instances) {
+      const pmSchedule = await this.getPmSchedule(instance.pmScheduleId);
+      const asset = await this.getAsset(instance.assetId);
+      results.push({ ...instance, pmSchedule, asset });
+    }
+
+    return results;
+  }
+
+  async completePmFromWorkOrder(pmInstanceId: number, completionDate: Date, meterReading?: number): Promise<PmAssetInstance | undefined> {
+    const instance = await db.select().from(pmAssetInstances).where(eq(pmAssetInstances.id, pmInstanceId));
+    if (instance.length === 0) return undefined;
+
+    const pmSchedule = await this.getPmSchedule(instance[0].pmScheduleId);
+    if (!pmSchedule) return undefined;
+
+    let nextDueDate: Date | null = null;
+    let nextDueMeter: string | null = null;
+
+    if (pmSchedule.intervalType === "days") {
+      nextDueDate = new Date(completionDate);
+      nextDueDate.setDate(nextDueDate.getDate() + pmSchedule.intervalValue);
+    } else if (meterReading !== undefined) {
+      nextDueMeter = String(meterReading + pmSchedule.intervalValue);
+    }
+
+    const [result] = await db.update(pmAssetInstances).set({
+      lastCompletedDate: completionDate,
+      lastCompletedMeter: meterReading ? String(meterReading) : null,
+      nextDueDate,
+      nextDueMeter,
+      isOverdue: false,
+      updatedAt: new Date(),
+    }).where(eq(pmAssetInstances.id, pmInstanceId)).returning();
+
+    return result;
+  }
+
+  // Consume Kit on Work Order
+  async consumeKitOnWorkOrder(kitId: number, workOrderId: number, workOrderLineId: number, performedById?: string): Promise<{ consumed: number; totalCost: number }> {
+    const kit = await this.getPartKit(kitId);
+    if (!kit) throw new Error("Kit not found");
+
+    const lines = await this.getPartKitLines(kitId);
+    let consumed = 0;
+    let totalCost = 0;
+
+    await db.transaction(async (tx) => {
+      for (const line of lines) {
+        const part = await this.getPart(line.partId);
+        if (!part) continue;
+
+        const qty = Number(line.quantity);
+        const unitCost = Number(part.unitCost || 0);
+        const lineTotalCost = qty * unitCost;
+
+        const newQty = Math.max(0, Number(part.quantityOnHand || 0) - qty);
+        await tx.update(parts).set({ 
+          quantityOnHand: String(newQty), 
+          updatedAt: new Date() 
+        }).where(eq(parts.id, line.partId));
+
+        await tx.insert(workOrderTransactions).values({
+          workOrderId,
+          workOrderLineId,
+          type: "part_consumption",
+          partId: line.partId,
+          quantity: String(qty),
+          unitCost: String(unitCost),
+          totalCost: String(lineTotalCost),
+          description: `Kit consumption: ${kit.name} - ${part.partNumber}`,
+          performedById,
+        });
+
+        consumed++;
+        totalCost += lineTotalCost;
+      }
+    });
+
+    return { consumed, totalCost };
   }
 }
 

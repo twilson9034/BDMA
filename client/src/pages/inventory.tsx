@@ -190,6 +190,18 @@ export default function Inventory() {
       ),
     },
     {
+      key: "abcClass",
+      header: "ABC",
+      cell: (part) => (
+        <Badge 
+          variant={part.abcClass === "A" ? "destructive" : part.abcClass === "B" ? "default" : "secondary"}
+          data-testid={`badge-abc-${part.id}`}
+        >
+          {part.abcClass || "-"}
+        </Badge>
+      ),
+    },
+    {
       key: "quantity",
       header: "Stock Level",
       cell: (part) => {
