@@ -768,15 +768,25 @@ export async function registerRoutes(
     }
   });
 
-  // Parts (tenant-scoped)
+  // Parts (tenant-scoped) - with pagination
   app.get("/api/parts", tenantMiddleware({ required: false }), async (req, res) => {
     const orgId = getOrgId(req);
-    if (orgId) {
-      const parts = await storage.getPartsByOrg(orgId);
-      res.json(parts);
-    } else {
-      const parts = await storage.getParts();
-      res.json(parts);
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = Math.min(parseInt(req.query.limit as string) || 50, 100); // Max 100 per page
+    const search = (req.query.search as string) || "";
+    const offset = (page - 1) * limit;
+    
+    try {
+      if (orgId) {
+        const result = await storage.getPartsByOrgPaginated(orgId, { limit, offset, search });
+        res.json(result);
+      } else {
+        const result = await storage.getPartsPaginated({ limit, offset, search });
+        res.json(result);
+      }
+    } catch (error) {
+      console.error("Error fetching parts:", error);
+      res.status(500).json({ error: "Failed to fetch parts" });
     }
   });
 

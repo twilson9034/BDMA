@@ -1,4 +1,4 @@
-import { eq, desc, sql, and, lt, lte, isNull } from "drizzle-orm";
+import { eq, desc, sql, and, or, lt, lte, isNull } from "drizzle-orm";
 import { db } from "./db";
 import {
   users,
@@ -206,9 +206,11 @@ export interface IStorage {
   
   // Parts
   getParts(): Promise<Part[]>;
+  getPartsPaginated(options: { limit: number; offset: number; search?: string }): Promise<{ parts: Part[]; total: number }>;
   getPart(id: number): Promise<Part | undefined>;
   createPart(part: InsertPart): Promise<Part>;
   updatePart(id: number, part: Partial<InsertPart>): Promise<Part | undefined>;
+  getPartsByOrgPaginated(orgId: number, options: { limit: number; offset: number; search?: string }): Promise<{ parts: Part[]; total: number }>;
   
   // Work Orders
   getWorkOrders(): Promise<WorkOrder[]>;
@@ -717,6 +719,28 @@ export class DatabaseStorage implements IStorage {
   // Parts
   async getParts(): Promise<Part[]> {
     return db.select().from(parts).orderBy(parts.name);
+  }
+
+  async getPartsPaginated(options: { limit: number; offset: number; search?: string }): Promise<{ parts: Part[]; total: number }> {
+    const { limit, offset, search } = options;
+    
+    let baseQuery = db.select().from(parts);
+    let countQuery = db.select({ count: sql<number>`count(*)::int` }).from(parts);
+    
+    if (search) {
+      const searchPattern = `%${search.toLowerCase()}%`;
+      const searchCondition = or(
+        sql`LOWER(${parts.partNumber}) LIKE ${searchPattern}`,
+        sql`LOWER(${parts.name}) LIKE ${searchPattern}`
+      );
+      baseQuery = baseQuery.where(searchCondition) as typeof baseQuery;
+      countQuery = countQuery.where(searchCondition) as typeof countQuery;
+    }
+    
+    const [{ count: total }] = await countQuery;
+    const partsResult = await baseQuery.orderBy(parts.partNumber).limit(limit).offset(offset);
+    
+    return { parts: partsResult, total };
   }
 
   async getPart(id: number): Promise<Part | undefined> {
@@ -2409,6 +2433,28 @@ export class DatabaseStorage implements IStorage {
 
   async getPartsByOrg(orgId: number): Promise<Part[]> {
     return db.select().from(parts).where(eq(parts.orgId, orgId)).orderBy(parts.partNumber);
+  }
+
+  async getPartsByOrgPaginated(orgId: number, options: { limit: number; offset: number; search?: string }): Promise<{ parts: Part[]; total: number }> {
+    const { limit, offset, search } = options;
+    
+    let conditions = [eq(parts.orgId, orgId)];
+    
+    if (search) {
+      const searchPattern = `%${search.toLowerCase()}%`;
+      const searchCondition = or(
+        sql`LOWER(${parts.partNumber}) LIKE ${searchPattern}`,
+        sql`LOWER(${parts.name}) LIKE ${searchPattern}`
+      );
+      conditions.push(searchCondition as any);
+    }
+    
+    const whereClause = conditions.length > 1 ? and(...conditions) : conditions[0];
+    
+    const [{ count: total }] = await db.select({ count: sql<number>`count(*)::int` }).from(parts).where(whereClause);
+    const partsResult = await db.select().from(parts).where(whereClause).orderBy(parts.partNumber).limit(limit).offset(offset);
+    
+    return { parts: partsResult, total };
   }
 
   async getWorkOrdersByOrg(orgId: number): Promise<WorkOrder[]> {
