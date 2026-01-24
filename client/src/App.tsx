@@ -61,6 +61,8 @@ import PartKits from "@/pages/part-kits";
 import PartKitDetail from "@/pages/part-kit-detail";
 import CycleCounts from "@/pages/cycle-counts";
 import PmDues from "@/pages/pm-dues";
+import Tires from "@/pages/tires";
+import Messages from "@/pages/messages";
 import NotFound from "@/pages/not-found";
 
 function AuthenticatedRouter() {
@@ -97,6 +99,8 @@ function AuthenticatedRouter() {
       <Route path="/reports" component={Reports} />
       <Route path="/reports/:reportName" component={ReportDetail} />
       <Route path="/feedback" component={Feedback} />
+      <Route path="/tires" component={Tires} />
+      <Route path="/messages" component={Messages} />
       <Route path="/estimates" component={Estimates} />
       <Route path="/estimates/:id" component={EstimateDetail} />
       <Route path="/checklist-templates" component={ChecklistTemplates} />

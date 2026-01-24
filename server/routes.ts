@@ -37,7 +37,7 @@ import OpenAI from "openai";
 import { z } from "zod";
 import { setupAuth, registerAuthRoutes } from "./replit_integrations/auth";
 import { tenantMiddleware, getUserOrgMemberships, getOrgId } from "./tenant";
-import { organizations, orgMemberships, insertOrganizationSchema, insertOrgMembershipSchema, updateOrganizationSchema, updateOrgMemberRoleSchema } from "@shared/schema";
+import { organizations, orgMemberships, insertOrganizationSchema, insertOrgMembershipSchema, updateOrganizationSchema, updateOrgMemberRoleSchema, tires, insertTireSchema, conversations, messages, insertConversationSchema, insertMessageSchema, savedReports, insertSavedReportSchema, gpsLocations, insertGpsLocationSchema } from "@shared/schema";
 import { db } from "./db";
 import { eq, and } from "drizzle-orm";
 import { users } from "@shared/schema";
@@ -387,6 +387,17 @@ export async function registerRoutes(
       }
     } catch (error) {
       res.status(500).json({ error: "Failed to get parts analytics" });
+    }
+  });
+
+  // Tire health dashboard widget
+  app.get("/api/dashboard/tire-health", tenantMiddleware({ required: false }), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      const tireHealth = await storage.getTireHealthStats(orgId);
+      res.json(tireHealth);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get tire health data" });
     }
   });
 
@@ -2067,6 +2078,240 @@ export async function registerRoutes(
         return res.status(400).json({ error: error.errors });
       }
       res.status(500).json({ error: "Failed to create DVIR defect" });
+    }
+  });
+
+  // Tires (tenant-scoped)
+  app.get("/api/tires", tenantMiddleware({ required: false }), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      const tireList = orgId ? await storage.getTiresByOrg(orgId) : await storage.getTires();
+      res.json(tireList);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch tires" });
+    }
+  });
+
+  app.get("/api/tires/:id", tenantMiddleware({ required: false }), async (req, res) => {
+    try {
+      const tire = await storage.getTire(parseInt(req.params.id));
+      if (!tire) return res.status(404).json({ error: "Tire not found" });
+      const orgId = getOrgId(req);
+      if (orgId && tire.orgId !== orgId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      res.json(tire);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch tire" });
+    }
+  });
+
+  app.post("/api/tires", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      const validated = insertTireSchema.parse(req.body);
+      const tire = await storage.createTire({ ...validated, orgId });
+      res.status(201).json(tire);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: "Failed to create tire" });
+    }
+  });
+
+  app.patch("/api/tires/:id", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      const existing = await storage.getTire(parseInt(req.params.id));
+      if (!existing) return res.status(404).json({ error: "Tire not found" });
+      if (orgId && existing.orgId !== orgId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      const updated = await storage.updateTire(parseInt(req.params.id), req.body);
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update tire" });
+    }
+  });
+
+  app.delete("/api/tires/:id", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      const existing = await storage.getTire(parseInt(req.params.id));
+      if (!existing) return res.status(404).json({ error: "Tire not found" });
+      if (orgId && existing.orgId !== orgId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      await storage.deleteTire(parseInt(req.params.id));
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete tire" });
+    }
+  });
+
+  app.get("/api/tires/health/stats", tenantMiddleware({ required: false }), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      const stats = await storage.getTireHealthStats(orgId);
+      res.json(stats);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch tire health stats" });
+    }
+  });
+
+  // Conversations & Messages (tenant-scoped - requires org context)
+  app.get("/api/conversations", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      if (!orgId) return res.status(403).json({ error: "Organization context required" });
+      const convList = await storage.getConversationsByOrg(orgId);
+      res.json(convList);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch conversations" });
+    }
+  });
+
+  app.post("/api/conversations", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      if (!orgId) return res.status(403).json({ error: "Organization context required" });
+      if (!req.user) return res.status(401).json({ error: "Unauthorized" });
+      const validated = insertConversationSchema.parse({ ...req.body, createdBy: req.user.id });
+      const conv = await storage.createConversation({ ...validated, orgId });
+      res.status(201).json(conv);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: "Failed to create conversation" });
+    }
+  });
+
+  app.get("/api/conversations/:id/messages", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      if (!orgId) return res.status(403).json({ error: "Organization context required" });
+      const conversationId = parseInt(req.params.id);
+      const conv = await storage.getConversation(conversationId);
+      if (!conv) return res.status(404).json({ error: "Conversation not found" });
+      if (conv.orgId !== orgId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      const msgList = await storage.getMessagesByConversation(conversationId);
+      res.json(msgList);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch messages" });
+    }
+  });
+
+  app.post("/api/conversations/:id/messages", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      if (!req.user) return res.status(401).json({ error: "Unauthorized" });
+      const orgId = getOrgId(req);
+      if (!orgId) return res.status(403).json({ error: "Organization context required" });
+      const conversationId = parseInt(req.params.id);
+      const conv = await storage.getConversation(conversationId);
+      if (!conv) return res.status(404).json({ error: "Conversation not found" });
+      if (conv.orgId !== orgId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      const validated = insertMessageSchema.parse({
+        ...req.body,
+        conversationId,
+        senderId: req.user.id,
+      });
+      const msg = await storage.createMessage(validated);
+      res.status(201).json(msg);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: "Failed to send message" });
+    }
+  });
+
+  // Saved Reports (tenant-scoped)
+  app.get("/api/saved-reports", tenantMiddleware({ required: false }), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      const reports = orgId ? await storage.getSavedReportsByOrg(orgId) : await storage.getSavedReports();
+      res.json(reports);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch saved reports" });
+    }
+  });
+
+  app.post("/api/saved-reports", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      if (!req.user) return res.status(401).json({ error: "Unauthorized" });
+      const validated = insertSavedReportSchema.parse({ ...req.body, createdBy: req.user.id });
+      const report = await storage.createSavedReport({ ...validated, orgId });
+      res.status(201).json(report);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: "Failed to create saved report" });
+    }
+  });
+
+  app.delete("/api/saved-reports/:id", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      const existing = await storage.getSavedReport(parseInt(req.params.id));
+      if (!existing) return res.status(404).json({ error: "Report not found" });
+      if (orgId && existing.orgId !== orgId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      await storage.deleteSavedReport(parseInt(req.params.id));
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete saved report" });
+    }
+  });
+
+  // GPS Locations (tenant-scoped)
+  app.get("/api/gps-locations", tenantMiddleware({ required: false }), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      const assetId = req.query.assetId ? parseInt(req.query.assetId as string) : undefined;
+      const locations = orgId 
+        ? await storage.getGpsLocationsByOrg(orgId, assetId) 
+        : await storage.getGpsLocations(assetId);
+      res.json(locations);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch GPS locations" });
+    }
+  });
+
+  app.post("/api/gps-locations", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      const validated = insertGpsLocationSchema.parse(req.body);
+      const location = await storage.createGpsLocation({ ...validated, orgId });
+      res.status(201).json(location);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: "Failed to create GPS location" });
+    }
+  });
+
+  app.get("/api/assets/:id/gps-locations", tenantMiddleware({ required: false }), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      const assetId = parseInt(req.params.id);
+      const asset = await storage.getAsset(assetId);
+      if (asset && orgId && asset.orgId !== orgId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      const locations = await storage.getGpsLocationsByAsset(assetId);
+      res.json(locations);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch asset GPS locations" });
     }
   });
 

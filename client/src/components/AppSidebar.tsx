@@ -25,6 +25,8 @@ import {
   Boxes,
   RefreshCw,
   Clock,
+  Circle,
+  Mail,
 } from "lucide-react";
 import {
   Sidebar,
@@ -51,6 +53,7 @@ const mainNavItems = [
   { title: "Work Orders", url: "/work-orders", icon: Wrench },
   { title: "Assets", url: "/assets", icon: Truck },
   { title: "Inventory", url: "/inventory", icon: Package },
+  { title: "Tires", url: "/tires", icon: Circle },
   { title: "Part Kits", url: "/part-kits", icon: Boxes },
   { title: "Cycle Counts", url: "/cycle-counts", icon: RefreshCw },
 ];
@@ -77,6 +80,7 @@ const procurementItems = [
 const resourceItems = [
   { title: "Manuals", url: "/manuals", icon: BookOpen },
   { title: "Reports", url: "/reports", icon: BarChart3 },
+  { title: "Messages", url: "/messages", icon: Mail },
   { title: "Feedback", url: "/feedback", icon: MessageSquare },
   { title: "Data Import", url: "/import", icon: Upload },
 ];

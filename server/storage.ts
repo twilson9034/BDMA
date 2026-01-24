@@ -122,8 +122,23 @@ import {
   type Notification,
   organizations,
   orgMemberships,
+  tires,
+  conversations,
+  messages,
+  savedReports,
+  gpsLocations,
   type Organization,
   type OrgMembership,
+  type Tire,
+  type InsertTire,
+  type Conversation,
+  type InsertConversation,
+  type Message,
+  type InsertMessage,
+  type SavedReport,
+  type InsertSavedReport,
+  type GpsLocation,
+  type InsertGpsLocation,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -346,6 +361,22 @@ export interface IStorage {
       totalCost: number;
     }>;
     lowStockCritical: number;
+  }>;
+  
+  getTireHealthStats(orgId?: number): Promise<{
+    totalTires: number;
+    healthyTires: number;
+    warningTires: number;
+    criticalTires: number;
+    averageTreadDepth: number;
+    tiresNeedingReplacement: Array<{
+      id: number;
+      serialNumber: string;
+      assetName: string;
+      position: string;
+      treadDepth: number;
+      condition: string;
+    }>;
   }>;
   
   // Additional methods for Phase 3
@@ -2558,6 +2589,46 @@ export class DatabaseStorage implements IStorage {
     return { topUsedParts, lowStockCritical };
   }
 
+  async getTireHealthStats(orgId?: number) {
+    let allTires: Tire[];
+    if (orgId) {
+      allTires = await db.select().from(tires).where(eq(tires.orgId, orgId));
+    } else {
+      allTires = await db.select().from(tires);
+    }
+    
+    const installedTires = allTires.filter(t => t.status === "installed");
+    const healthyTires = installedTires.filter(t => t.condition === "new" || t.condition === "good");
+    const warningTires = installedTires.filter(t => t.condition === "fair" || t.condition === "worn");
+    const criticalTires = installedTires.filter(t => t.condition === "critical" || t.condition === "failed");
+    
+    const tiresWithDepth = installedTires.filter(t => t.treadDepth !== null);
+    const avgTreadDepth = tiresWithDepth.length > 0 
+      ? tiresWithDepth.reduce((sum, t) => sum + Number(t.treadDepth || 0), 0) / tiresWithDepth.length
+      : 0;
+    
+    const allAssets = await db.select().from(assets);
+    const assetMap = new Map(allAssets.map(a => [a.id, a]));
+    
+    const tiresNeedingReplacement = criticalTires.slice(0, 5).map(tire => ({
+      id: tire.id,
+      serialNumber: tire.serialNumber,
+      assetName: tire.assetId ? (assetMap.get(tire.assetId)?.name || "Unknown") : "In Inventory",
+      position: tire.position || "",
+      treadDepth: Number(tire.treadDepth || 0),
+      condition: tire.condition || "unknown",
+    }));
+    
+    return {
+      totalTires: installedTires.length,
+      healthyTires: healthyTires.length,
+      warningTires: warningTires.length,
+      criticalTires: criticalTires.length,
+      averageTreadDepth: avgTreadDepth,
+      tiresNeedingReplacement,
+    };
+  }
+
   async getPartKitsByOrg(orgId: number): Promise<PartKit[]> {
     return db.select().from(partKits).where(eq(partKits.orgId, orgId)).orderBy(partKits.name);
   }
@@ -2648,6 +2719,113 @@ export class DatabaseStorage implements IStorage {
   async validatePartOrg(partId: number, orgId: number): Promise<boolean> {
     const [part] = await db.select().from(parts).where(and(eq(parts.id, partId), eq(parts.orgId, orgId)));
     return !!part;
+  }
+
+  // Tires
+  async getTiresByOrg(orgId: number): Promise<Tire[]> {
+    return db.select().from(tires).where(eq(tires.orgId, orgId)).orderBy(desc(tires.createdAt));
+  }
+
+  async getTires(): Promise<Tire[]> {
+    return db.select().from(tires).orderBy(desc(tires.createdAt));
+  }
+
+  async getTire(id: number): Promise<Tire | undefined> {
+    const [tire] = await db.select().from(tires).where(eq(tires.id, id));
+    return tire;
+  }
+
+  async createTire(data: InsertTire & { orgId?: number }): Promise<Tire> {
+    const [tire] = await db.insert(tires).values(data).returning();
+    return tire;
+  }
+
+  async updateTire(id: number, data: Partial<InsertTire>): Promise<Tire | undefined> {
+    const [tire] = await db.update(tires).set({ ...data, updatedAt: new Date() }).where(eq(tires.id, id)).returning();
+    return tire;
+  }
+
+  async deleteTire(id: number): Promise<void> {
+    await db.delete(tires).where(eq(tires.id, id));
+  }
+
+  // Conversations
+  async getConversationsByOrg(orgId: number): Promise<Conversation[]> {
+    return db.select().from(conversations).where(eq(conversations.orgId, orgId)).orderBy(desc(conversations.updatedAt));
+  }
+
+  async getConversations(): Promise<Conversation[]> {
+    return db.select().from(conversations).orderBy(desc(conversations.updatedAt));
+  }
+
+  async getConversation(id: number): Promise<Conversation | undefined> {
+    const [conv] = await db.select().from(conversations).where(eq(conversations.id, id));
+    return conv;
+  }
+
+  async createConversation(data: InsertConversation & { orgId?: number }): Promise<Conversation> {
+    const [conv] = await db.insert(conversations).values(data).returning();
+    return conv;
+  }
+
+  // Messages
+  async getMessagesByConversation(conversationId: number): Promise<Message[]> {
+    return db.select().from(messages).where(eq(messages.conversationId, conversationId)).orderBy(messages.createdAt);
+  }
+
+  async createMessage(data: InsertMessage): Promise<Message> {
+    const [msg] = await db.insert(messages).values(data).returning();
+    return msg;
+  }
+
+  // Saved Reports
+  async getSavedReportsByOrg(orgId: number): Promise<SavedReport[]> {
+    return db.select().from(savedReports).where(eq(savedReports.orgId, orgId)).orderBy(desc(savedReports.createdAt));
+  }
+
+  async getSavedReports(): Promise<SavedReport[]> {
+    return db.select().from(savedReports).orderBy(desc(savedReports.createdAt));
+  }
+
+  async getSavedReport(id: number): Promise<SavedReport | undefined> {
+    const [report] = await db.select().from(savedReports).where(eq(savedReports.id, id));
+    return report;
+  }
+
+  async createSavedReport(data: InsertSavedReport & { orgId?: number }): Promise<SavedReport> {
+    const [report] = await db.insert(savedReports).values(data).returning();
+    return report;
+  }
+
+  async deleteSavedReport(id: number): Promise<void> {
+    await db.delete(savedReports).where(eq(savedReports.id, id));
+  }
+
+  // GPS Locations
+  async getGpsLocationsByOrg(orgId: number, assetId?: number): Promise<GpsLocation[]> {
+    if (assetId) {
+      return db.select().from(gpsLocations)
+        .where(and(eq(gpsLocations.orgId, orgId), eq(gpsLocations.assetId, assetId)))
+        .orderBy(desc(gpsLocations.timestamp))
+        .limit(100);
+    }
+    return db.select().from(gpsLocations).where(eq(gpsLocations.orgId, orgId)).orderBy(desc(gpsLocations.timestamp)).limit(100);
+  }
+
+  async getGpsLocations(assetId?: number): Promise<GpsLocation[]> {
+    if (assetId) {
+      return db.select().from(gpsLocations).where(eq(gpsLocations.assetId, assetId)).orderBy(desc(gpsLocations.timestamp)).limit(100);
+    }
+    return db.select().from(gpsLocations).orderBy(desc(gpsLocations.timestamp)).limit(100);
+  }
+
+  async getGpsLocationsByAsset(assetId: number): Promise<GpsLocation[]> {
+    return db.select().from(gpsLocations).where(eq(gpsLocations.assetId, assetId)).orderBy(desc(gpsLocations.timestamp)).limit(100);
+  }
+
+  async createGpsLocation(data: InsertGpsLocation & { orgId?: number }): Promise<GpsLocation> {
+    const [loc] = await db.insert(gpsLocations).values(data).returning();
+    return loc;
   }
 }
 

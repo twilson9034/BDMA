@@ -1401,3 +1401,285 @@ export const notifications = pgTable("notifications", {
 export const insertNotificationSchema = createInsertSchema(notifications).omit({ id: true, createdAt: true });
 export type InsertNotification = z.infer<typeof insertNotificationSchema>;
 export type Notification = typeof notifications.$inferSelect;
+
+// ============================================================
+// TIRES
+// ============================================================
+export const tireConditionEnum = ["new", "good", "fair", "worn", "critical", "failed"] as const;
+export const tireStatusEnum = ["in_inventory", "installed", "removed", "disposed", "sold"] as const;
+export const tireTypeEnum = ["steer", "drive", "trailer", "all_position", "winter", "summer"] as const;
+
+export const tires = pgTable("tires", {
+  id: serial("id").primaryKey(),
+  orgId: integer("org_id").references(() => organizations.id),
+  serialNumber: varchar("serial_number", { length: 100 }).notNull(),
+  dotCode: varchar("dot_code", { length: 50 }),
+  brand: varchar("brand", { length: 100 }),
+  model: varchar("model", { length: 100 }),
+  size: varchar("size", { length: 50 }),
+  type: text("type").$type<typeof tireTypeEnum[number]>().default("all_position"),
+  condition: text("condition").$type<typeof tireConditionEnum[number]>().default("new"),
+  status: text("status").$type<typeof tireStatusEnum[number]>().default("in_inventory"),
+  treadDepth: decimal("tread_depth", { precision: 4, scale: 1 }),
+  originalTreadDepth: decimal("original_tread_depth", { precision: 4, scale: 1 }).default("10.0"),
+  purchaseDate: timestamp("purchase_date"),
+  purchaseCost: decimal("purchase_cost", { precision: 10, scale: 2 }),
+  purchaseOdometer: integer("purchase_odometer"),
+  vendorId: integer("vendor_id").references(() => vendors.id),
+  assetId: integer("asset_id").references(() => assets.id),
+  position: varchar("position", { length: 20 }),
+  installedDate: timestamp("installed_date"),
+  installedOdometer: integer("installed_odometer"),
+  removedDate: timestamp("removed_date"),
+  removalReason: text("removal_reason"),
+  milesRun: integer("miles_run").default(0),
+  retreads: integer("retreads").default(0),
+  lastInspectionDate: timestamp("last_inspection_date"),
+  psiRating: integer("psi_rating"),
+  loadIndex: varchar("load_index", { length: 10 }),
+  speedRating: varchar("speed_rating", { length: 5 }),
+  notes: text("notes"),
+  locationId: integer("location_id").references(() => locations.id),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_tires_org").on(table.orgId),
+  index("idx_tires_status").on(table.status),
+  index("idx_tires_asset").on(table.assetId),
+  index("idx_tires_condition").on(table.condition),
+]);
+
+export const tiresRelations = relations(tires, ({ one }) => ({
+  organization: one(organizations, { fields: [tires.orgId], references: [organizations.id] }),
+  asset: one(assets, { fields: [tires.assetId], references: [assets.id] }),
+  vendor: one(vendors, { fields: [tires.vendorId], references: [vendors.id] }),
+  location: one(locations, { fields: [tires.locationId], references: [locations.id] }),
+}));
+
+export const insertTireSchema = createInsertSchema(tires).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertTire = z.infer<typeof insertTireSchema>;
+export type Tire = typeof tires.$inferSelect;
+
+// ============================================================
+// TIRE HISTORY
+// ============================================================
+export const tireHistory = pgTable("tire_history", {
+  id: serial("id").primaryKey(),
+  tireId: integer("tire_id").notNull().references(() => tires.id),
+  assetId: integer("asset_id").references(() => assets.id),
+  action: text("action").notNull(), // installed, removed, rotated, inspected, repaired
+  position: varchar("position", { length: 20 }),
+  treadDepth: decimal("tread_depth", { precision: 4, scale: 1 }),
+  odometer: integer("odometer"),
+  notes: text("notes"),
+  performedBy: varchar("performed_by", { length: 255 }),
+  performedAt: timestamp("performed_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_tire_history_tire").on(table.tireId),
+  index("idx_tire_history_asset").on(table.assetId),
+]);
+
+export const insertTireHistorySchema = createInsertSchema(tireHistory).omit({ id: true, createdAt: true });
+export type InsertTireHistory = z.infer<typeof insertTireHistorySchema>;
+export type TireHistory = typeof tireHistory.$inferSelect;
+
+// ============================================================
+// MESSAGES / CONVERSATIONS
+// ============================================================
+export const conversations = pgTable("conversations", {
+  id: serial("id").primaryKey(),
+  orgId: integer("org_id").references(() => organizations.id),
+  name: varchar("name", { length: 255 }),
+  isGroup: boolean("is_group").default(false),
+  createdBy: varchar("created_by", { length: 255 }).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_conversations_org").on(table.orgId),
+]);
+
+export const conversationParticipants = pgTable("conversation_participants", {
+  id: serial("id").primaryKey(),
+  conversationId: integer("conversation_id").notNull().references(() => conversations.id),
+  userId: varchar("user_id", { length: 255 }).notNull(),
+  joinedAt: timestamp("joined_at").defaultNow(),
+  lastReadAt: timestamp("last_read_at"),
+}, (table) => [
+  index("idx_participants_conversation").on(table.conversationId),
+  index("idx_participants_user").on(table.userId),
+]);
+
+export const messages = pgTable("messages", {
+  id: serial("id").primaryKey(),
+  conversationId: integer("conversation_id").notNull().references(() => conversations.id),
+  senderId: varchar("sender_id", { length: 255 }).notNull(),
+  content: text("content").notNull(),
+  entityType: text("entity_type"), // work_order, asset, part, etc.
+  entityId: integer("entity_id"),
+  isEdited: boolean("is_edited").default(false),
+  editedAt: timestamp("edited_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_messages_conversation").on(table.conversationId),
+  index("idx_messages_sender").on(table.senderId),
+]);
+
+export const conversationsRelations = relations(conversations, ({ one, many }) => ({
+  organization: one(organizations, { fields: [conversations.orgId], references: [organizations.id] }),
+  participants: many(conversationParticipants),
+  messages: many(messages),
+}));
+
+export const insertConversationSchema = createInsertSchema(conversations).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertConversation = z.infer<typeof insertConversationSchema>;
+export type Conversation = typeof conversations.$inferSelect;
+
+export const insertMessageSchema = createInsertSchema(messages).omit({ id: true, createdAt: true });
+export type InsertMessage = z.infer<typeof insertMessageSchema>;
+export type Message = typeof messages.$inferSelect;
+
+// ============================================================
+// REPORTS
+// ============================================================
+export const reportTypeEnum = ["work_order_cost", "asset_downtime", "parts_consumption", "custom"] as const;
+export const reportStatusEnum = ["draft", "active", "archived"] as const;
+
+export const savedReports = pgTable("saved_reports", {
+  id: serial("id").primaryKey(),
+  orgId: integer("org_id").references(() => organizations.id),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  type: text("type").$type<typeof reportTypeEnum[number]>().default("custom"),
+  status: text("status").$type<typeof reportStatusEnum[number]>().default("active"),
+  config: jsonb("config"), // filters, grouping, columns, etc.
+  chartType: varchar("chart_type", { length: 50 }),
+  createdBy: varchar("created_by", { length: 255 }).notNull(),
+  isScheduled: boolean("is_scheduled").default(false),
+  scheduleFrequency: varchar("schedule_frequency", { length: 50 }), // daily, weekly, monthly
+  scheduleRecipients: text("schedule_recipients").array(),
+  lastRunAt: timestamp("last_run_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_saved_reports_org").on(table.orgId),
+  index("idx_saved_reports_type").on(table.type),
+]);
+
+export const insertSavedReportSchema = createInsertSchema(savedReports).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertSavedReport = z.infer<typeof insertSavedReportSchema>;
+export type SavedReport = typeof savedReports.$inferSelect;
+
+// ============================================================
+// INSPECTION FORMS
+// ============================================================
+export const inspectionForms = pgTable("inspection_forms", {
+  id: serial("id").primaryKey(),
+  orgId: integer("org_id").references(() => organizations.id),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  version: integer("version").default(1),
+  isActive: boolean("is_active").default(true),
+  fields: jsonb("fields"), // array of field definitions
+  createdBy: varchar("created_by", { length: 255 }).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_inspection_forms_org").on(table.orgId),
+]);
+
+export const inspectionResults = pgTable("inspection_results", {
+  id: serial("id").primaryKey(),
+  formId: integer("form_id").notNull().references(() => inspectionForms.id),
+  assetId: integer("asset_id").references(() => assets.id),
+  workOrderId: integer("work_order_id").references(() => workOrders.id),
+  inspectorId: varchar("inspector_id", { length: 255 }).notNull(),
+  responses: jsonb("responses"), // field responses
+  photos: text("photos").array(),
+  gpsLatitude: decimal("gps_latitude", { precision: 10, scale: 7 }),
+  gpsLongitude: decimal("gps_longitude", { precision: 10, scale: 7 }),
+  signature: text("signature"),
+  status: varchar("status", { length: 50 }).default("completed"),
+  completedAt: timestamp("completed_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_inspection_results_form").on(table.formId),
+  index("idx_inspection_results_asset").on(table.assetId),
+]);
+
+export const insertInspectionFormSchema = createInsertSchema(inspectionForms).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertInspectionForm = z.infer<typeof insertInspectionFormSchema>;
+export type InspectionForm = typeof inspectionForms.$inferSelect;
+
+export const insertInspectionResultSchema = createInsertSchema(inspectionResults).omit({ id: true, createdAt: true });
+export type InsertInspectionResult = z.infer<typeof insertInspectionResultSchema>;
+export type InspectionResult = typeof inspectionResults.$inferSelect;
+
+// ============================================================
+// PUBLIC DASHBOARDS
+// ============================================================
+export const publicDashboards = pgTable("public_dashboards", {
+  id: serial("id").primaryKey(),
+  orgId: integer("org_id").references(() => organizations.id),
+  name: varchar("name", { length: 255 }).notNull(),
+  accessToken: varchar("access_token", { length: 64 }).notNull().unique(),
+  widgets: jsonb("widgets"), // widget configuration
+  isActive: boolean("is_active").default(true),
+  expiresAt: timestamp("expires_at"),
+  createdBy: varchar("created_by", { length: 255 }).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_public_dashboards_token").on(table.accessToken),
+  index("idx_public_dashboards_org").on(table.orgId),
+]);
+
+export const insertPublicDashboardSchema = createInsertSchema(publicDashboards).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertPublicDashboard = z.infer<typeof insertPublicDashboardSchema>;
+export type PublicDashboard = typeof publicDashboards.$inferSelect;
+
+// ============================================================
+// GPS TRACKING
+// ============================================================
+export const gpsLocations = pgTable("gps_locations", {
+  id: serial("id").primaryKey(),
+  assetId: integer("asset_id").notNull().references(() => assets.id),
+  latitude: decimal("latitude", { precision: 10, scale: 7 }).notNull(),
+  longitude: decimal("longitude", { precision: 10, scale: 7 }).notNull(),
+  speed: decimal("speed", { precision: 5, scale: 1 }),
+  heading: integer("heading"),
+  altitude: decimal("altitude", { precision: 10, scale: 2 }),
+  accuracy: decimal("accuracy", { precision: 6, scale: 2 }),
+  recordedAt: timestamp("recorded_at").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_gps_locations_asset").on(table.assetId),
+  index("idx_gps_locations_recorded").on(table.recordedAt),
+]);
+
+export const geofences = pgTable("geofences", {
+  id: serial("id").primaryKey(),
+  orgId: integer("org_id").references(() => organizations.id),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  type: varchar("type", { length: 50 }).default("circle"), // circle, polygon
+  centerLatitude: decimal("center_latitude", { precision: 10, scale: 7 }),
+  centerLongitude: decimal("center_longitude", { precision: 10, scale: 7 }),
+  radiusMeters: integer("radius_meters"),
+  polygonCoords: jsonb("polygon_coords"), // array of lat/lng points
+  alertOnEnter: boolean("alert_on_enter").default(true),
+  alertOnExit: boolean("alert_on_exit").default(true),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_geofences_org").on(table.orgId),
+]);
+
+export const insertGpsLocationSchema = createInsertSchema(gpsLocations).omit({ id: true, createdAt: true });
+export type InsertGpsLocation = z.infer<typeof insertGpsLocationSchema>;
+export type GpsLocation = typeof gpsLocations.$inferSelect;
+
+export const insertGeofenceSchema = createInsertSchema(geofences).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertGeofence = z.infer<typeof insertGeofenceSchema>;
+export type Geofence = typeof geofences.$inferSelect;

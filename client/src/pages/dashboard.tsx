@@ -29,6 +29,7 @@ import { PageLoader } from "@/components/LoadingSpinner";
 import { EmptyState } from "@/components/EmptyState";
 import { FleetHealthWidget } from "@/components/FleetHealthWidget";
 import { PredictionsWidget } from "@/components/PredictionsWidget";
+import { TireHealthWidget } from "@/components/TireHealthWidget";
 import {
   AreaChart,
   Area,
@@ -477,6 +478,8 @@ export default function Dashboard() {
         <FleetHealthWidget />
 
         <PredictionsWidget />
+        
+        <TireHealthWidget />
 
         {/* Procurement Overview Widget */}
         <Card>
