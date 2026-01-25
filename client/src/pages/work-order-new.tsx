@@ -119,18 +119,33 @@ export default function WorkOrderNew() {
         notes: data.notes || null,
         status: "open",
       };
-      return apiRequest("POST", "/api/work-orders", payload) as unknown as WorkOrder;
+      const response = await apiRequest("POST", "/api/work-orders", payload);
+      return await response.json() as WorkOrder;
     },
-    onSuccess: (response) => {
-      setCreatedWorkOrderId(response.id);
+    onSuccess: async (workOrder) => {
+      setCreatedWorkOrderId(workOrder.id);
       queryClient.invalidateQueries({ queryKey: ["/api/work-orders"] });
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
       
+      // Save any pending lines that were added during creation
       if (workOrderLines.length > 0) {
-        toast({
-          title: "Work Order Created",
-          description: "Now add work order lines.",
-        });
+        try {
+          for (const line of workOrderLines) {
+            await apiRequest("POST", `/api/work-orders/${workOrder.id}/lines`, line);
+          }
+          queryClient.invalidateQueries({ queryKey: ["/api/work-orders", workOrder.id, "lines"] });
+          toast({
+            title: "Work Order Created",
+            description: `Created with ${workOrderLines.length} line(s).`,
+          });
+        } catch {
+          toast({
+            title: "Warning",
+            description: "Work order created but some lines failed to save.",
+            variant: "destructive",
+          });
+        }
+        navigate(`/work-orders/${workOrder.id}`);
       } else {
         toast({
           title: "Work Order Created",
@@ -213,8 +228,13 @@ export default function WorkOrderNew() {
       notes: newLineNotes || undefined,
     };
 
-    await createLineMutation.mutateAsync(line);
+    if (createdWorkOrderId) {
+      // If work order already created, save to server immediately
+      await createLineMutation.mutateAsync(line);
+    }
+    // Always add to local state
     setWorkOrderLines([...workOrderLines, line]);
+    handleResetLineDialog();
   };
 
   const handleRemoveLine = (index: number) => {
@@ -463,7 +483,7 @@ export default function WorkOrderNew() {
               <Button 
                 type="button" 
                 onClick={() => setShowAddLineDialog(true)}
-                disabled={!createdWorkOrderId}
+                data-testid="button-add-line"
               >
                 <Plus className="h-4 w-4 mr-2" />
                 Add Work Order Line
