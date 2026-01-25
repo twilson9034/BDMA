@@ -50,6 +50,7 @@ interface Organization {
   requireEstimateApproval?: boolean;
   requireRequisitionApproval?: boolean;
   requirePOApproval?: boolean;
+  enableBarcodeSystem?: boolean;
 }
 
 interface OrgMember {
@@ -106,6 +107,7 @@ export default function Settings() {
   const [requireEstimateApproval, setRequireEstimateApproval] = useState(false);
   const [requireRequisitionApproval, setRequireRequisitionApproval] = useState(true);
   const [requirePOApproval, setRequirePOApproval] = useState(true);
+  const [enableBarcodeSystem, setEnableBarcodeSystem] = useState(false);
   const [simulatedRole, setSimulatedRole] = useState<string>(() => {
     return localStorage.getItem("bdma_simulated_role") || "";
   });
@@ -128,6 +130,7 @@ export default function Settings() {
       setRequireEstimateApproval(organization.requireEstimateApproval ?? false);
       setRequireRequisitionApproval(organization.requireRequisitionApproval ?? true);
       setRequirePOApproval(organization.requirePOApproval ?? true);
+      setEnableBarcodeSystem(organization.enableBarcodeSystem ?? false);
     }
   }, [organization]);
 
@@ -138,6 +141,7 @@ export default function Settings() {
       requireEstimateApproval?: boolean;
       requireRequisitionApproval?: boolean;
       requirePOApproval?: boolean;
+      enableBarcodeSystem?: boolean;
     }) => {
       return apiRequest("PATCH", "/api/organizations/current", data);
     },
@@ -222,6 +226,7 @@ export default function Settings() {
       requireEstimateApproval?: boolean;
       requireRequisitionApproval?: boolean;
       requirePOApproval?: boolean;
+      enableBarcodeSystem?: boolean;
     } = {};
     
     if (orgName?.trim() && orgName !== organization?.name) {
@@ -236,6 +241,9 @@ export default function Settings() {
     }
     if (requirePOApproval !== organization?.requirePOApproval) {
       updates.requirePOApproval = requirePOApproval;
+    }
+    if (enableBarcodeSystem !== organization?.enableBarcodeSystem) {
+      updates.enableBarcodeSystem = enableBarcodeSystem;
     }
     
     if (Object.keys(updates).length === 0) return;
@@ -521,6 +529,21 @@ export default function Settings() {
                           onCheckedChange={setRequirePOApproval}
                           disabled={!canManageOrg} 
                           data-testid="switch-require-po-approval" 
+                        />
+                      </div>
+                      <Separator className="my-4" />
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm">Enable Barcode System</p>
+                          <p className="text-xs text-muted-foreground">
+                            Enable barcode printing for inventory parts and prompt to print labels when receiving goods
+                          </p>
+                        </div>
+                        <Switch 
+                          checked={enableBarcodeSystem} 
+                          onCheckedChange={setEnableBarcodeSystem}
+                          disabled={!canManageOrg} 
+                          data-testid="switch-enable-barcode-system" 
                         />
                       </div>
                     </div>
