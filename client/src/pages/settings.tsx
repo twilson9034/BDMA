@@ -103,6 +103,9 @@ export default function Settings() {
   const [requireEstimateApproval, setRequireEstimateApproval] = useState(false);
   const [requireRequisitionApproval, setRequireRequisitionApproval] = useState(true);
   const [requirePOApproval, setRequirePOApproval] = useState(true);
+  const [simulatedRole, setSimulatedRole] = useState<string>(() => {
+    return localStorage.getItem("bdma_simulated_role") || "";
+  });
 
   const { data: organization, isLoading: orgLoading } = useQuery<Organization>({
     queryKey: ["/api/organizations/current"],
@@ -268,6 +271,10 @@ export default function Settings() {
           <TabsTrigger value="tire-settings" className="gap-2" data-testid="tab-tire-settings">
             <Settings2 className="h-4 w-4" />
             Tire Settings
+          </TabsTrigger>
+          <TabsTrigger value="developer" className="gap-2" data-testid="tab-developer">
+            <Code2 className="h-4 w-4" />
+            Developer
           </TabsTrigger>
         </TabsList>
 
@@ -957,6 +964,107 @@ export default function Settings() {
 
         <TabsContent value="tire-settings">
           <TireReplacementSettingsTab />
+        </TabsContent>
+
+        <TabsContent value="developer">
+          <div className="grid gap-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Code2 className="h-5 w-5" />
+                  Developer Tools
+                </CardTitle>
+                <CardDescription>
+                  Tools for testing and debugging the application
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="space-y-4">
+                  <div>
+                    <Label className="text-base font-medium">View as Role</Label>
+                    <p className="text-sm text-muted-foreground mb-3">
+                      Simulate viewing the application as a different role to test permissions and UI visibility.
+                      This only affects your view - it doesn't change your actual permissions.
+                    </p>
+                    <div className="flex gap-3 items-center">
+                      <Select 
+                        value={simulatedRole || "none"} 
+                        onValueChange={(val) => {
+                          const newRole = val === "none" ? "" : val;
+                          setSimulatedRole(newRole);
+                          if (newRole) {
+                            localStorage.setItem("bdma_simulated_role", newRole);
+                          } else {
+                            localStorage.removeItem("bdma_simulated_role");
+                          }
+                          toast({
+                            title: newRole ? `Viewing as ${roleLabels[newRole]}` : "Role simulation disabled",
+                            description: newRole 
+                              ? "Refresh the page to see changes in role-restricted areas." 
+                              : "You are now viewing as your actual role.",
+                          });
+                        }}
+                      >
+                        <SelectTrigger className="w-[200px]" data-testid="select-simulated-role">
+                          <SelectValue placeholder="Select a role..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">No Simulation (Your Role)</SelectItem>
+                          <SelectItem value="owner">
+                            <div className="flex items-center gap-2">
+                              <Crown className="h-4 w-4" />
+                              Owner
+                            </div>
+                          </SelectItem>
+                          <SelectItem value="admin">
+                            <div className="flex items-center gap-2">
+                              <Shield className="h-4 w-4" />
+                              Admin
+                            </div>
+                          </SelectItem>
+                          <SelectItem value="manager">
+                            <div className="flex items-center gap-2">
+                              <Users className="h-4 w-4" />
+                              Manager
+                            </div>
+                          </SelectItem>
+                          <SelectItem value="technician">
+                            <div className="flex items-center gap-2">
+                              <Wrench className="h-4 w-4" />
+                              Technician
+                            </div>
+                          </SelectItem>
+                          <SelectItem value="viewer">
+                            <div className="flex items-center gap-2">
+                              <Eye className="h-4 w-4" />
+                              Viewer
+                            </div>
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                      {simulatedRole && (
+                        <Badge variant="outline" className="gap-1">
+                          Simulating: {roleLabels[simulatedRole]}
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <Separator />
+
+                <div className="space-y-2">
+                  <Label className="text-base font-medium">Session Info</Label>
+                  <div className="text-sm text-muted-foreground space-y-1">
+                    <p>User ID: {user?.id || "N/A"}</p>
+                    <p>Email: {user?.email || "N/A"}</p>
+                    <p>Actual Role: {members.find(m => m.userId === user?.id)?.role || "Unknown"}</p>
+                    <p>Simulated Role: {simulatedRole ? roleLabels[simulatedRole] : "None"}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
       </Tabs>
     </div>

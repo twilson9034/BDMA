@@ -482,13 +482,12 @@ export default function EstimateDetail() {
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label>Task / VMRS Code (Optional)</Label>
-              <Select value={selectedVmrsCode || "none"} onValueChange={(val) => setSelectedVmrsCode(val === "none" ? "" : val)}>
+              <Label>Task / VMRS Code *</Label>
+              <Select value={selectedVmrsCode || ""} onValueChange={setSelectedVmrsCode}>
                 <SelectTrigger data-testid="select-vmrs-code">
                   <SelectValue placeholder="Select a task/VMRS code..." />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">None</SelectItem>
                   {vmrsCodes?.map((vmrs) => (
                     <SelectItem key={vmrs.id} value={vmrs.code}>
                       {vmrs.code} - {vmrs.title}
@@ -521,6 +520,89 @@ export default function EstimateDetail() {
               </Select>
             </div>
 
+            {lineType === "inventory_part" && (
+              <div className="space-y-2">
+                <Label>Select Part *</Label>
+                <Select value={selectedPartId} onValueChange={(val) => {
+                  setSelectedPartId(val);
+                  const part = parts?.find(p => p.id === parseInt(val));
+                  if (part) {
+                    setLineDescription(part.name);
+                    setLineUnitCost(part.unitCost || "0");
+                  }
+                }}>
+                  <SelectTrigger data-testid="select-part">
+                    <SelectValue placeholder="Choose a part" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {parts?.map((part) => (
+                      <SelectItem key={part.id} value={part.id.toString()}>
+                        <div className="flex items-center gap-2">
+                          <span>{part.partNumber} - {part.name}</span>
+                          <span className="text-xs text-muted-foreground">
+                            (Qty: {part.quantityOnHand || 0})
+                          </span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {selectedPartId && (
+                  <p className="text-xs text-muted-foreground">
+                    On Hand: {parts?.find(p => p.id === parseInt(selectedPartId))?.quantityOnHand || 0}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {(lineType === "zero_stock_part" || lineType === "non_inventory_item") && (
+              <div className="space-y-2">
+                <Label>Part Number {lineType === "zero_stock_part" ? "*" : "(Optional)"}</Label>
+                <Input
+                  value={linePartNumber}
+                  onChange={(e) => setLinePartNumber(e.target.value)}
+                  placeholder="Enter part number"
+                  data-testid="input-part-number"
+                />
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label>Description *</Label>
+              <Input
+                value={lineDescription}
+                onChange={(e) => setLineDescription(e.target.value)}
+                placeholder="Enter description"
+                data-testid="input-description"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Quantity *</Label>
+                <Input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  value={lineQuantity}
+                  onChange={(e) => setLineQuantity(e.target.value)}
+                  data-testid="input-quantity"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Unit Cost *</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={lineUnitCost}
+                  onChange={(e) => setLineUnitCost(e.target.value)}
+                  placeholder="0.00"
+                  data-testid="input-unit-cost"
+                />
+              </div>
+            </div>
+
             <div className="space-y-2">
               <Label>Line Notes (Optional)</Label>
               <Textarea
@@ -550,7 +632,7 @@ export default function EstimateDetail() {
             </Button>
             <Button 
               onClick={handleAddLine} 
-              disabled={!lineDescription || !lineQuantity || !lineUnitCost || addLineMutation.isPending}
+              disabled={!selectedVmrsCode || !lineDescription || !lineQuantity || !lineUnitCost || addLineMutation.isPending}
               data-testid="button-confirm-add"
             >
               {addLineMutation.isPending ? (
