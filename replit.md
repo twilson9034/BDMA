@@ -67,7 +67,7 @@ Preferred communication style: Simple, everyday language.
 - **Customizable Dashboard**: Drag-and-drop widget layout with persistence, including Tire Health Widget and Parts Usage Analytics.
 - **Bulk DVIR QR Code Printing**: Checkbox selection on assets page for bulk QR code generation, printable 3-column grid layout with vehicle labels.
 - **Enhanced Asset History**: Tabbed interface on asset detail showing work orders, PM schedules, parts consumed, and DVIRs with filtering and navigation.
-- **Part Barcoding**: Auto-generated P-prefixed barcodes (P00000123 format), Code 39 barcode display using Libre Barcode 39 font, and printable labels.
+- **Part Barcoding**: Auto-generated P-prefixed barcodes (P00000123 format), Code 39 barcode display using Libre Barcode 39 font, and printable labels. Organization-level setting to enable/disable barcode system. When enabled, the system prompts to print barcode labels after receiving goods. Supports multiple label sizes (small/medium/large) for standard barcode printers.
 - **Custom Asset Fields**: Flexible JSONB-based custom fields for assets with add/edit/remove UI, displayed in both edit and view modes.
 
 ### Multi-Tenant Architecture
