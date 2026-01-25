@@ -260,7 +260,7 @@ export default function Tires() {
           } : undefined}
         />
       ) : (
-        <DataTable<TirePart>
+        <DataTable
           data={filteredTires}
           columns={columns}
           getRowKey={(part) => part.id}

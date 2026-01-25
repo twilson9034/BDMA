@@ -61,7 +61,7 @@ Preferred communication style: Simple, everyday language.
 - **Batch Meter Updates**: Update meters for multiple assets simultaneously.
 - **Enhanced Parts Fields**: Max quantity, critical flag, and serialization tracking.
 - **Multi-Tenant Architecture**: Organizations with isolated data, user memberships with role-based access (owner/admin/manager/technician/viewer), and plan-based pricing (starter/professional/enterprise with fleet size limits).
-- **Tire Management**: Complete tire inventory with specifications (make, model, size, DOT code), condition tracking, lifecycle management (new/installed/retreaded/scrapped), and TPMS-ready monitoring fields.
+- **Tire Management**: Integrated with parts/inventory system. Parts can be marked as tires (isTire flag) with tire-specific fields (size, DOT code, PSI rating, load index, speed rating, tread depth, brand, model, type). When adding work order lines with tire VMRS codes (17-xxx), the UI displays tire-specific fields: position (LF/RF/LR-O/LR-I/RR-O/RR-I/spare), serial numbers for installed/removed tires, and tread depth measurement. The /tires page shows an inventory-focused view of tire parts with stock levels and low stock alerts.
 - **Messaging System**: In-app direct messages and group conversations with entity tagging, priority levels, and conversation-based threading.
 - **GPS & Location Tracking**: GPS location capture and storage with lat/lng coordinates, speed, heading, and provider integration fields.
 - **Saved Reports**: Custom report definitions with parameters, output formats, and optional scheduling.
