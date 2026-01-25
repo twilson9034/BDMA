@@ -482,109 +482,6 @@ export default function EstimateDetail() {
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label>Line Type *</Label>
-              <Select value={lineType} onValueChange={(val) => {
-                setLineType(val);
-                setSelectedPartId("");
-                setLineDescription("");
-                setLineUnitCost("");
-              }}>
-                <SelectTrigger data-testid="select-line-type">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="inventory_part">Inventory Part</SelectItem>
-                  <SelectItem value="zero_stock_part">Zero Stock Part (Not in Inventory)</SelectItem>
-                  <SelectItem value="non_inventory_item">Non-Inventory Item</SelectItem>
-                  <SelectItem value="labor">Labor</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {lineType === "inventory_part" && (
-              <div className="space-y-2">
-                <Label>Select Part *</Label>
-                <Select value={selectedPartId} onValueChange={(val) => {
-                  setSelectedPartId(val);
-                  const part = parts?.find(p => p.id === parseInt(val));
-                  if (part) {
-                    setLineDescription(part.name);
-                    setLineUnitCost(part.unitCost || "0");
-                  }
-                }}>
-                  <SelectTrigger data-testid="select-part">
-                    <SelectValue placeholder="Choose a part" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {parts?.map((part) => (
-                      <SelectItem key={part.id} value={part.id.toString()}>
-                        <div className="flex items-center gap-2">
-                          <span>{part.partNumber} - {part.name}</span>
-                          <span className="text-xs text-muted-foreground">
-                            (Qty: {part.quantityOnHand || 0})
-                          </span>
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {selectedPartId && (
-                  <p className="text-xs text-muted-foreground">
-                    On Hand: {parts?.find(p => p.id === parseInt(selectedPartId))?.quantityOnHand || 0}
-                  </p>
-                )}
-              </div>
-            )}
-
-            {(lineType === "zero_stock_part" || lineType === "non_inventory_item") && (
-              <div className="space-y-2">
-                <Label>Part Number {lineType === "zero_stock_part" ? "*" : "(Optional)"}</Label>
-                <Input
-                  value={linePartNumber}
-                  onChange={(e) => setLinePartNumber(e.target.value)}
-                  placeholder="Enter part number"
-                  data-testid="input-part-number"
-                />
-              </div>
-            )}
-
-            <div className="space-y-2">
-              <Label>Description *</Label>
-              <Input
-                value={lineDescription}
-                onChange={(e) => setLineDescription(e.target.value)}
-                placeholder="Enter description"
-                data-testid="input-description"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Quantity *</Label>
-                <Input
-                  type="number"
-                  min="0.01"
-                  step="0.01"
-                  value={lineQuantity}
-                  onChange={(e) => setLineQuantity(e.target.value)}
-                  data-testid="input-quantity"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Unit Cost *</Label>
-                <Input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={lineUnitCost}
-                  onChange={(e) => setLineUnitCost(e.target.value)}
-                  placeholder="0.00"
-                  data-testid="input-unit-cost"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2">
               <Label>Task / VMRS Code (Optional)</Label>
               <Select value={selectedVmrsCode || "none"} onValueChange={(val) => setSelectedVmrsCode(val === "none" ? "" : val)}>
                 <SelectTrigger data-testid="select-vmrs-code">
@@ -602,6 +499,26 @@ export default function EstimateDetail() {
               <p className="text-xs text-muted-foreground">
                 VMRS codes categorize the type of maintenance work
               </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Line Type *</Label>
+              <Select value={lineType} onValueChange={(val) => {
+                setLineType(val);
+                setSelectedPartId("");
+                setLineDescription("");
+                setLineUnitCost("");
+              }}>
+                <SelectTrigger data-testid="select-line-type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="inventory_part">Inventory Part</SelectItem>
+                  <SelectItem value="zero_stock_part">Zero Stock Part (Not in Inventory)</SelectItem>
+                  <SelectItem value="non_inventory_item">Non-Inventory Item</SelectItem>
+                  <SelectItem value="labor">Labor</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="space-y-2">
