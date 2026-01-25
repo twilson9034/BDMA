@@ -482,6 +482,17 @@ export function BrakeTireSettings({ assetId, assetType }: Props) {
                       data-testid={`input-tire-size-${idx}`}
                     />
                   </div>
+                  <div className="w-24">
+                    <Label className="text-xs">Min Depth</Label>
+                    <Input
+                      type="number"
+                      step="0.1"
+                      value={axle.minTreadDepth || ""}
+                      onChange={(e) => updateTireAxle(idx, 'minTreadDepth', e.target.value)}
+                      placeholder="4.0"
+                      data-testid={`input-min-tread-depth-${idx}`}
+                    />
+                  </div>
                 </div>
               </div>
             ))}
