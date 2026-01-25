@@ -12,7 +12,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { StatusBadge } from "@/components/StatusBadge";
 import { BarcodePrintDialog } from "@/components/BarcodePrintDialog";
-import { Package, Truck, CheckCircle, AlertTriangle, Clock, History, Printer } from "lucide-react";
+import { CreatePartFromPODialog } from "@/components/CreatePartFromPODialog";
+import { Package, Truck, CheckCircle, AlertTriangle, Clock, History, Plus } from "lucide-react";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
@@ -37,6 +38,9 @@ export default function Receiving() {
   const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
   const [barcodePrintDialogOpen, setBarcodePrintDialogOpen] = useState(false);
   const [receivedItemsForPrint, setReceivedItemsForPrint] = useState<ReceivedItemForPrint[]>([]);
+  const [createPartDialogOpen, setCreatePartDialogOpen] = useState(false);
+  const [createPartLine, setCreatePartLine] = useState<PurchaseOrderLine | null>(null);
+  const [newlyCreatedPart, setNewlyCreatedPart] = useState<Part | null>(null);
 
   const { data: organization } = useQuery<Organization>({
     queryKey: ["/api/organizations/current"],
@@ -137,6 +141,30 @@ export default function Receiving() {
   const handleReceiveLine = (line: PurchaseOrderLine) => {
     setSelectedLine(line);
     setReceiveDialogOpen(true);
+  };
+
+  const handleCreatePart = (line: PurchaseOrderLine) => {
+    setCreatePartLine(line);
+    setCreatePartDialogOpen(true);
+  };
+
+  const handlePartCreated = (part: Part) => {
+    setNewlyCreatedPart(part);
+    queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders", selectedPO?.id, "lines"] });
+    
+    if (isBarcodeSystemEnabled && part.barcode) {
+      setReceivedItemsForPrint([{
+        lineId: createPartLine?.id || 0,
+        partId: part.id,
+        quantity: 1,
+      }]);
+      setBarcodePrintDialogOpen(true);
+    }
+  };
+
+  const getPartForLine = (line: PurchaseOrderLine) => {
+    if (!line.partId) return null;
+    return parts.find(p => p.id === line.partId);
   };
 
   return (
@@ -285,6 +313,7 @@ export default function Receiving() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Description</TableHead>
+                  <TableHead>Part</TableHead>
                   <TableHead>Ordered</TableHead>
                   <TableHead>Received</TableHead>
                   <TableHead>Remaining</TableHead>
@@ -298,10 +327,29 @@ export default function Receiving() {
                   const ordered = parseFloat(line.quantityOrdered);
                   const remaining = ordered - received;
                   const isComplete = received >= ordered;
+                  const linkedPart = getPartForLine(line);
                   
                   return (
                     <TableRow key={line.id}>
                       <TableCell>{line.description}</TableCell>
+                      <TableCell>
+                        {linkedPart ? (
+                          <Badge variant="outline" className="bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800">
+                            {linkedPart.partNumber}
+                          </Badge>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-amber-600 border-amber-300 hover:bg-amber-50 dark:text-amber-400 dark:border-amber-700 dark:hover:bg-amber-900/30"
+                            onClick={() => handleCreatePart(line)}
+                            data-testid={`button-create-part-${line.id}`}
+                          >
+                            <Plus className="h-3 w-3 mr-1" />
+                            Create Part
+                          </Button>
+                        )}
+                      </TableCell>
                       <TableCell>{ordered.toFixed(0)}</TableCell>
                       <TableCell className={isComplete ? "text-green-600 font-medium" : ""}>
                         {received.toFixed(0)} / {ordered.toFixed(0)}
@@ -353,6 +401,12 @@ export default function Receiving() {
           }
         }}
         isPending={receiveMutation.isPending}
+        isBarcodeSystemEnabled={isBarcodeSystemEnabled}
+        onCreatePart={() => {
+          if (selectedLine) {
+            handleCreatePart(selectedLine);
+          }
+        }}
       />
 
       <Dialog open={historyDialogOpen} onOpenChange={setHistoryDialogOpen}>
@@ -392,6 +446,18 @@ export default function Receiving() {
         </DialogContent>
       </Dialog>
 
+      {createPartLine && (
+        <CreatePartFromPODialog
+          open={createPartDialogOpen}
+          onOpenChange={setCreatePartDialogOpen}
+          poLineId={createPartLine.id}
+          poLineDescription={createPartLine.description}
+          unitCost={createPartLine.unitCost}
+          vendorId={selectedPO?.vendorId}
+          onPartCreated={handlePartCreated}
+        />
+      )}
+
       <BarcodePrintDialog
         open={barcodePrintDialogOpen}
         onOpenChange={setBarcodePrintDialogOpen}
@@ -409,13 +475,17 @@ function ReceiveDialog({
   onOpenChange, 
   line, 
   onReceive,
-  isPending 
+  isPending,
+  onCreatePart,
+  isBarcodeSystemEnabled
 }: { 
   open: boolean; 
   onOpenChange: (open: boolean) => void; 
   line: PurchaseOrderLine | null;
   onReceive: (data: { quantityReceived: string; notes?: string; discrepancyType?: string; discrepancyNotes?: string }) => void;
   isPending: boolean;
+  onCreatePart?: () => void;
+  isBarcodeSystemEnabled?: boolean;
 }) {
   const [quantity, setQuantity] = useState("");
   const [notes, setNotes] = useState("");
@@ -454,6 +524,40 @@ function ReceiveDialog({
           <DialogDescription>{line.description}</DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-4">
+          {!line.partId && (
+            <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 p-3 rounded-md">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-amber-800 dark:text-amber-300">
+                    No Part Linked
+                  </p>
+                  <p className="text-sm text-amber-700 dark:text-amber-400 mt-1">
+                    This line doesn't have an inventory part linked. 
+                    {isBarcodeSystemEnabled 
+                      ? " Inventory won't be updated and barcode labels won't be available."
+                      : " Inventory won't be updated."}
+                  </p>
+                  {onCreatePart && (
+                    <Button 
+                      size="sm" 
+                      variant="outline" 
+                      className="mt-2 text-amber-700 border-amber-300 hover:bg-amber-100 dark:text-amber-300 dark:border-amber-700 dark:hover:bg-amber-900/50"
+                      onClick={() => {
+                        onOpenChange(false);
+                        onCreatePart();
+                      }}
+                      data-testid="button-create-part-from-receive"
+                    >
+                      <Plus className="h-3 w-3 mr-1" />
+                      Create Part Now
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-3 gap-4 text-sm">
             <div>
               <span className="text-muted-foreground">Ordered:</span>
