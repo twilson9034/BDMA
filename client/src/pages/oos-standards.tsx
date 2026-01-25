@@ -67,7 +67,8 @@ interface OosInspection {
   overallResult: string | null;
 }
 
-const getSeverityBadgeColor = (severity: string) => {
+const getSeverityBadgeColor = (severity: string | null | undefined) => {
+  if (!severity) return "bg-gray-500 text-white";
   switch (severity.toLowerCase()) {
     case "critical": return "bg-red-600 text-white";
     case "high": return "bg-orange-500 text-white";

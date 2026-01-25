@@ -442,6 +442,247 @@ export type InsertAssetDocument = z.infer<typeof insertAssetDocumentSchema>;
 export type AssetDocument = typeof assetDocuments.$inferSelect;
 
 // ============================================================
+// ASSET BRAKE SETTINGS
+// ============================================================
+export const brakeTypeEnum = ["drum", "disc", "air_disc", "hydraulic_disc", "electric"] as const;
+export const measurementUnitEnum = ["inches", "mm", "32nds"] as const;
+
+export const assetBrakeSettings = pgTable("asset_brake_settings", {
+  id: serial("id").primaryKey(),
+  assetId: integer("asset_id").notNull().references(() => assets.id, { onDelete: "cascade" }),
+  axleCount: integer("axle_count").notNull().default(2),
+  defaultMeasurementUnit: text("default_measurement_unit").default("32nds").$type<typeof measurementUnitEnum[number]>(),
+  minBrakeThickness: decimal("min_brake_thickness", { precision: 6, scale: 3 }), // Minimum acceptable brake thickness
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_asset_brake_settings_asset").on(table.assetId),
+]);
+
+export const assetBrakeAxles = pgTable("asset_brake_axles", {
+  id: serial("id").primaryKey(),
+  brakeSettingsId: integer("brake_settings_id").notNull().references(() => assetBrakeSettings.id, { onDelete: "cascade" }),
+  axlePosition: integer("axle_position").notNull(), // 1 = front, 2 = rear, 3+ for multi-axle
+  axleLabel: text("axle_label"), // "Steer", "Drive", "Tag", "Pusher", etc.
+  brakeType: text("brake_type").$type<typeof brakeTypeEnum[number]>(),
+  leftBrakeType: text("left_brake_type").$type<typeof brakeTypeEnum[number]>(), // If different per side
+  rightBrakeType: text("right_brake_type").$type<typeof brakeTypeEnum[number]>(),
+  measurementUnit: text("measurement_unit").$type<typeof measurementUnitEnum[number]>(),
+  minThickness: decimal("min_thickness", { precision: 6, scale: 3 }), // Override per axle
+  notes: text("notes"),
+}, (table) => [
+  index("idx_asset_brake_axles_settings").on(table.brakeSettingsId),
+]);
+
+export const assetBrakeSettingsRelations = relations(assetBrakeSettings, ({ one, many }) => ({
+  asset: one(assets, { fields: [assetBrakeSettings.assetId], references: [assets.id] }),
+  axles: many(assetBrakeAxles),
+}));
+
+export const assetBrakeAxlesRelations = relations(assetBrakeAxles, ({ one }) => ({
+  brakeSettings: one(assetBrakeSettings, { fields: [assetBrakeAxles.brakeSettingsId], references: [assetBrakeSettings.id] }),
+}));
+
+export const insertAssetBrakeSettingsSchema = createInsertSchema(assetBrakeSettings).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertAssetBrakeAxleSchema = createInsertSchema(assetBrakeAxles).omit({ id: true });
+export type InsertAssetBrakeSettings = z.infer<typeof insertAssetBrakeSettingsSchema>;
+export type InsertAssetBrakeAxle = z.infer<typeof insertAssetBrakeAxleSchema>;
+export type AssetBrakeSettings = typeof assetBrakeSettings.$inferSelect;
+export type AssetBrakeAxle = typeof assetBrakeAxles.$inferSelect;
+
+// ============================================================
+// ASSET TIRE SETTINGS
+// ============================================================
+export const tireConfigEnum = ["single", "dual", "super_single"] as const;
+
+export const assetTireSettings = pgTable("asset_tire_settings", {
+  id: serial("id").primaryKey(),
+  assetId: integer("asset_id").notNull().references(() => assets.id, { onDelete: "cascade" }),
+  axleCount: integer("axle_count").notNull().default(2),
+  defaultTreadUnit: text("default_tread_unit").default("32nds").$type<typeof measurementUnitEnum[number]>(),
+  minTreadDepth: decimal("min_tread_depth", { precision: 6, scale: 3 }), // Minimum acceptable tread depth
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_asset_tire_settings_asset").on(table.assetId),
+]);
+
+export const assetTireAxles = pgTable("asset_tire_axles", {
+  id: serial("id").primaryKey(),
+  tireSettingsId: integer("tire_settings_id").notNull().references(() => assetTireSettings.id, { onDelete: "cascade" }),
+  axlePosition: integer("axle_position").notNull(), // 1 = steer, 2+ = drive/tag/etc
+  axleLabel: text("axle_label"), // "Steer", "Drive 1", "Drive 2", "Tag", etc.
+  tireConfig: text("tire_config").default("single").$type<typeof tireConfigEnum[number]>(), // single, dual, super_single
+  targetPsiLeft: decimal("target_psi_left", { precision: 5, scale: 1 }),
+  targetPsiRight: decimal("target_psi_right", { precision: 5, scale: 1 }),
+  targetPsiInnerLeft: decimal("target_psi_inner_left", { precision: 5, scale: 1 }), // For duals
+  targetPsiInnerRight: decimal("target_psi_inner_right", { precision: 5, scale: 1 }),
+  treadUnit: text("tread_unit").$type<typeof measurementUnitEnum[number]>(),
+  minTreadDepth: decimal("min_tread_depth", { precision: 6, scale: 3 }),
+  tireSize: text("tire_size"), // e.g., "295/75R22.5"
+  notes: text("notes"),
+}, (table) => [
+  index("idx_asset_tire_axles_settings").on(table.tireSettingsId),
+]);
+
+export const assetTireSettingsRelations = relations(assetTireSettings, ({ one, many }) => ({
+  asset: one(assets, { fields: [assetTireSettings.assetId], references: [assets.id] }),
+  axles: many(assetTireAxles),
+}));
+
+export const assetTireAxlesRelations = relations(assetTireAxles, ({ one }) => ({
+  tireSettings: one(assetTireSettings, { fields: [assetTireAxles.tireSettingsId], references: [assetTireSettings.id] }),
+}));
+
+export const insertAssetTireSettingsSchema = createInsertSchema(assetTireSettings).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertAssetTireAxleSchema = createInsertSchema(assetTireAxles).omit({ id: true });
+export type InsertAssetTireSettings = z.infer<typeof insertAssetTireSettingsSchema>;
+export type InsertAssetTireAxle = z.infer<typeof insertAssetTireAxleSchema>;
+export type AssetTireSettings = typeof assetTireSettings.$inferSelect;
+export type AssetTireAxle = typeof assetTireAxles.$inferSelect;
+
+// ============================================================
+// BRAKE INSPECTIONS (Work Order linked)
+// ============================================================
+export const inspectionResultEnum = ["pass", "fail", "needs_attention", "out_of_service"] as const;
+
+export const brakeInspections = pgTable("brake_inspections", {
+  id: serial("id").primaryKey(),
+  orgId: integer("org_id").references(() => organizations.id),
+  workOrderId: integer("work_order_id").references(() => workOrders.id, { onDelete: "cascade" }),
+  assetId: integer("asset_id").notNull().references(() => assets.id),
+  inspectorId: text("inspector_id"), // User ID
+  inspectorName: text("inspector_name"),
+  inspectedAt: timestamp("inspected_at").defaultNow(),
+  meterReading: decimal("meter_reading", { precision: 12, scale: 2 }),
+  overallResult: text("overall_result").default("pass").$type<typeof inspectionResultEnum[number]>(),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_brake_inspections_org").on(table.orgId),
+  index("idx_brake_inspections_wo").on(table.workOrderId),
+  index("idx_brake_inspections_asset").on(table.assetId),
+]);
+
+export const brakeInspectionAxles = pgTable("brake_inspection_axles", {
+  id: serial("id").primaryKey(),
+  brakeInspectionId: integer("brake_inspection_id").notNull().references(() => brakeInspections.id, { onDelete: "cascade" }),
+  axlePosition: integer("axle_position").notNull(),
+  axleLabel: text("axle_label"),
+  // Left side measurements
+  leftOuterThickness: decimal("left_outer_thickness", { precision: 6, scale: 3 }),
+  leftInnerThickness: decimal("left_inner_thickness", { precision: 6, scale: 3 }),
+  leftDrumDiameter: decimal("left_drum_diameter", { precision: 6, scale: 3 }),
+  leftRotorThickness: decimal("left_rotor_thickness", { precision: 6, scale: 3 }),
+  leftCondition: text("left_condition").$type<typeof inspectionResultEnum[number]>(),
+  leftNotes: text("left_notes"),
+  // Right side measurements
+  rightOuterThickness: decimal("right_outer_thickness", { precision: 6, scale: 3 }),
+  rightInnerThickness: decimal("right_inner_thickness", { precision: 6, scale: 3 }),
+  rightDrumDiameter: decimal("right_drum_diameter", { precision: 6, scale: 3 }),
+  rightRotorThickness: decimal("right_rotor_thickness", { precision: 6, scale: 3 }),
+  rightCondition: text("right_condition").$type<typeof inspectionResultEnum[number]>(),
+  rightNotes: text("right_notes"),
+  measurementUnit: text("measurement_unit").$type<typeof measurementUnitEnum[number]>(),
+}, (table) => [
+  index("idx_brake_inspection_axles_inspection").on(table.brakeInspectionId),
+]);
+
+export const brakeInspectionsRelations = relations(brakeInspections, ({ one, many }) => ({
+  workOrder: one(workOrders, { fields: [brakeInspections.workOrderId], references: [workOrders.id] }),
+  asset: one(assets, { fields: [brakeInspections.assetId], references: [assets.id] }),
+  axles: many(brakeInspectionAxles),
+}));
+
+export const brakeInspectionAxlesRelations = relations(brakeInspectionAxles, ({ one }) => ({
+  inspection: one(brakeInspections, { fields: [brakeInspectionAxles.brakeInspectionId], references: [brakeInspections.id] }),
+}));
+
+export const insertBrakeInspectionSchema = createInsertSchema(brakeInspections).omit({ id: true, createdAt: true });
+export const insertBrakeInspectionAxleSchema = createInsertSchema(brakeInspectionAxles).omit({ id: true });
+export type InsertBrakeInspection = z.infer<typeof insertBrakeInspectionSchema>;
+export type InsertBrakeInspectionAxle = z.infer<typeof insertBrakeInspectionAxleSchema>;
+export type BrakeInspection = typeof brakeInspections.$inferSelect;
+export type BrakeInspectionAxle = typeof brakeInspectionAxles.$inferSelect;
+
+// ============================================================
+// TIRE INSPECTIONS (Work Order linked)
+// ============================================================
+export const tireInspectionConditionEnum = ["good", "fair", "worn", "replace", "damaged"] as const;
+
+export const tireInspections = pgTable("tire_inspections", {
+  id: serial("id").primaryKey(),
+  orgId: integer("org_id").references(() => organizations.id),
+  workOrderId: integer("work_order_id").references(() => workOrders.id, { onDelete: "cascade" }),
+  assetId: integer("asset_id").notNull().references(() => assets.id),
+  inspectorId: text("inspector_id"),
+  inspectorName: text("inspector_name"),
+  inspectedAt: timestamp("inspected_at").defaultNow(),
+  meterReading: decimal("meter_reading", { precision: 12, scale: 2 }),
+  overallResult: text("overall_result").default("pass").$type<typeof inspectionResultEnum[number]>(),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_tire_inspections_org").on(table.orgId),
+  index("idx_tire_inspections_wo").on(table.workOrderId),
+  index("idx_tire_inspections_asset").on(table.assetId),
+]);
+
+export const tireInspectionAxles = pgTable("tire_inspection_axles", {
+  id: serial("id").primaryKey(),
+  tireInspectionId: integer("tire_inspection_id").notNull().references(() => tireInspections.id, { onDelete: "cascade" }),
+  axlePosition: integer("axle_position").notNull(),
+  axleLabel: text("axle_label"),
+  tireConfig: text("tire_config").$type<typeof tireConfigEnum[number]>(),
+  // Left outer tire (or single left)
+  leftOuterPsi: decimal("left_outer_psi", { precision: 5, scale: 1 }),
+  leftOuterTread: decimal("left_outer_tread", { precision: 6, scale: 3 }),
+  leftOuterCondition: text("left_outer_condition").$type<typeof tireInspectionConditionEnum[number]>(),
+  leftOuterDotCode: text("left_outer_dot_code"),
+  leftOuterNotes: text("left_outer_notes"),
+  // Left inner tire (for duals)
+  leftInnerPsi: decimal("left_inner_psi", { precision: 5, scale: 1 }),
+  leftInnerTread: decimal("left_inner_tread", { precision: 6, scale: 3 }),
+  leftInnerCondition: text("left_inner_condition").$type<typeof tireInspectionConditionEnum[number]>(),
+  leftInnerDotCode: text("left_inner_dot_code"),
+  leftInnerNotes: text("left_inner_notes"),
+  // Right outer tire (or single right)
+  rightOuterPsi: decimal("right_outer_psi", { precision: 5, scale: 1 }),
+  rightOuterTread: decimal("right_outer_tread", { precision: 6, scale: 3 }),
+  rightOuterCondition: text("right_outer_condition").$type<typeof tireInspectionConditionEnum[number]>(),
+  rightOuterDotCode: text("right_outer_dot_code"),
+  rightOuterNotes: text("right_outer_notes"),
+  // Right inner tire (for duals)
+  rightInnerPsi: decimal("right_inner_psi", { precision: 5, scale: 1 }),
+  rightInnerTread: decimal("right_inner_tread", { precision: 6, scale: 3 }),
+  rightInnerCondition: text("right_inner_condition").$type<typeof tireInspectionConditionEnum[number]>(),
+  rightInnerDotCode: text("right_inner_dot_code"),
+  rightInnerNotes: text("right_inner_notes"),
+  treadUnit: text("tread_unit").$type<typeof measurementUnitEnum[number]>(),
+}, (table) => [
+  index("idx_tire_inspection_axles_inspection").on(table.tireInspectionId),
+]);
+
+export const tireInspectionsRelations = relations(tireInspections, ({ one, many }) => ({
+  workOrder: one(workOrders, { fields: [tireInspections.workOrderId], references: [workOrders.id] }),
+  asset: one(assets, { fields: [tireInspections.assetId], references: [assets.id] }),
+  axles: many(tireInspectionAxles),
+}));
+
+export const tireInspectionAxlesRelations = relations(tireInspectionAxles, ({ one }) => ({
+  inspection: one(tireInspections, { fields: [tireInspectionAxles.tireInspectionId], references: [tireInspections.id] }),
+}));
+
+export const insertTireInspectionSchema = createInsertSchema(tireInspections).omit({ id: true, createdAt: true });
+export const insertTireInspectionAxleSchema = createInsertSchema(tireInspectionAxles).omit({ id: true });
+export type InsertTireInspection = z.infer<typeof insertTireInspectionSchema>;
+export type InsertTireInspectionAxle = z.infer<typeof insertTireInspectionAxleSchema>;
+export type TireInspection = typeof tireInspections.$inferSelect;
+export type TireInspectionAxle = typeof tireInspectionAxles.$inferSelect;
+
+// ============================================================
 // VENDORS
 // ============================================================
 export const vendors = pgTable("vendors", {
