@@ -70,6 +70,9 @@ Preferred communication style: Simple, everyday language.
 - **Part Barcoding**: Auto-generated P-prefixed barcodes (P00000123 format), Code 39 barcode display using Libre Barcode 39 font, and printable labels. Organization-level setting to enable/disable barcode system. When enabled, the system prompts to print barcode labels after receiving goods. Supports multiple label sizes (small/medium/large) for standard barcode printers.
 - **Part Creation from PO Lines**: Ability to create new parts directly from purchase order lines during receiving. Includes "Create Part" button for lines without linked parts, pre-filled form with PO line data, automatic part-to-line linking, and failsafe warning when trying to receive without a linked part.
 - **Custom Asset Fields**: Flexible JSONB-based custom fields for assets with add/edit/remove UI, displayed in both edit and view modes.
+- **Knowledge Base**: Comprehensive help documentation with 20+ articles covering features, API integrations, workflows, and troubleshooting, organized by categories with search functionality.
+- **Shop Labor Rate Calculator**: Client-side utility for managers to calculate optimal shop labor rates based on technician wages, overhead costs, and target profit margins. Features AI-assisted overhead cost suggestions based on location/shop size, and ability to pull real technician wage data from the organization's team.
+- **Technician Management**: Dedicated page for managers/admins/owners to view and update technician hourly rates. Rates are used for labor cost calculations in work orders.
 
 ### Multi-Tenant Architecture
 - **Organizations Table**: Stores organization data with name, slug, plan, status, and maxAssets limit.
