@@ -1,9 +1,15 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest } from "@/lib/queryClient";
+import { useAuth } from "@/hooks/use-auth";
 import { 
   Calculator, 
   DollarSign, 
@@ -12,13 +18,27 @@ import {
   Wrench,
   TrendingUp,
   Info,
-  RotateCcw
+  RotateCcw,
+  Sparkles,
+  Download,
+  Loader2,
+  MapPin
 } from "lucide-react";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+
+interface OrgMember {
+  id: number;
+  userId: string;
+  role: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  email: string | null;
+  hourlyRate: string | null;
+}
 
 interface CostInputs {
   technicianCount: number;
@@ -113,7 +133,79 @@ function CostInput({
 }
 
 export default function LaborRateCalculator() {
+  const { toast } = useToast();
+  const { isAuthenticated } = useAuth();
   const [inputs, setInputs] = useState<CostInputs>(defaultInputs);
+  const [shopLocation, setShopLocation] = useState("");
+  const [shopSqFt, setShopSqFt] = useState("");
+
+  const { data: members = [], isLoading: membersLoading } = useQuery<OrgMember[]>({
+    queryKey: ["/api/organizations/current/members"],
+    enabled: isAuthenticated,
+  });
+
+  const techsWithRates = members.filter(m => m.hourlyRate && parseFloat(m.hourlyRate) > 0);
+  
+  const loadTechDataFromOrg = () => {
+    if (techsWithRates.length > 0) {
+      const totalRate = techsWithRates.reduce((sum, t) => sum + parseFloat(t.hourlyRate!), 0);
+      const avgRate = totalRate / techsWithRates.length;
+      setInputs(prev => ({
+        ...prev,
+        technicianCount: techsWithRates.length,
+        avgHourlyWage: Math.round(avgRate * 100) / 100,
+      }));
+      toast({
+        title: "Data loaded",
+        description: `Loaded ${techsWithRates.length} technician(s) with an average rate of $${avgRate.toFixed(2)}/hr.`,
+      });
+    } else {
+      toast({
+        title: "No technician data",
+        description: "No technicians with hourly rates found. Set rates in Technician Management.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const aiSuggestMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/ai/suggest-overhead-costs", {
+        location: shopLocation,
+        shopSqFt: shopSqFt ? parseInt(shopSqFt) : undefined,
+        technicianCount: inputs.technicianCount,
+        existingCosts: {
+          rent: inputs.annualRent > 0 ? inputs.annualRent : undefined,
+          utilities: inputs.annualUtilities > 0 ? inputs.annualUtilities : undefined,
+        },
+      });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      setInputs(prev => ({
+        ...prev,
+        annualRent: data.annualRent || prev.annualRent,
+        annualUtilities: data.annualUtilities || prev.annualUtilities,
+        annualInsurance: data.annualInsurance || prev.annualInsurance,
+        annualEquipment: data.annualEquipment || prev.annualEquipment,
+        annualSupplies: data.annualSupplies || prev.annualSupplies,
+        annualTraining: data.annualTraining || prev.annualTraining,
+        annualSoftware: data.annualSoftware || prev.annualSoftware,
+        annualOther: data.annualOther || prev.annualOther,
+      }));
+      toast({
+        title: "AI suggestions applied",
+        description: data.reasoning || "Overhead costs have been estimated based on your location and shop details.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to get suggestions",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
 
   const updateInput = (key: keyof CostInputs, value: number) => {
     setInputs(prev => ({ ...prev, [key]: value }));
@@ -218,13 +310,36 @@ export default function LaborRateCalculator() {
           {/* Labor Costs */}
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Users className="h-5 w-5 text-primary" />
-                Labor Costs
-              </CardTitle>
-              <CardDescription>
-                Enter your technician wages and benefits information
-              </CardDescription>
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <Users className="h-5 w-5 text-primary" />
+                    Labor Costs
+                  </CardTitle>
+                  <CardDescription>
+                    Enter your technician wages and benefits information
+                  </CardDescription>
+                </div>
+                {isAuthenticated && (
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={loadTechDataFromOrg}
+                    disabled={membersLoading}
+                    data-testid="button-load-tech-data"
+                  >
+                    {membersLoading ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <Download className="h-4 w-4 mr-2" />
+                    )}
+                    Load from Team
+                    {techsWithRates.length > 0 && (
+                      <span className="ml-1 text-xs">({techsWithRates.length})</span>
+                    )}
+                  </Button>
+                )}
+              </div>
             </CardHeader>
             <CardContent className="grid sm:grid-cols-3 gap-4">
               <CostInput
@@ -262,10 +377,60 @@ export default function LaborRateCalculator() {
                 Annual Overhead Costs
               </CardTitle>
               <CardDescription>
-                Enter your annual facility and operating expenses
+                Enter your annual facility and operating expenses, or use AI to estimate based on your location
               </CardDescription>
             </CardHeader>
-            <CardContent className="grid sm:grid-cols-2 gap-4">
+            <CardContent className="space-y-4">
+              <Alert className="bg-muted/50">
+                <Sparkles className="h-4 w-4" />
+                <AlertDescription>
+                  <div className="flex flex-col sm:flex-row gap-3 sm:items-end mt-1">
+                    <div className="flex-1 grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <Label htmlFor="shop-location" className="text-xs">Shop Location</Label>
+                        <div className="relative">
+                          <MapPin className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                          <Input
+                            id="shop-location"
+                            value={shopLocation}
+                            onChange={(e) => setShopLocation(e.target.value)}
+                            placeholder="City, State"
+                            className="pl-8 h-9"
+                            data-testid="input-shop-location"
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <Label htmlFor="shop-sqft" className="text-xs">Shop Size (sq ft)</Label>
+                        <Input
+                          id="shop-sqft"
+                          type="number"
+                          value={shopSqFt}
+                          onChange={(e) => setShopSqFt(e.target.value)}
+                          placeholder="e.g. 3000"
+                          className="h-9"
+                          data-testid="input-shop-sqft"
+                        />
+                      </div>
+                    </div>
+                    <Button
+                      onClick={() => aiSuggestMutation.mutate()}
+                      disabled={aiSuggestMutation.isPending}
+                      size="sm"
+                      data-testid="button-ai-suggest"
+                    >
+                      {aiSuggestMutation.isPending ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <Sparkles className="h-4 w-4 mr-2" />
+                      )}
+                      Get AI Estimates
+                    </Button>
+                  </div>
+                </AlertDescription>
+              </Alert>
+              
+              <div className="grid sm:grid-cols-2 gap-4">
               <CostInput
                 label="Rent / Mortgage"
                 value={inputs.annualRent}
@@ -322,6 +487,7 @@ export default function LaborRateCalculator() {
                 tooltip="Miscellaneous operating expenses"
                 testId="input-other"
               />
+              </div>
             </CardContent>
           </Card>
 

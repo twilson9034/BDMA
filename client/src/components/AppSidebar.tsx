@@ -101,6 +101,7 @@ const resourceItems = [
 const toolsItems = [
   { title: "Knowledge Base", url: "/knowledge-base", icon: BookOpen },
   { title: "Labor Rate Calculator", url: "/labor-rate-calculator", icon: Calculator },
+  { title: "Technician Management", url: "/technician-management", icon: Users },
 ];
 
 export function AppSidebar() {

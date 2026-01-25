@@ -70,6 +70,7 @@ import AdminTools from "@/pages/admin-tools";
 import PublicDvir from "@/pages/public-dvir";
 import LaborRateCalculator from "@/pages/labor-rate-calculator";
 import KnowledgeBase from "@/pages/knowledge-base";
+import TechnicianManagement from "@/pages/technician-management";
 import NotFound from "@/pages/not-found";
 
 function AuthenticatedRouter() {
@@ -129,6 +130,7 @@ function AuthenticatedRouter() {
       <Route path="/admin-tools" component={AdminTools} />
       <Route path="/labor-rate-calculator" component={LaborRateCalculator} />
       <Route path="/knowledge-base" component={KnowledgeBase} />
+      <Route path="/technician-management" component={TechnicianManagement} />
       <Route path="/landing" component={LandingPage} />
       <Route component={NotFound} />
     </Switch>
