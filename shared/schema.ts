@@ -165,6 +165,169 @@ export type InsertVmrsCode = z.infer<typeof insertVmrsCodeSchema>;
 export type VmrsCode = typeof vmrsCodes.$inferSelect;
 
 // ============================================================
+// VMRS DICTIONARY (for auto-assign suggestions)
+// ============================================================
+export const vmrsDictionary = pgTable("vmrs_dictionary", {
+  id: serial("id").primaryKey(),
+  orgId: integer("org_id").references(() => organizations.id),
+  systemCode: text("system_code").notNull(),
+  assemblyCode: text("assembly_code"),
+  componentCode: text("component_code"),
+  title: text("title").notNull(),
+  keywordsJson: jsonb("keywords_json").$type<string[]>().default([]),
+  source: text("source").default("system"),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_vmrs_dictionary_org").on(table.orgId),
+  index("idx_vmrs_dictionary_system").on(table.systemCode),
+]);
+
+export const insertVmrsDictionarySchema = createInsertSchema(vmrsDictionary).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertVmrsDictionary = z.infer<typeof insertVmrsDictionarySchema>;
+export type VmrsDictionary = typeof vmrsDictionary.$inferSelect;
+
+// ============================================================
+// OOS SOURCES (Out-of-Service Standards sources)
+// ============================================================
+export const oosSourceTypeEnum = ["CVSA_NEWS", "CVSA_PAGE", "FMCSA_FR", "UPLOADED_PDF", "MANUAL"] as const;
+
+export const oosSources = pgTable("oos_sources", {
+  id: serial("id").primaryKey(),
+  orgId: integer("org_id").references(() => organizations.id),
+  sourceType: text("source_type").notNull().$type<typeof oosSourceTypeEnum[number]>(),
+  title: text("title").notNull(),
+  url: text("url"),
+  publishedDate: timestamp("published_date"),
+  editionDate: timestamp("edition_date"),
+  hash: text("hash"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_oos_sources_org").on(table.orgId),
+]);
+
+export const insertOosSourceSchema = createInsertSchema(oosSources).omit({ id: true, createdAt: true });
+export type InsertOosSource = z.infer<typeof insertOosSourceSchema>;
+export type OosSource = typeof oosSources.$inferSelect;
+
+// ============================================================
+// OOS RULES VERSIONS
+// ============================================================
+export const oosRulesVersionStatusEnum = ["DRAFT", "ACTIVE", "RETIRED"] as const;
+
+export const oosRulesVersions = pgTable("oos_rules_versions", {
+  id: serial("id").primaryKey(),
+  orgId: integer("org_id").references(() => organizations.id),
+  name: text("name").notNull(),
+  effectiveStart: timestamp("effective_start").notNull(),
+  effectiveEnd: timestamp("effective_end"),
+  status: text("status").notNull().default("DRAFT").$type<typeof oosRulesVersionStatusEnum[number]>(),
+  sourceIds: jsonb("source_ids").$type<number[]>().default([]),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_oos_versions_org").on(table.orgId),
+  index("idx_oos_versions_status").on(table.status),
+]);
+
+export const insertOosRulesVersionSchema = createInsertSchema(oosRulesVersions).omit({ id: true, createdAt: true });
+export type InsertOosRulesVersion = z.infer<typeof insertOosRulesVersionSchema>;
+export type OosRulesVersion = typeof oosRulesVersions.$inferSelect;
+
+// ============================================================
+// OOS RULES
+// ============================================================
+export const oosRuleCategoryEnum = ["DRIVER", "VEHICLE", "CARGO_SECUREMENT", "HM_DG", "ADMIN"] as const;
+export const oosRuleOutcomeEnum = ["OOS_DRIVER", "OOS_VEHICLE", "OOS_CARGO", "NOT_OOS", "TRIAGE"] as const;
+
+export const oosRules = pgTable("oos_rules", {
+  id: serial("id").primaryKey(),
+  versionId: integer("version_id").references(() => oosRulesVersions.id).notNull(),
+  category: text("category").notNull().$type<typeof oosRuleCategoryEnum[number]>(),
+  vmrsSystemCode: text("vmrs_system_code"),
+  title: text("title").notNull(),
+  conditionJson: jsonb("condition_json").$type<object>(),
+  outcome: text("outcome").notNull().$type<typeof oosRuleOutcomeEnum[number]>(),
+  referenceJson: jsonb("reference_json").$type<object>(),
+  explanationTemplate: text("explanation_template"),
+  isTriageOnly: boolean("is_triage_only").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_oos_rules_version").on(table.versionId),
+  index("idx_oos_rules_category").on(table.category),
+  index("idx_oos_rules_vmrs").on(table.vmrsSystemCode),
+]);
+
+export const insertOosRuleSchema = createInsertSchema(oosRules).omit({ id: true, createdAt: true });
+export type InsertOosRule = z.infer<typeof insertOosRuleSchema>;
+export type OosRule = typeof oosRules.$inferSelect;
+
+// ============================================================
+// OOS INSPECTIONS
+// ============================================================
+export const oosInspectionTypeEnum = ["LEVEL_I", "LEVEL_II", "LEVEL_III", "LEVEL_IV", "LEVEL_V", "LEVEL_VI", "LEVEL_VII", "LEVEL_VIII", "SHOP_PRETRIP", "ROADSIDE", "ANNUAL"] as const;
+export const oosInspectionStatusEnum = ["PASS", "FAIL", "OOS", "PENDING"] as const;
+
+export const oosInspections = pgTable("oos_inspections", {
+  id: serial("id").primaryKey(),
+  orgId: integer("org_id").references(() => organizations.id),
+  assetId: integer("asset_id").references(() => assets.id),
+  inspectionType: text("inspection_type").notNull().$type<typeof oosInspectionTypeEnum[number]>(),
+  performedBy: text("performed_by"),
+  performedAt: timestamp("performed_at").notNull().defaultNow(),
+  rulesVersionId: integer("rules_version_id").references(() => oosRulesVersions.id),
+  status: text("status").notNull().default("PENDING").$type<typeof oosInspectionStatusEnum[number]>(),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_oos_inspections_org").on(table.orgId),
+  index("idx_oos_inspections_asset").on(table.assetId),
+  index("idx_oos_inspections_status").on(table.status),
+]);
+
+export const insertOosInspectionSchema = createInsertSchema(oosInspections).omit({ id: true, createdAt: true });
+export type InsertOosInspection = z.infer<typeof insertOosInspectionSchema>;
+export type OosInspection = typeof oosInspections.$inferSelect;
+
+// ============================================================
+// OOS INSPECTION FINDINGS
+// ============================================================
+export const oosInspectionFindings = pgTable("oos_inspection_findings", {
+  id: serial("id").primaryKey(),
+  inspectionId: integer("inspection_id").references(() => oosInspections.id).notNull(),
+  findingType: text("finding_type").notNull(),
+  vmrsSystemCode: text("vmrs_system_code"),
+  observedJson: jsonb("observed_json").$type<object>(),
+  triggeredRuleIds: jsonb("triggered_rule_ids").$type<number[]>().default([]),
+  outcome: text("outcome").$type<typeof oosRuleOutcomeEnum[number]>(),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_oos_findings_inspection").on(table.inspectionId),
+  index("idx_oos_findings_vmrs").on(table.vmrsSystemCode),
+]);
+
+export const insertOosInspectionFindingSchema = createInsertSchema(oosInspectionFindings).omit({ id: true, createdAt: true });
+export type InsertOosInspectionFinding = z.infer<typeof insertOosInspectionFindingSchema>;
+export type OosInspectionFinding = typeof oosInspectionFindings.$inferSelect;
+
+// ============================================================
+// OOS CHANGE LOG
+// ============================================================
+export const oosChangeLog = pgTable("oos_change_log", {
+  id: serial("id").primaryKey(),
+  versionId: integer("version_id").references(() => oosRulesVersions.id).notNull(),
+  changeSummary: text("change_summary").notNull(),
+  changedBy: text("changed_by"),
+  changedAt: timestamp("changed_at").defaultNow(),
+});
+
+export const insertOosChangeLogSchema = createInsertSchema(oosChangeLog).omit({ id: true, changedAt: true });
+export type InsertOosChangeLog = z.infer<typeof insertOosChangeLogSchema>;
+export type OosChangeLog = typeof oosChangeLog.$inferSelect;
+
+// ============================================================
 // ASSETS
 // ============================================================
 export const assetStatusEnum = ["operational", "in_maintenance", "down", "retired", "pending_inspection"] as const;
@@ -368,6 +531,9 @@ export const parts = pgTable("parts", {
   lastClassifiedAt: timestamp("last_classified_at"),
   classificationLocked: boolean("classification_locked").default(false),
   leadTimeDays: integer("lead_time_days"),
+  vmrsSuggestionLast: jsonb("vmrs_suggestion_last").$type<object>(),
+  vmrsConfidenceLast: decimal("vmrs_confidence_last", { precision: 4, scale: 2 }),
+  vmrsLastSuggestedAt: timestamp("vmrs_last_suggested_at"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [
@@ -387,6 +553,37 @@ export const partsRelations = relations(parts, ({ one }) => ({
 export const insertPartSchema = createInsertSchema(parts).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertPart = z.infer<typeof insertPartSchema>;
 export type Part = typeof parts.$inferSelect;
+
+// ============================================================
+// VMRS MAPPING FEEDBACK (learning from accepted mappings)
+// ============================================================
+export const vmrsMappingFeedback = pgTable("vmrs_mapping_feedback", {
+  id: serial("id").primaryKey(),
+  orgId: integer("org_id").references(() => organizations.id),
+  partId: integer("part_id").references(() => parts.id).notNull(),
+  suggestedSystemCode: text("suggested_system_code"),
+  suggestedAssemblyCode: text("suggested_assembly_code"),
+  suggestedComponentCode: text("suggested_component_code"),
+  suggestedSafetySystem: text("suggested_safety_system").$type<typeof safetySystemEnum[number]>(),
+  confidence: decimal("confidence", { precision: 4, scale: 2 }),
+  accepted: boolean("accepted"),
+  acceptedSystemCode: text("accepted_system_code"),
+  acceptedAssemblyCode: text("accepted_assembly_code"),
+  acceptedComponentCode: text("accepted_component_code"),
+  acceptedSafetySystem: text("accepted_safety_system").$type<typeof safetySystemEnum[number]>(),
+  acceptedByUserId: text("accepted_by_user_id"),
+  acceptedAt: timestamp("accepted_at"),
+  notes: text("notes"),
+  explanation: text("explanation"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_vmrs_feedback_org").on(table.orgId),
+  index("idx_vmrs_feedback_part").on(table.partId),
+]);
+
+export const insertVmrsMappingFeedbackSchema = createInsertSchema(vmrsMappingFeedback).omit({ id: true, createdAt: true });
+export type InsertVmrsMappingFeedback = z.infer<typeof insertVmrsMappingFeedbackSchema>;
+export type VmrsMappingFeedback = typeof vmrsMappingFeedback.$inferSelect;
 
 // ============================================================
 // SMART CLASSIFICATION SYSTEM
