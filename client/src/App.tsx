@@ -67,6 +67,7 @@ import VmrsAutoAssign from "@/pages/vmrs-auto-assign";
 import OosStandards from "@/pages/oos-standards";
 import PmDues from "@/pages/pm-dues";
 import Tires from "@/pages/tires";
+import TireNew from "@/pages/tire-new";
 import Messages from "@/pages/messages";
 import PublicDashboards from "@/pages/public-dashboards";
 import AdminTools from "@/pages/admin-tools";
@@ -112,6 +113,7 @@ function AuthenticatedRouter() {
       <Route path="/reports/:reportName" component={ReportDetail} />
       <Route path="/feedback" component={Feedback} />
       <Route path="/tires" component={Tires} />
+      <Route path="/tires/new" component={TireNew} />
       <Route path="/messages" component={Messages} />
       <Route path="/estimates" component={Estimates} />
       <Route path="/estimates/:id" component={EstimateDetail} />
