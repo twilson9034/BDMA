@@ -2764,19 +2764,20 @@ export async function registerRoutes(
     try {
       const orgId = getOrgId(req);
       if (!orgId) return res.status(403).json({ error: "Organization context required" });
-      if (!req.user) return res.status(401).json({ error: "Unauthorized" });
+      const userId = (req.user as any)?.claims?.sub;
+      if (!userId) return res.status(401).json({ error: "Unauthorized" });
       
       const { participantIds, ...conversationData } = req.body;
-      const validated = insertConversationSchema.parse({ ...conversationData, createdBy: req.user.id });
+      const validated = insertConversationSchema.parse({ ...conversationData, createdBy: userId });
       const conv = await storage.createConversation({ ...validated, orgId });
       
       // Add the creator as a participant
-      await storage.addConversationParticipant(conv.id, req.user.id);
+      await storage.addConversationParticipant(conv.id, userId);
       
       // Add other participants if provided
       if (participantIds && Array.isArray(participantIds)) {
         for (const participantId of participantIds) {
-          if (participantId !== req.user.id) {
+          if (participantId !== userId) {
             await storage.addConversationParticipant(conv.id, participantId);
           }
         }
@@ -2811,7 +2812,8 @@ export async function registerRoutes(
 
   app.post("/api/conversations/:id/messages", requireAuth, tenantMiddleware(), async (req, res) => {
     try {
-      if (!req.user) return res.status(401).json({ error: "Unauthorized" });
+      const userId = (req.user as any)?.claims?.sub;
+      if (!userId) return res.status(401).json({ error: "Unauthorized" });
       const orgId = getOrgId(req);
       if (!orgId) return res.status(403).json({ error: "Organization context required" });
       const conversationId = parseInt(req.params.id);
@@ -2823,7 +2825,7 @@ export async function registerRoutes(
       const validated = insertMessageSchema.parse({
         ...req.body,
         conversationId,
-        senderId: req.user.id,
+        senderId: userId,
       });
       const msg = await storage.createMessage(validated);
       res.status(201).json(msg);
@@ -2849,8 +2851,9 @@ export async function registerRoutes(
   app.post("/api/saved-reports", requireAuth, tenantMiddleware(), async (req, res) => {
     try {
       const orgId = getOrgId(req);
-      if (!req.user) return res.status(401).json({ error: "Unauthorized" });
-      const validated = insertSavedReportSchema.parse({ ...req.body, createdBy: req.user.id });
+      const userId = (req.user as any)?.claims?.sub;
+      if (!userId) return res.status(401).json({ error: "Unauthorized" });
+      const validated = insertSavedReportSchema.parse({ ...req.body, createdBy: userId });
       const report = await storage.createSavedReport({ ...validated, orgId });
       res.status(201).json(report);
     } catch (error) {
