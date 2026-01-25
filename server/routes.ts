@@ -39,8 +39,8 @@ import { setupAuth, registerAuthRoutes } from "./replit_integrations/auth";
 import { tenantMiddleware, getUserOrgMemberships, getOrgId } from "./tenant";
 import { organizations, orgMemberships, insertOrganizationSchema, insertOrgMembershipSchema, updateOrganizationSchema, updateOrgMemberRoleSchema, setParentOrgSchema, updateCorporateAdminSchema, tires, insertTireSchema, conversations, messages, insertConversationSchema, insertMessageSchema, savedReports, insertSavedReportSchema, gpsLocations, insertGpsLocationSchema, tireReplacementSettings, insertTireReplacementSettingSchema, publicAssetTokens, insertPublicAssetTokenSchema } from "@shared/schema";
 import { db } from "./db";
-import { eq, and } from "drizzle-orm";
-import { users } from "@shared/schema";
+import { eq, and, or, isNull } from "drizzle-orm";
+import { users, oosRulesVersions, oosInspections, oosSources, insertOosInspectionSchema } from "@shared/schema";
 
 function requireAuth(req: Request, res: Response, next: NextFunction) {
   if (!req.isAuthenticated || !req.isAuthenticated()) {
@@ -820,6 +820,227 @@ export async function registerRoutes(
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete VMRS code" });
+    }
+  });
+
+  // ============================================================
+  // VMRS AUTO-SUGGEST (tenant-scoped)
+  // ============================================================
+  app.post("/api/vmrs/suggest/:partId", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      if (!orgId) return res.status(403).json({ error: "Organization context required" });
+      
+      const { suggestVmrsForPart } = await import("./services/vmrsSuggestionService");
+      const result = await suggestVmrsForPart(parseInt(req.params.partId), orgId);
+      res.json(result);
+    } catch (error) {
+      console.error("VMRS suggestion error:", error);
+      res.status(500).json({ error: "Failed to suggest VMRS codes" });
+    }
+  });
+
+  app.post("/api/vmrs/suggest-bulk", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      if (!orgId) return res.status(403).json({ error: "Organization context required" });
+      
+      const limit = req.body.limit || 100;
+      const { suggestVmrsForPartsWithoutCodes } = await import("./services/vmrsSuggestionService");
+      const results = await suggestVmrsForPartsWithoutCodes(orgId, limit);
+      res.json({ 
+        processed: results.length,
+        results,
+        highConfidence: results.filter(r => r.topSuggestion && r.topSuggestion.confidence >= 0.90).length,
+      });
+    } catch (error) {
+      console.error("VMRS bulk suggestion error:", error);
+      res.status(500).json({ error: "Failed to suggest VMRS codes" });
+    }
+  });
+
+  const vmrsAcceptSchema = z.object({
+    partId: z.number(),
+    suggestion: z.object({
+      systemCode: z.string(),
+      assemblyCode: z.string().optional(),
+      componentCode: z.string().optional(),
+      safetySystem: z.string().optional().nullable(),
+      confidence: z.number(),
+      explanation: z.string().optional(),
+    }),
+    acceptedSystemCode: z.string(),
+    acceptedAssemblyCode: z.string().optional(),
+    acceptedComponentCode: z.string().optional(),
+    acceptedSafetySystem: z.string().optional().nullable(),
+    notes: z.string().optional(),
+  });
+
+  app.post("/api/vmrs/accept", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      if (!orgId) return res.status(403).json({ error: "Organization context required" });
+      const userId = (req.user as any)?.claims?.sub;
+      if (!userId) return res.status(401).json({ error: "User not authenticated" });
+      
+      const validated = vmrsAcceptSchema.parse(req.body);
+      const { acceptVmrsSuggestion } = await import("./services/vmrsSuggestionService");
+      await acceptVmrsSuggestion(
+        validated.partId, 
+        orgId, 
+        userId, 
+        validated.suggestion, 
+        validated.acceptedSystemCode, 
+        validated.acceptedAssemblyCode, 
+        validated.acceptedComponentCode, 
+        validated.acceptedSafetySystem, 
+        validated.notes
+      );
+      res.json({ success: true });
+    } catch (error) {
+      console.error("VMRS accept error:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: "Failed to accept VMRS suggestion" });
+    }
+  });
+
+  const vmrsRejectSchema = z.object({
+    partId: z.number(),
+    suggestion: z.object({
+      systemCode: z.string(),
+      assemblyCode: z.string().optional(),
+      componentCode: z.string().optional(),
+      safetySystem: z.string().optional().nullable(),
+      confidence: z.number(),
+      explanation: z.string().optional(),
+    }),
+    notes: z.string().optional(),
+  });
+
+  app.post("/api/vmrs/reject", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      if (!orgId) return res.status(403).json({ error: "Organization context required" });
+      const userId = (req.user as any)?.claims?.sub;
+      if (!userId) return res.status(401).json({ error: "User not authenticated" });
+      
+      const validated = vmrsRejectSchema.parse(req.body);
+      const { rejectVmrsSuggestion } = await import("./services/vmrsSuggestionService");
+      await rejectVmrsSuggestion(validated.partId, orgId, userId, validated.suggestion, validated.notes);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("VMRS reject error:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: "Failed to reject VMRS suggestion" });
+    }
+  });
+
+  app.post("/api/vmrs/seed-dictionary", requireAuth, tenantMiddleware({ required: false }), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      const { seedVmrsDictionary } = await import("./services/vmrsSuggestionService");
+      const count = await seedVmrsDictionary(orgId || null);
+      res.json({ success: true, insertedCount: count });
+    } catch (error) {
+      console.error("VMRS seed error:", error);
+      res.status(500).json({ error: "Failed to seed VMRS dictionary" });
+    }
+  });
+
+  // ============================================================
+  // OOS (Out-of-Service) RULES & INSPECTIONS (tenant-scoped)
+  // ============================================================
+  app.get("/api/oos/rules-versions", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      if (!orgId) return res.status(403).json({ error: "Organization context required" });
+      
+      const versions = await db.select().from(oosRulesVersions)
+        .where(or(eq(oosRulesVersions.orgId, orgId), isNull(oosRulesVersions.orgId)));
+      res.json(versions);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch OOS rules versions" });
+    }
+  });
+
+  app.get("/api/oos/rules/:versionId", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      const { getRulesForVersion } = await import("./services/oosRulesEngine");
+      const rules = await getRulesForVersion(parseInt(req.params.versionId), orgId || undefined);
+      res.json(rules);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch OOS rules" });
+    }
+  });
+
+  app.post("/api/oos/seed-rules", requireAuth, tenantMiddleware({ required: false }), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      const { seedOosRules } = await import("./services/oosRulesEngine");
+      const result = await seedOosRules(orgId || null);
+      res.json({ success: true, ...result });
+    } catch (error) {
+      console.error("OOS seed error:", error);
+      res.status(500).json({ error: "Failed to seed OOS rules" });
+    }
+  });
+
+  app.get("/api/oos/inspections", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      if (!orgId) return res.status(403).json({ error: "Organization context required" });
+      
+      const inspections = await db.select().from(oosInspections).where(eq(oosInspections.orgId, orgId));
+      res.json(inspections);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch OOS inspections" });
+    }
+  });
+
+  app.post("/api/oos/inspections", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      if (!orgId) return res.status(403).json({ error: "Organization context required" });
+      
+      const validated = insertOosInspectionSchema.parse({ ...req.body, orgId });
+      const { createInspection } = await import("./services/oosRulesEngine");
+      const inspection = await createInspection(orgId, validated);
+      res.status(201).json(inspection);
+    } catch (error) {
+      console.error("OOS inspection create error:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: "Failed to create inspection" });
+    }
+  });
+
+  app.post("/api/oos/inspections/:id/evaluate", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const { evaluateInspection } = await import("./services/oosRulesEngine");
+      const result = await evaluateInspection(parseInt(req.params.id), req.body.findings || []);
+      res.json(result);
+    } catch (error) {
+      console.error("OOS evaluation error:", error);
+      res.status(500).json({ error: "Failed to evaluate inspection" });
+    }
+  });
+
+  app.get("/api/oos/sources", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      if (!orgId) return res.status(403).json({ error: "Organization context required" });
+      
+      const sources = await db.select().from(oosSources)
+        .where(or(eq(oosSources.orgId, orgId), isNull(oosSources.orgId)));
+      res.json(sources);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch OOS sources" });
     }
   });
 

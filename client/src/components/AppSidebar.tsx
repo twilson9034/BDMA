@@ -30,6 +30,7 @@ import {
   Share2,
   Database,
   Shield,
+  Sparkles,
 } from "lucide-react";
 import {
   Sidebar,
@@ -68,6 +69,7 @@ const mainNavItems = [
   { title: "Part Kits", url: "/part-kits", icon: Boxes },
   { title: "Cycle Counts", url: "/cycle-counts", icon: RefreshCw },
   { title: "SMART Classification", url: "/smart-classification", icon: Shield },
+  { title: "VMRS Auto-Assign", url: "/vmrs-auto-assign", icon: Sparkles },
 ];
 
 const operationsItems = [
@@ -75,6 +77,7 @@ const operationsItems = [
   { title: "PM Dues", url: "/pm-dues", icon: Clock },
   { title: "Checklists", url: "/checklist-templates", icon: ClipboardCheck },
   { title: "DVIRs", url: "/dvirs", icon: ClipboardList },
+  { title: "OOS Standards", url: "/oos-standards", icon: Shield },
   { title: "Ready for Review", url: "/ready-for-review", icon: ListChecks },
   { title: "Predictions", url: "/predictions", icon: AlertTriangle },
   { title: "Estimates", url: "/estimates", icon: Calculator },
