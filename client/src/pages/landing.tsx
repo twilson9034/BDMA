@@ -156,8 +156,18 @@ const features = [
 ];
 
 const tireFeature = {
-  title: "Tire Management",
-  description: "Complete tire inventory with specifications (make, model, DOT code), condition tracking, lifecycle management, and TPMS-ready monitoring.",
+  title: "Integrated Tire Management",
+  description: "Tires managed through inventory with specifications (size, DOT code, PSI, load index, speed rating, tread depth). Work order lines auto-detect tire VMRS codes and show position tracking, serial numbers, and tread measurements.",
+};
+
+const oosFeature = {
+  title: "OOS Compliance Engine",
+  description: "CVSA out-of-service rules with condition-based evaluation. Auto-evaluate DVIRs and checklists against safety standards with automatic work order creation for violations.",
+};
+
+const vmrsAutoAssign = {
+  title: "VMRS Auto-Assign",
+  description: "Intelligent VMRS code suggestions using keyword matching with confidence scoring. Learn from technician feedback to improve accuracy over time.",
 };
 
 const workflowSteps = [
@@ -379,7 +389,7 @@ export default function LandingPage() {
                 </CardContent>
               </Card>
             ))}
-            {/* Tire Management with different icon */}
+            {/* Tire Management */}
             <Card className="hover-elevate transition-all duration-200">
               <CardContent className="pt-6">
                 <div className="h-12 w-12 rounded-lg bg-primary/10 flex items-center justify-center mb-4">
@@ -387,6 +397,26 @@ export default function LandingPage() {
                 </div>
                 <h3 className="font-semibold mb-2">{tireFeature.title}</h3>
                 <p className="text-sm text-muted-foreground">{tireFeature.description}</p>
+              </CardContent>
+            </Card>
+            {/* OOS Compliance */}
+            <Card className="hover-elevate transition-all duration-200">
+              <CardContent className="pt-6">
+                <div className="h-12 w-12 rounded-lg bg-primary/10 flex items-center justify-center mb-4">
+                  <Shield className="h-6 w-6 text-primary" />
+                </div>
+                <h3 className="font-semibold mb-2">{oosFeature.title}</h3>
+                <p className="text-sm text-muted-foreground">{oosFeature.description}</p>
+              </CardContent>
+            </Card>
+            {/* VMRS Auto-Assign */}
+            <Card className="hover-elevate transition-all duration-200">
+              <CardContent className="pt-6">
+                <div className="h-12 w-12 rounded-lg bg-primary/10 flex items-center justify-center mb-4">
+                  <Target className="h-6 w-6 text-primary" />
+                </div>
+                <h3 className="font-semibold mb-2">{vmrsAutoAssign.title}</h3>
+                <p className="text-sm text-muted-foreground">{vmrsAutoAssign.description}</p>
               </CardContent>
             </Card>
           </div>

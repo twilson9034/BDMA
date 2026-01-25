@@ -552,6 +552,131 @@ All responses are JSON with standard structure:
 | Owner | Yes | Yes | Yes | Yes |`,
     tags: ["team", "users", "roles", "permissions"],
   },
+  {
+    id: "inv-4",
+    title: "Tire Management",
+    category: "inventory",
+    content: `Tires are managed through the inventory system with specialized tracking fields.
+
+**Adding Tire Parts:**
+1. Go to Inventory and click "New Part"
+2. Select "Tires" as the category
+3. Fill in tire-specific fields that appear:
+   - Brand and Model
+   - Size (e.g., 295/75R22.5)
+   - Type (New, Retread, Used)
+   - DOT Code (manufacturing date)
+   - PSI Rating, Load Index, Speed Rating
+   - New Tread Depth (in 32nds)
+
+**Tire Position Tracking on Work Orders:**
+When adding work order lines with tire VMRS codes (17-xxx), additional fields appear:
+- Position: LF, RF, LR-O, LR-I, RR-O, RR-I, Spare
+- Serial Installed: Serial number of new tire
+- Serial Removed: Serial number of replaced tire
+- Tread Depth Measured: Current tread reading
+
+**Viewing Tire Inventory:**
+- Navigate to the Tires page for a dedicated view
+- Filter by tire type (New, Retread, Used)
+- See stock levels and low stock alerts
+- Track tread depth across your tire inventory`,
+    tags: ["tires", "inventory", "VMRS", "position tracking"],
+  },
+  {
+    id: "dvir-2",
+    title: "OOS Standards & Compliance",
+    category: "dvir",
+    content: `BDMA includes an Out-of-Service (OOS) compliance engine based on CVSA standards.
+
+**What is OOS?**
+Out-of-Service standards define safety violations that require immediate action. When a vehicle fails an OOS check, it cannot operate until repaired.
+
+**OOS Rules:**
+- Navigate to OOS Standards page
+- View rules organized by system (Brakes, Tires, Lamps, etc.)
+- Each rule has conditions that define violations
+- Conditions use operators: equals, greater than, contains, etc.
+
+**Rule Evaluation:**
+Rules evaluate data against conditions. For example:
+- Tire tread depth < 2/32" = OOS violation
+- Brake fluid leak detected = OOS violation
+- Driver license expired = OOS violation
+
+**Inspections:**
+- OOS inspections are linked to assets
+- Findings record which rules triggered violations
+- Status: PASS, FAIL, OOS, or PENDING
+
+**Starter Rules Included:**
+- Brake leak detection
+- Tire tread depth minimums
+- Lamp functionality
+- Driver license/medical certification`,
+    tags: ["OOS", "CVSA", "compliance", "safety", "inspections"],
+  },
+  {
+    id: "wo-4",
+    title: "VMRS Auto-Assign",
+    category: "work-orders",
+    content: `VMRS Auto-Assign suggests the right VMRS codes for work order descriptions.
+
+**How It Works:**
+1. The system analyzes work order descriptions
+2. Keywords are matched against a dictionary
+3. Matching VMRS codes are suggested with confidence scores
+4. Technicians can approve or reject suggestions
+
+**Confidence Scoring:**
+- High (0.8-1.0): Strong match, likely correct
+- Medium (0.5-0.8): Probable match, verify
+- Low (0.0-0.5): Possible match, review carefully
+
+**Learning from Feedback:**
+When technicians approve or reject suggestions, the system learns:
+- Approved suggestions strengthen that mapping
+- Rejected suggestions reduce future false positives
+- Over time, accuracy improves for your organization
+
+**Managing VMRS Auto-Assign:**
+1. Go to VMRS Auto-Assign page
+2. View stats: total suggestions, approval rate
+3. Run bulk suggestions on pending work orders
+4. Review and approve/reject suggestions`,
+    tags: ["VMRS", "auto-assign", "suggestions", "machine learning"],
+  },
+  {
+    id: "inv-5",
+    title: "SMART Inventory Classification",
+    category: "inventory",
+    content: `SMART classification helps prioritize inventory management efforts.
+
+**Class System:**
+- **S (Safety/Compliance)**: Critical safety parts that must always be stocked
+- **A (High Priority)**: High-value, high-impact parts
+- **B (Medium Priority)**: Moderate importance parts
+- **C (Low Priority)**: Low-value consumables
+
+**Volatility (X/Y/Z):**
+- **X**: Steady, predictable demand
+- **Y**: Moderate fluctuation
+- **Z**: Sporadic, unpredictable demand
+
+**Classification Scoring:**
+Combines three factors:
+- Cost percentile (35%)
+- Roadcall impact (35%)
+- Safety factors (30%)
+
+**Using SMART Classification:**
+1. Go to SMART Classification page
+2. View class breakdown statistics
+3. Filter parts by class
+4. Override classifications with reason tracking
+5. Lock parts to prevent auto-reclassification`,
+    tags: ["SMART", "classification", "ABC", "inventory", "safety"],
+  },
 ];
 
 export default function KnowledgeBase() {
