@@ -15,12 +15,14 @@ import { format } from "date-fns";
 interface OosSource {
   id: number;
   orgId: number | null;
-  name: string;
-  version: string;
-  publishedAt: string;
-  expiresAt: string | null;
-  description: string | null;
-  sourceUrl: string | null;
+  sourceType: string;
+  title: string;
+  url: string | null;
+  publishedDate: string | null;
+  editionDate: string | null;
+  hash: string | null;
+  notes: string | null;
+  createdAt: string;
 }
 
 interface OosRulesVersion {
@@ -433,21 +435,23 @@ export default function OosStandards() {
                   <CardHeader>
                     <div className="flex items-center justify-between gap-4">
                       <div>
-                        <CardTitle>{source.name}</CardTitle>
-                        <CardDescription>Version {source.version}</CardDescription>
+                        <CardTitle>{source.title}</CardTitle>
+                        <CardDescription>{source.sourceType}</CardDescription>
                       </div>
-                      <Badge variant="outline">
-                        Published: {format(new Date(source.publishedAt), "MMM d, yyyy")}
-                      </Badge>
+                      {source.publishedDate && (
+                        <Badge variant="outline">
+                          Published: {format(new Date(source.publishedDate), "MMM d, yyyy")}
+                        </Badge>
+                      )}
                     </div>
                   </CardHeader>
                   <CardContent>
-                    {source.description && (
-                      <p className="text-sm text-muted-foreground mb-2">{source.description}</p>
+                    {source.notes && (
+                      <p className="text-sm text-muted-foreground mb-2">{source.notes}</p>
                     )}
-                    {source.sourceUrl && (
+                    {source.url && (
                       <a
-                        href={source.sourceUrl}
+                        href={source.url}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-sm text-primary underline"
