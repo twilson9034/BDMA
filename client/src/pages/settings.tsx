@@ -75,6 +75,7 @@ const roleIcons: Record<string, typeof Crown> = {
   manager: Users,
   technician: Wrench,
   viewer: Eye,
+  dev: Code2,
 };
 
 const roleLabels: Record<string, string> = {
@@ -83,11 +84,13 @@ const roleLabels: Record<string, string> = {
   manager: "Manager",
   technician: "Technician",
   viewer: "Viewer",
+  dev: "Developer",
 };
 
 const roleBadgeVariants: Record<string, "default" | "secondary" | "outline"> = {
   owner: "default",
   admin: "default",
+  dev: "default",
   manager: "secondary",
   technician: "secondary",
   viewer: "outline",
@@ -743,6 +746,12 @@ export default function Settings() {
                                       Viewer
                                     </div>
                                   </SelectItem>
+                                  <SelectItem value="dev">
+                                    <div className="flex items-center gap-2">
+                                      <Code2 className="h-4 w-4" />
+                                      Developer
+                                    </div>
+                                  </SelectItem>
                                 </SelectContent>
                               </Select>
                               <Select
@@ -1038,6 +1047,12 @@ export default function Settings() {
                             <div className="flex items-center gap-2">
                               <Eye className="h-4 w-4" />
                               Viewer
+                            </div>
+                          </SelectItem>
+                          <SelectItem value="dev">
+                            <div className="flex items-center gap-2">
+                              <Code2 className="h-4 w-4" />
+                              Developer
                             </div>
                           </SelectItem>
                         </SelectContent>

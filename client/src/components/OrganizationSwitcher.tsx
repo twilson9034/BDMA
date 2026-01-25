@@ -92,18 +92,18 @@ export function OrganizationSwitcher() {
     queryKey: ["/api/organizations/current"],
   });
 
-  // Check if user is an owner of any org
-  const isOwner = memberships.some(m => m.role === "owner");
+  // Check if user has dev role in any org (can view all organizations)
+  const isDev = memberships.some(m => m.role === "dev");
 
-  // Fetch all organizations if user is an owner
+  // Fetch all organizations if user is a dev
   const { data: allOrganizations = [] } = useQuery<Organization[]>({
     queryKey: ["/api/organizations/all"],
-    enabled: isOwner,
+    enabled: isDev,
   });
 
-  // Combine: if owner, use all orgs; otherwise use memberships
+  // Combine: if dev, use all orgs; otherwise use memberships
   const displayOrganizations = useMemo(() => {
-    if (isOwner && allOrganizations.length > 0) {
+    if (isDev && allOrganizations.length > 0) {
       return allOrganizations.map(org => ({
         orgId: org.id,
         organization: org,
@@ -115,7 +115,7 @@ export function OrganizationSwitcher() {
       organization: m.organization,
       isMember: true,
     }));
-  }, [isOwner, allOrganizations, memberships]);
+  }, [isDev, allOrganizations, memberships]);
 
   const switchOrgMutation = useMutation({
     mutationFn: async (orgId: number) => {
@@ -189,11 +189,11 @@ export function OrganizationSwitcher() {
   // Show org switcher if:
   // - User has multiple org memberships, OR
   // - User is a corporate admin, OR  
-  // - User is an owner of any org (can view all orgs)
+  // - User has dev role (can view all orgs)
   const hasMultipleOrgs = memberships.length > 1;
   const isCorporateAdmin = currentTenant?.isCorporateAdmin || memberships.some(m => m.isCorporateAdmin);
   
-  if (!hasMultipleOrgs && !isCorporateAdmin && !isOwner) {
+  if (!hasMultipleOrgs && !isCorporateAdmin && !isDev) {
     return null;
   }
 

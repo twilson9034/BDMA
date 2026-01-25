@@ -185,7 +185,7 @@ export interface IStorage {
   updateMemberCorporateAdmin(orgId: number, memberId: number, isCorporateAdmin: boolean): Promise<OrgMembership | undefined>;
   hasCorporateAdminMembership(userId: string): Promise<boolean>;
   getAllOrganizations(): Promise<Organization[]>;
-  isOwnerOfAnyOrg(userId: string): Promise<boolean>;
+  isDevOfAnyOrg(userId: string): Promise<boolean>;
   
   // Locations
   getLocations(): Promise<Location[]>;
@@ -699,10 +699,10 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(organizations).orderBy(organizations.name);
   }
 
-  async isOwnerOfAnyOrg(userId: string): Promise<boolean> {
+  async isDevOfAnyOrg(userId: string): Promise<boolean> {
     const [membership] = await db.select()
       .from(orgMemberships)
-      .where(and(eq(orgMemberships.userId, userId), eq(orgMemberships.role, "owner")))
+      .where(and(eq(orgMemberships.userId, userId), eq(orgMemberships.role, "dev")))
       .limit(1);
     return !!membership;
   }

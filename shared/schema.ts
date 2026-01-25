@@ -75,7 +75,7 @@ export const orgMembershipsRelations = relations(orgMemberships, ({ one }) => ({
 
 export const insertOrgMembershipSchema = createInsertSchema(orgMemberships).omit({ id: true, createdAt: true, updatedAt: true });
 export const updateOrgMemberRoleSchema = z.object({
-  role: z.enum(["owner", "admin", "manager", "technician", "viewer"]),
+  role: z.enum(["owner", "admin", "manager", "technician", "viewer", "dev"]),
 });
 export const updateMemberLocationSchema = z.object({
   primaryLocationId: z.number().nullable(),
