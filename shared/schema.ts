@@ -775,6 +775,16 @@ export const parts = pgTable("parts", {
   vmrsSuggestionLast: jsonb("vmrs_suggestion_last").$type<object>(),
   vmrsConfidenceLast: decimal("vmrs_confidence_last", { precision: 4, scale: 2 }),
   vmrsLastSuggestedAt: timestamp("vmrs_last_suggested_at"),
+  isTire: boolean("is_tire").default(false),
+  tireSize: text("tire_size"),
+  tireDotCode: text("tire_dot_code"),
+  tirePsiRating: integer("tire_psi_rating"),
+  tireLoadIndex: text("tire_load_index"),
+  tireSpeedRating: text("tire_speed_rating"),
+  tireTreadDepthNew: decimal("tire_tread_depth_new", { precision: 5, scale: 2 }),
+  tireBrand: text("tire_brand"),
+  tireModel: text("tire_model"),
+  tireType: text("tire_type"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [
@@ -784,6 +794,7 @@ export const parts = pgTable("parts", {
   index("idx_parts_critical").on(table.isCritical),
   index("idx_parts_smart_class").on(table.smartClass),
   index("idx_parts_safety_system").on(table.safetySystem),
+  index("idx_parts_is_tire").on(table.isTire),
 ]);
 
 export const partsRelations = relations(parts, ({ one }) => ({
@@ -1049,6 +1060,10 @@ export const workOrderLines = pgTable("work_order_lines", {
   completedAt: timestamp("completed_at"),
   rescheduledTo: integer("rescheduled_to"),
   technicianId: varchar("technician_id"),
+  tirePosition: text("tire_position"),
+  tireSerialInstalled: text("tire_serial_installed"),
+  tireSerialRemoved: text("tire_serial_removed"),
+  tireTreadDepthMeasured: decimal("tire_tread_depth_measured", { precision: 5, scale: 2 }),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

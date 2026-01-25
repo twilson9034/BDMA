@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
-import { Plus, Search, Circle, AlertTriangle, CheckCircle, XCircle, Filter } from "lucide-react";
+import { Plus, Search, Package, AlertTriangle, CheckCircle, XCircle, Filter } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -16,44 +16,36 @@ import { DataTable, Column } from "@/components/DataTable";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/EmptyState";
 import { Card, CardContent } from "@/components/ui/card";
-import type { Tire } from "@shared/schema";
+import type { Part } from "@shared/schema";
 
-interface TireWithAsset extends Tire {
-  assetName?: string;
+interface TirePart extends Part {
+  locationName?: string;
+  vendorName?: string;
 }
 
-function ConditionBadge({ condition }: { condition: string }) {
-  const variants: Record<string, { className: string; icon: React.ReactNode }> = {
-    new: { className: "bg-green-500/10 text-green-600 border-green-500/20", icon: <CheckCircle className="h-3 w-3" /> },
-    good: { className: "bg-green-500/10 text-green-600 border-green-500/20", icon: <CheckCircle className="h-3 w-3" /> },
-    fair: { className: "bg-amber-500/10 text-amber-600 border-amber-500/20", icon: <AlertTriangle className="h-3 w-3" /> },
-    worn: { className: "bg-amber-500/10 text-amber-600 border-amber-500/20", icon: <AlertTriangle className="h-3 w-3" /> },
-    critical: { className: "bg-red-500/10 text-red-600 border-red-500/20", icon: <XCircle className="h-3 w-3" /> },
-    failed: { className: "bg-red-500/10 text-red-600 border-red-500/20", icon: <XCircle className="h-3 w-3" /> },
-  };
+function TreadDepthBadge({ depth, original }: { depth?: number | string | null; original?: number | string | null }) {
+  if (!depth) return <span className="text-muted-foreground">-</span>;
   
-  const variant = variants[condition] || variants.fair;
+  const numDepth = typeof depth === 'string' ? parseFloat(depth) : depth;
+  const numOriginal = original ? (typeof original === 'string' ? parseFloat(original) : original) : 10;
   
-  return (
-    <Badge variant="outline" className={`gap-1 ${variant.className}`}>
-      {variant.icon}
-      {condition}
-    </Badge>
-  );
-}
-
-function StatusBadge({ status }: { status: string }) {
-  const variants: Record<string, string> = {
-    in_inventory: "bg-blue-500/10 text-blue-600 border-blue-500/20",
-    installed: "bg-green-500/10 text-green-600 border-green-500/20",
-    removed: "bg-amber-500/10 text-amber-600 border-amber-500/20",
-    disposed: "bg-muted text-muted-foreground border-muted",
-    sold: "bg-purple-500/10 text-purple-600 border-purple-500/20",
-  };
+  const percentage = (numDepth / numOriginal) * 100;
+  
+  let className = "bg-green-500/10 text-green-600 border-green-500/20";
+  let icon = <CheckCircle className="h-3 w-3" />;
+  
+  if (percentage <= 25) {
+    className = "bg-red-500/10 text-red-600 border-red-500/20";
+    icon = <XCircle className="h-3 w-3" />;
+  } else if (percentage <= 50) {
+    className = "bg-amber-500/10 text-amber-600 border-amber-500/20";
+    icon = <AlertTriangle className="h-3 w-3" />;
+  }
   
   return (
-    <Badge variant="outline" className={variants[status] || ""}>
-      {status.replace("_", " ")}
+    <Badge variant="outline" className={`gap-1 ${className}`}>
+      {icon}
+      {numDepth.toFixed(1)}/32"
     </Badge>
   );
 }
@@ -61,206 +53,217 @@ function StatusBadge({ status }: { status: string }) {
 export default function Tires() {
   const [, navigate] = useLocation();
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [conditionFilter, setConditionFilter] = useState("all");
+  const [typeFilter, setTypeFilter] = useState("all");
 
-  const { data: tires, isLoading } = useQuery<TireWithAsset[]>({
-    queryKey: ["/api/tires"],
+  const { data: partsData, isLoading } = useQuery<{ parts: TirePart[]; total: number }>({
+    queryKey: ["/api/parts"],
   });
 
-  const filteredTires = tires?.filter((tire) => {
+  const parts = partsData?.parts || [];
+  const tireParts = parts.filter(p => p.isTire);
+
+  const filteredTires = tireParts.filter((part) => {
     const matchesSearch =
-      tire.serialNumber.toLowerCase().includes(search.toLowerCase()) ||
-      tire.brand?.toLowerCase().includes(search.toLowerCase()) ||
-      tire.model?.toLowerCase().includes(search.toLowerCase()) ||
-      tire.size?.toLowerCase().includes(search.toLowerCase());
-    const matchesStatus = statusFilter === "all" || tire.status === statusFilter;
-    const matchesCondition = conditionFilter === "all" || tire.condition === conditionFilter;
-    return matchesSearch && matchesStatus && matchesCondition;
+      part.partNumber.toLowerCase().includes(search.toLowerCase()) ||
+      part.name.toLowerCase().includes(search.toLowerCase()) ||
+      part.tireBrand?.toLowerCase().includes(search.toLowerCase()) ||
+      part.tireModel?.toLowerCase().includes(search.toLowerCase()) ||
+      part.tireSize?.toLowerCase().includes(search.toLowerCase());
+    const matchesType = typeFilter === "all" || part.tireType === typeFilter;
+    return matchesSearch && matchesType;
   });
 
   const stats = {
-    total: tires?.length || 0,
-    installed: tires?.filter(t => t.status === "installed").length || 0,
-    inInventory: tires?.filter(t => t.status === "in_inventory").length || 0,
-    critical: tires?.filter(t => t.condition === "critical" || t.condition === "failed").length || 0,
+    total: tireParts.length,
+    inStock: tireParts.filter(t => parseFloat(t.quantityOnHand?.toString() || "0") > 0).length,
+    lowStock: tireParts.filter(t => {
+      const onHand = parseFloat(t.quantityOnHand?.toString() || "0");
+      const reorder = parseFloat(t.reorderPoint?.toString() || "0");
+      return onHand > 0 && onHand <= reorder;
+    }).length,
+    outOfStock: tireParts.filter(t => parseFloat(t.quantityOnHand?.toString() || "0") === 0).length,
   };
 
-  const columns: Column<TireWithAsset>[] = [
+  const columns: Column<TirePart>[] = [
     {
-      header: "Serial Number",
-      accessor: (tire) => (
-        <span className="font-medium" data-testid={`text-tire-serial-${tire.id}`}>
-          {tire.serialNumber}
-        </span>
+      key: "partNumber",
+      header: "Part Number",
+      cell: (part: TirePart) => (
+        <Link href={`/parts/${part.id}`}>
+          <span className="font-medium text-primary hover:underline cursor-pointer" data-testid={`text-tire-part-${part.id}`}>
+            {part.partNumber}
+          </span>
+        </Link>
       ),
     },
     {
+      key: "brand",
       header: "Brand / Model",
-      accessor: (tire) => (
-        <div data-testid={`text-tire-brand-${tire.id}`}>
-          <span className="font-medium">{tire.brand || "Unknown"}</span>
-          {tire.model && <span className="text-muted-foreground ml-1">/ {tire.model}</span>}
+      cell: (part: TirePart) => (
+        <div className="space-y-0.5">
+          <div className="font-medium">{part.tireBrand || "-"}</div>
+          <div className="text-xs text-muted-foreground">{part.tireModel || ""}</div>
         </div>
       ),
     },
     {
+      key: "size",
       header: "Size",
-      accessor: (tire) => <span data-testid={`text-tire-size-${tire.id}`}>{tire.size || "-"}</span>,
+      cell: (part: TirePart) => <span>{part.tireSize || "-"}</span>,
     },
     {
-      header: "Status",
-      accessor: (tire) => <span data-testid={`badge-tire-status-${tire.id}`}><StatusBadge status={tire.status || "unknown"} /></span>,
-    },
-    {
-      header: "Condition",
-      accessor: (tire) => <span data-testid={`badge-tire-condition-${tire.id}`}><ConditionBadge condition={tire.condition || "unknown"} /></span>,
-    },
-    {
-      header: "Tread Depth",
-      accessor: (tire) => (
-        <span className={Number(tire.treadDepth || 0) < 4 ? "text-red-600 font-medium" : ""} data-testid={`text-tire-tread-${tire.id}`}>
-          {tire.treadDepth ? `${tire.treadDepth}/32"` : "N/A"}
-        </span>
+      key: "type",
+      header: "Type",
+      cell: (part: TirePart) => (
+        <Badge variant="outline" className="capitalize">
+          {part.tireType?.replace("_", " ") || "-"}
+        </Badge>
       ),
     },
     {
-      header: "Position",
-      accessor: (tire) => <span data-testid={`text-tire-position-${tire.id}`}>{tire.position || "-"}</span>,
+      key: "treadDepth",
+      header: "New Tread",
+      cell: (part: TirePart) => (
+        <TreadDepthBadge depth={part.tireTreadDepthNew} original={10} />
+      ),
     },
     {
-      header: "Asset",
-      accessor: (tire) => <span data-testid={`text-tire-asset-${tire.id}`}>{tire.assetName || (tire.assetId ? `Asset #${tire.assetId}` : "In Inventory")}</span>,
+      key: "qtyOnHand",
+      header: "Qty On Hand",
+      cell: (part: TirePart) => {
+        const qty = parseFloat(part.quantityOnHand?.toString() || "0");
+        const reorder = parseFloat(part.reorderPoint?.toString() || "0");
+        const isLow = qty > 0 && qty <= reorder;
+        return (
+          <div className="flex items-center gap-2">
+            <span className={isLow ? "text-amber-600 font-medium" : qty === 0 ? "text-red-600 font-medium" : ""}>
+              {qty}
+            </span>
+            {isLow && <AlertTriangle className="h-3 w-3 text-amber-500" />}
+            {qty === 0 && <XCircle className="h-3 w-3 text-red-500" />}
+          </div>
+        );
+      },
+    },
+    {
+      key: "dotCode",
+      header: "DOT Code",
+      cell: (part: TirePart) => (
+        <span className="font-mono text-xs">{part.tireDotCode || "-"}</span>
+      ),
+    },
+    {
+      key: "unitCost",
+      header: "Unit Cost",
+      cell: (part: TirePart) => <span>{part.unitCost ? `$${parseFloat(part.unitCost).toFixed(2)}` : "-"}</span>,
     },
   ];
 
   return (
-    <div className="space-y-6 fade-in">
+    <div className="container mx-auto px-4 py-6">
       <PageHeader
-        title="Tire Management"
-        description="Track and manage your tire inventory and installations"
-        actions={
-          <Button onClick={() => navigate("/tires/new")} data-testid="button-new-tire">
-            <Plus className="h-4 w-4 mr-2" />
-            Add Tire
-          </Button>
-        }
+        title="Tire Inventory"
+        description="View and manage tire parts in inventory. Add tires to work orders using tire VMRS codes."
       />
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Card data-testid="card-stat-total">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-2">
-              <Circle className="h-5 w-5 text-muted-foreground" />
-              <div>
-                <p className="text-2xl font-bold" data-testid="text-stat-total">{stats.total}</p>
-                <p className="text-sm text-muted-foreground" data-testid="label-stat-total">Total Tires</p>
-              </div>
-            </div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <Card>
+          <CardContent className="pt-4">
+            <div className="text-2xl font-bold">{stats.total}</div>
+            <p className="text-xs text-muted-foreground">Total Tire SKUs</p>
           </CardContent>
         </Card>
-        <Card data-testid="card-stat-installed">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-2">
-              <CheckCircle className="h-5 w-5 text-green-500" />
-              <div>
-                <p className="text-2xl font-bold" data-testid="text-stat-installed">{stats.installed}</p>
-                <p className="text-sm text-muted-foreground" data-testid="label-stat-installed">Installed</p>
-              </div>
-            </div>
+        <Card>
+          <CardContent className="pt-4">
+            <div className="text-2xl font-bold text-green-600">{stats.inStock}</div>
+            <p className="text-xs text-muted-foreground">In Stock</p>
           </CardContent>
         </Card>
-        <Card data-testid="card-stat-inventory">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-2">
-              <Circle className="h-5 w-5 text-blue-500" />
-              <div>
-                <p className="text-2xl font-bold" data-testid="text-stat-inventory">{stats.inInventory}</p>
-                <p className="text-sm text-muted-foreground" data-testid="label-stat-inventory">In Inventory</p>
-              </div>
-            </div>
+        <Card>
+          <CardContent className="pt-4">
+            <div className="text-2xl font-bold text-amber-600">{stats.lowStock}</div>
+            <p className="text-xs text-muted-foreground">Low Stock</p>
           </CardContent>
         </Card>
-        <Card data-testid="card-stat-critical">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-2">
-              <XCircle className="h-5 w-5 text-red-500" />
-              <div>
-                <p className="text-2xl font-bold text-red-600" data-testid="text-stat-critical">{stats.critical}</p>
-                <p className="text-sm text-muted-foreground" data-testid="label-stat-critical">Critical Condition</p>
-              </div>
-            </div>
+        <Card>
+          <CardContent className="pt-4">
+            <div className="text-2xl font-bold text-red-600">{stats.outOfStock}</div>
+            <p className="text-xs text-muted-foreground">Out of Stock</p>
           </CardContent>
         </Card>
       </div>
 
-      <div className="flex flex-col sm:flex-row gap-4">
+      <Card className="mb-6 border-primary/20 bg-primary/5">
+        <CardContent className="pt-4">
+          <div className="flex items-start gap-3">
+            <Package className="h-5 w-5 text-primary mt-0.5" />
+            <div className="flex-1">
+              <h3 className="font-medium text-sm">Tire Workflow</h3>
+              <p className="text-xs text-muted-foreground mt-1">
+                Tires are managed through the inventory system. When performing tire work:
+              </p>
+              <ol className="text-xs text-muted-foreground mt-2 space-y-1 list-decimal list-inside">
+                <li>Create a work order for the vehicle/equipment</li>
+                <li>Add a line with a tire-related VMRS code (17-xxx)</li>
+                <li>The system will show tire-specific fields for position, serial numbers, and tread depth</li>
+                <li>Consume tire parts from inventory on the work order line</li>
+              </ol>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => navigate("/parts/new")} data-testid="button-add-tire-part">
+              <Plus className="h-4 w-4 mr-2" />
+              Add Tire Part
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="flex flex-col md:flex-row gap-4 mb-6">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search by serial number, brand, model..."
+            placeholder="Search by part number, brand, model, size..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-10"
             data-testid="input-search-tires"
           />
         </div>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-full sm:w-40" data-testid="select-status-filter">
+        <Select value={typeFilter} onValueChange={setTypeFilter}>
+          <SelectTrigger className="w-[180px]" data-testid="select-tire-type-filter">
             <Filter className="h-4 w-4 mr-2" />
-            <SelectValue placeholder="Status" />
+            <SelectValue placeholder="Filter by type" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all" data-testid="option-status-all">All Status</SelectItem>
-            <SelectItem value="in_inventory" data-testid="option-status-inventory">In Inventory</SelectItem>
-            <SelectItem value="installed" data-testid="option-status-installed">Installed</SelectItem>
-            <SelectItem value="removed" data-testid="option-status-removed">Removed</SelectItem>
-            <SelectItem value="disposed" data-testid="option-status-disposed">Disposed</SelectItem>
-            <SelectItem value="sold" data-testid="option-status-sold">Sold</SelectItem>
-          </SelectContent>
-        </Select>
-        <Select value={conditionFilter} onValueChange={setConditionFilter}>
-          <SelectTrigger className="w-full sm:w-40" data-testid="select-condition-filter">
-            <Filter className="h-4 w-4 mr-2" />
-            <SelectValue placeholder="Condition" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all" data-testid="option-condition-all">All Conditions</SelectItem>
-            <SelectItem value="new" data-testid="option-condition-new">New</SelectItem>
-            <SelectItem value="good" data-testid="option-condition-good">Good</SelectItem>
-            <SelectItem value="fair" data-testid="option-condition-fair">Fair</SelectItem>
-            <SelectItem value="worn" data-testid="option-condition-worn">Worn</SelectItem>
-            <SelectItem value="critical" data-testid="option-condition-critical">Critical</SelectItem>
-            <SelectItem value="failed" data-testid="option-condition-failed">Failed</SelectItem>
+            <SelectItem value="all">All Types</SelectItem>
+            <SelectItem value="steer">Steer</SelectItem>
+            <SelectItem value="drive">Drive</SelectItem>
+            <SelectItem value="trailer">Trailer</SelectItem>
+            <SelectItem value="all_position">All Position</SelectItem>
+            <SelectItem value="winter">Winter</SelectItem>
+            <SelectItem value="summer">Summer</SelectItem>
           </SelectContent>
         </Select>
       </div>
 
       {isLoading ? (
-        <div className="animate-pulse space-y-4" data-testid="loading-skeleton">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="h-16 bg-muted rounded-lg" data-testid={`skeleton-row-${i}`} />
-          ))}
-        </div>
-      ) : !filteredTires || filteredTires.length === 0 ? (
-        <div data-testid="empty-state-tires">
-          <EmptyState
-            icon={Circle}
-            title="No tires found"
-            description={search || statusFilter !== "all" || conditionFilter !== "all" 
-              ? "Try adjusting your filters" 
-              : "Add your first tire to get started"}
-            action={{
-              label: "Add Tire",
-              onClick: () => navigate("/tires/new"),
-            }}
-          />
-        </div>
+        <div className="text-center py-8 text-muted-foreground">Loading tire inventory...</div>
+      ) : filteredTires.length === 0 ? (
+        <EmptyState
+          title="No tire parts found"
+          description={tireParts.length === 0 
+            ? "Add tire parts to inventory to track them here. Mark parts as tires when creating them."
+            : "No tires match your current filters."}
+          icon={Package}
+          action={tireParts.length === 0 ? {
+            label: "Add Tire Part",
+            onClick: () => navigate("/parts/new"),
+          } : undefined}
+        />
       ) : (
-        <DataTable
+        <DataTable<TirePart>
           data={filteredTires}
           columns={columns}
-          keyExtractor={(tire) => tire.id.toString()}
+          getRowKey={(part) => part.id}
         />
       )}
     </div>

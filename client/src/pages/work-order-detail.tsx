@@ -102,6 +102,17 @@ export default function WorkOrderDetail() {
   const [showSignatureDialog, setShowSignatureDialog] = useState(false);
   const [signatureType, setSignatureType] = useState<"technician" | "customer">("technician");
   const [pendingStatusChange, setPendingStatusChange] = useState<string | null>(null);
+  
+  const [newLineTirePosition, setNewLineTirePosition] = useState("");
+  const [newLineTireSerialInstalled, setNewLineTireSerialInstalled] = useState("");
+  const [newLineTireSerialRemoved, setNewLineTireSerialRemoved] = useState("");
+  const [newLineTireTreadDepth, setNewLineTireTreadDepth] = useState("");
+  
+  const isTireVmrsCode = (code: string | undefined): boolean => {
+    if (!code) return false;
+    const normalized = code.replace(/-/g, "").replace(/^0+/, "");
+    return normalized.startsWith("17");
+  };
 
   const handleVmrsCodeSelect = (vmrsCodeId: string) => {
     setSelectedVmrsCodeId(vmrsCodeId);
@@ -339,6 +350,10 @@ export default function WorkOrderDetail() {
       setNewLinePartId("");
       setNewLineQuantity("1");
       setNewLinePartsCost("");
+      setNewLineTirePosition("");
+      setNewLineTireSerialInstalled("");
+      setNewLineTireSerialRemoved("");
+      setNewLineTireTreadDepth("");
     },
     onError: () => {
       toast({ title: "Error", description: "Failed to add line.", variant: "destructive" });
@@ -496,7 +511,7 @@ export default function WorkOrderDetail() {
     const unitCost = selectedPart?.unitCost || newLinePartsCost || undefined;
     const totalPartsCost = selectedPart && unitCost ? (parseFloat(unitCost) * quantity).toFixed(2) : newLinePartsCost || undefined;
     
-    createLineMutation.mutate({
+    const lineData: any = {
       description: selectedVmrs.description || selectedVmrs.title,
       vmrsCode: selectedVmrs.code,
       vmrsTitle: selectedVmrs.title,
@@ -508,7 +523,16 @@ export default function WorkOrderDetail() {
       quantity: selectedPart ? quantity : undefined,
       unitCost: unitCost,
       partsCost: totalPartsCost,
-    });
+    };
+    
+    if (isTireVmrsCode(selectedVmrs.code)) {
+      lineData.tirePosition = newLineTirePosition || undefined;
+      lineData.tireSerialInstalled = newLineTireSerialInstalled || undefined;
+      lineData.tireSerialRemoved = newLineTireSerialRemoved || undefined;
+      lineData.tireTreadDepthMeasured = newLineTireTreadDepth ? parseFloat(newLineTireTreadDepth) : undefined;
+    }
+    
+    createLineMutation.mutate(lineData);
   };
 
   const handleAddItem = () => {
@@ -1433,6 +1457,75 @@ export default function WorkOrderDetail() {
                 data-testid="input-line-notes"
               />
             </div>
+
+            {selectedVmrsCodeId && (() => {
+              const selectedCode = vmrsCodes.find(c => c.id.toString() === selectedVmrsCodeId);
+              if (selectedCode && isTireVmrsCode(selectedCode.code)) {
+                return (
+                  <Card className="border-primary/20 bg-primary/5">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm font-medium flex items-center gap-2">
+                        <Package className="h-4 w-4" />
+                        Tire Replacement Details
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <label className="text-[10px] uppercase font-bold text-muted-foreground">Tire Position</label>
+                          <Select value={newLineTirePosition} onValueChange={setNewLineTirePosition}>
+                            <SelectTrigger data-testid="select-tire-position">
+                              <SelectValue placeholder="Select position..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="LF">Left Front (LF)</SelectItem>
+                              <SelectItem value="RF">Right Front (RF)</SelectItem>
+                              <SelectItem value="LR-O">Left Rear Outer (LR-O)</SelectItem>
+                              <SelectItem value="LR-I">Left Rear Inner (LR-I)</SelectItem>
+                              <SelectItem value="RR-O">Right Rear Outer (RR-O)</SelectItem>
+                              <SelectItem value="RR-I">Right Rear Inner (RR-I)</SelectItem>
+                              <SelectItem value="spare">Spare</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-[10px] uppercase font-bold text-muted-foreground">Tread Depth (32nds)</label>
+                          <Input
+                            type="number"
+                            step="0.1"
+                            placeholder="e.g., 8.5"
+                            value={newLineTireTreadDepth}
+                            onChange={(e) => setNewLineTireTreadDepth(e.target.value)}
+                            data-testid="input-tire-tread-depth"
+                          />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <label className="text-[10px] uppercase font-bold text-muted-foreground">New Tire Serial/DOT</label>
+                          <Input
+                            placeholder="Serial of tire installed"
+                            value={newLineTireSerialInstalled}
+                            onChange={(e) => setNewLineTireSerialInstalled(e.target.value)}
+                            data-testid="input-tire-serial-installed"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-[10px] uppercase font-bold text-muted-foreground">Old Tire Serial/DOT</label>
+                          <Input
+                            placeholder="Serial of tire removed"
+                            value={newLineTireSerialRemoved}
+                            onChange={(e) => setNewLineTireSerialRemoved(e.target.value)}
+                            data-testid="input-tire-serial-removed"
+                          />
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              }
+              return null;
+            })()}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowAddLineDialog(false)}>Cancel</Button>
