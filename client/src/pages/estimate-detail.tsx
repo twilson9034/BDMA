@@ -77,9 +77,10 @@ export default function EstimateDetail() {
     queryKey: ["/api/assets"],
   });
 
-  const { data: parts } = useQuery<Part[]>({
+  const { data: partsData } = useQuery<{ parts: Part[]; total: number }>({
     queryKey: ["/api/parts"],
   });
+  const parts = partsData?.parts;
 
   const linkedAsset = assets?.find(a => a.id === estimate?.assetId);
 
