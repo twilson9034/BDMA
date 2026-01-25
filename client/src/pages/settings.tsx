@@ -221,7 +221,7 @@ export default function Settings() {
       requirePOApproval?: boolean;
     } = {};
     
-    if (orgName.trim() && orgName !== organization?.name) {
+    if (orgName?.trim() && orgName !== organization?.name) {
       updates.name = orgName;
     }
     

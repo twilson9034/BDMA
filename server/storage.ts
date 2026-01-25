@@ -601,7 +601,7 @@ export class DatabaseStorage implements IStorage {
       id: orgMemberships.id,
       userId: orgMemberships.userId,
       role: orgMemberships.role,
-      joinedAt: orgMemberships.joinedAt,
+      joinedAt: orgMemberships.createdAt,
       firstName: users.firstName,
       lastName: users.lastName,
       email: users.email,
