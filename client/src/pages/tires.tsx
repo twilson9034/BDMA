@@ -209,7 +209,7 @@ export default function Tires() {
                 <li>Consume tire parts from inventory on the work order line</li>
               </ol>
             </div>
-            <Button variant="outline" size="sm" onClick={() => navigate("/parts/new")} data-testid="button-add-tire-part">
+            <Button variant="outline" size="sm" onClick={() => navigate("/inventory/new")} data-testid="button-add-tire-part">
               <Plus className="h-4 w-4 mr-2" />
               Add Tire Part
             </Button>
@@ -256,7 +256,7 @@ export default function Tires() {
           icon={Package}
           action={tireParts.length === 0 ? {
             label: "Add Tire Part",
-            onClick: () => navigate("/parts/new"),
+            onClick: () => navigate("/inventory/new"),
           } : undefined}
         />
       ) : (
