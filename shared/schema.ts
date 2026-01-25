@@ -32,6 +32,7 @@ export const organizations = pgTable("organizations", {
   requireEstimateApproval: boolean("require_estimate_approval").default(false), // Require approval before converting estimates to WO
   requireRequisitionApproval: boolean("require_requisition_approval").default(true), // Require approval for purchase requisitions
   requirePOApproval: boolean("require_po_approval").default(true), // Require approval for purchase orders
+  enableBarcodeSystem: boolean("enable_barcode_system").default(false), // Enable barcode printing for inventory
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -43,6 +44,7 @@ export const updateOrganizationSchema = insertOrganizationSchema.partial().pick(
   requireEstimateApproval: true,
   requireRequisitionApproval: true,
   requirePOApproval: true,
+  enableBarcodeSystem: true,
 });
 export type InsertOrganization = z.infer<typeof insertOrganizationSchema>;
 export type UpdateOrganization = z.infer<typeof updateOrganizationSchema>;
