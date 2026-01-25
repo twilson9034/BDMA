@@ -586,12 +586,12 @@ export default function EstimateDetail() {
 
             <div className="space-y-2">
               <Label>Task / VMRS Code (Optional)</Label>
-              <Select value={selectedVmrsCode} onValueChange={setSelectedVmrsCode}>
+              <Select value={selectedVmrsCode || "none"} onValueChange={(val) => setSelectedVmrsCode(val === "none" ? "" : val)}>
                 <SelectTrigger data-testid="select-vmrs-code">
                   <SelectValue placeholder="Select a task/VMRS code..." />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">None</SelectItem>
+                  <SelectItem value="none">None</SelectItem>
                   {vmrsCodes?.map((vmrs) => (
                     <SelectItem key={vmrs.id} value={vmrs.code}>
                       {vmrs.code} - {vmrs.title}
