@@ -49,9 +49,10 @@ export default function CycleCounts() {
     queryKey: ["/api/cycle-counts"],
   });
 
-  const { data: allParts } = useQuery<Part[]>({
+  const { data: partsData } = useQuery<{ parts: Part[]; total: number }>({
     queryKey: ["/api/parts"],
   });
+  const allParts = partsData?.parts || [];
 
   const generateScheduleMutation = useMutation({
     mutationFn: async () => {

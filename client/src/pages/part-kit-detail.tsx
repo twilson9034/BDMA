@@ -59,9 +59,10 @@ export default function PartKitDetail() {
     enabled: !!kitId,
   });
 
-  const { data: allParts } = useQuery<Part[]>({
+  const { data: partsData } = useQuery<{ parts: Part[]; total: number }>({
     queryKey: ["/api/parts"],
   });
+  const allParts = partsData?.parts || [];
 
   const updateKitMutation = useMutation({
     mutationFn: async (data: Partial<PartKit>) => {
