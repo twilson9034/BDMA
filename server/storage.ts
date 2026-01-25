@@ -149,6 +149,21 @@ import {
   type InsertTireReplacementSetting,
   type PublicAssetToken,
   type InsertPublicAssetToken,
+  classificationRuns,
+  partClassificationSnapshots,
+  classificationAuditLog,
+  events,
+  eventParts,
+  type ClassificationRun,
+  type InsertClassificationRun,
+  type PartClassificationSnapshot,
+  type InsertPartClassificationSnapshot,
+  type ClassificationAuditLog,
+  type InsertClassificationAuditLog,
+  type Event,
+  type InsertEvent,
+  type EventPart,
+  type InsertEventPart,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -494,6 +509,36 @@ export interface IStorage {
   markAllNotificationsRead(userId: string): Promise<number>;
   markAllNotificationsReadByOrg(userId: string, orgId: number): Promise<number>;
   dismissNotification(id: number, userId: string): Promise<void>;
+
+  // Classification Runs
+  getClassificationRuns(orgId: number): Promise<ClassificationRun[]>;
+  getClassificationRun(id: number): Promise<ClassificationRun | undefined>;
+  createClassificationRun(run: InsertClassificationRun): Promise<ClassificationRun>;
+  updateClassificationRun(id: number, run: Partial<InsertClassificationRun>): Promise<ClassificationRun | undefined>;
+
+  // Classification Snapshots
+  getPartClassificationSnapshots(runId: number): Promise<PartClassificationSnapshot[]>;
+  getLatestPartClassificationSnapshot(partId: number): Promise<PartClassificationSnapshot | undefined>;
+  createPartClassificationSnapshot(snapshot: InsertPartClassificationSnapshot): Promise<PartClassificationSnapshot>;
+
+  // Classification Audit Log
+  getClassificationAuditLog(orgId: number, partId?: number): Promise<ClassificationAuditLog[]>;
+  createClassificationAuditLogEntry(entry: InsertClassificationAuditLog): Promise<ClassificationAuditLog>;
+
+  // Events
+  getEventsByOrg(orgId: number): Promise<Event[]>;
+  getEvent(id: number): Promise<Event | undefined>;
+  createEvent(event: InsertEvent): Promise<Event>;
+  updateEvent(id: number, event: Partial<InsertEvent>): Promise<Event | undefined>;
+
+  // Event Parts
+  getEventParts(eventId: number): Promise<EventPart[]>;
+  createEventPart(eventPart: InsertEventPart): Promise<EventPart>;
+
+  // Classification Aggregation Queries
+  getPartUsageAggregation(orgId: number, windowMonths: number): Promise<Array<{ partId: number; totalQty: number; totalSpend: number }>>;
+  getPartMonthlyUsage(partId: number, windowMonths: number): Promise<Array<{ month: string; qty: number }>>;
+  getPartRoadcallStats(partId: number, windowMonths: number): Promise<{ count: number; downtimeHours: number }>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -3149,6 +3194,173 @@ export class DatabaseStorage implements IStorage {
     if (!org) return undefined;
     
     return { asset, org };
+  }
+
+  // Classification Runs
+  async getClassificationRuns(orgId: number): Promise<ClassificationRun[]> {
+    return db.select().from(classificationRuns)
+      .where(eq(classificationRuns.orgId, orgId))
+      .orderBy(desc(classificationRuns.startedAt));
+  }
+
+  async getClassificationRun(id: number): Promise<ClassificationRun | undefined> {
+    const [run] = await db.select().from(classificationRuns)
+      .where(eq(classificationRuns.id, id));
+    return run;
+  }
+
+  async createClassificationRun(run: InsertClassificationRun): Promise<ClassificationRun> {
+    const [created] = await db.insert(classificationRuns).values(run).returning();
+    return created;
+  }
+
+  async updateClassificationRun(id: number, run: Partial<InsertClassificationRun>): Promise<ClassificationRun | undefined> {
+    const [updated] = await db.update(classificationRuns)
+      .set(run)
+      .where(eq(classificationRuns.id, id))
+      .returning();
+    return updated;
+  }
+
+  // Classification Snapshots
+  async getPartClassificationSnapshots(runId: number): Promise<PartClassificationSnapshot[]> {
+    return db.select().from(partClassificationSnapshots)
+      .where(eq(partClassificationSnapshots.runId, runId));
+  }
+
+  async getLatestPartClassificationSnapshot(partId: number): Promise<PartClassificationSnapshot | undefined> {
+    const [snapshot] = await db.select().from(partClassificationSnapshots)
+      .where(eq(partClassificationSnapshots.partId, partId))
+      .orderBy(desc(partClassificationSnapshots.createdAt))
+      .limit(1);
+    return snapshot;
+  }
+
+  async createPartClassificationSnapshot(snapshot: InsertPartClassificationSnapshot): Promise<PartClassificationSnapshot> {
+    const [created] = await db.insert(partClassificationSnapshots).values(snapshot).returning();
+    return created;
+  }
+
+  // Classification Audit Log
+  async getClassificationAuditLog(orgId: number, partId?: number): Promise<ClassificationAuditLog[]> {
+    if (partId) {
+      return db.select().from(classificationAuditLog)
+        .where(and(eq(classificationAuditLog.orgId, orgId), eq(classificationAuditLog.partId, partId)))
+        .orderBy(desc(classificationAuditLog.changedAt));
+    }
+    return db.select().from(classificationAuditLog)
+      .where(eq(classificationAuditLog.orgId, orgId))
+      .orderBy(desc(classificationAuditLog.changedAt));
+  }
+
+  async createClassificationAuditLogEntry(entry: InsertClassificationAuditLog): Promise<ClassificationAuditLog> {
+    const [created] = await db.insert(classificationAuditLog).values(entry).returning();
+    return created;
+  }
+
+  // Events
+  async getEventsByOrg(orgId: number): Promise<Event[]> {
+    return db.select().from(events)
+      .where(eq(events.orgId, orgId))
+      .orderBy(desc(events.startTime));
+  }
+
+  async getEvent(id: number): Promise<Event | undefined> {
+    const [event] = await db.select().from(events)
+      .where(eq(events.id, id));
+    return event;
+  }
+
+  async createEvent(event: InsertEvent): Promise<Event> {
+    const [created] = await db.insert(events).values(event).returning();
+    return created;
+  }
+
+  async updateEvent(id: number, event: Partial<InsertEvent>): Promise<Event | undefined> {
+    const [updated] = await db.update(events)
+      .set(event)
+      .where(eq(events.id, id))
+      .returning();
+    return updated;
+  }
+
+  // Event Parts
+  async getEventParts(eventId: number): Promise<EventPart[]> {
+    return db.select().from(eventParts)
+      .where(eq(eventParts.eventId, eventId));
+  }
+
+  async createEventPart(eventPart: InsertEventPart): Promise<EventPart> {
+    const [created] = await db.insert(eventParts).values(eventPart).returning();
+    return created;
+  }
+
+  // Classification Aggregation Queries
+  async getPartUsageAggregation(orgId: number, windowMonths: number): Promise<Array<{ partId: number; totalQty: number; totalSpend: number }>> {
+    const windowStart = new Date();
+    windowStart.setMonth(windowStart.getMonth() - windowMonths);
+    
+    const result = await db.execute(sql`
+      SELECT 
+        part_id as "partId",
+        COALESCE(SUM(CAST(quantity AS DECIMAL)), 0) as "totalQty",
+        COALESCE(SUM(CAST(quantity AS DECIMAL) * COALESCE(p.unit_cost, 0)), 0) as "totalSpend"
+      FROM part_usage_history puh
+      LEFT JOIN parts p ON puh.part_id = p.id
+      WHERE puh.part_id IS NOT NULL 
+        AND p.org_id = ${orgId}
+        AND puh.used_at >= ${windowStart}
+      GROUP BY part_id
+    `);
+    
+    return (result.rows as any[]).map(r => ({
+      partId: Number(r.partId),
+      totalQty: Number(r.totalQty),
+      totalSpend: Number(r.totalSpend)
+    }));
+  }
+
+  async getPartMonthlyUsage(partId: number, windowMonths: number): Promise<Array<{ month: string; qty: number }>> {
+    const windowStart = new Date();
+    windowStart.setMonth(windowStart.getMonth() - windowMonths);
+    
+    const result = await db.execute(sql`
+      SELECT 
+        TO_CHAR(used_at, 'YYYY-MM') as month,
+        COALESCE(SUM(CAST(quantity AS DECIMAL)), 0) as qty
+      FROM part_usage_history
+      WHERE part_id = ${partId}
+        AND used_at >= ${windowStart}
+      GROUP BY TO_CHAR(used_at, 'YYYY-MM')
+      ORDER BY month
+    `);
+    
+    return (result.rows as any[]).map(r => ({
+      month: r.month,
+      qty: Number(r.qty)
+    }));
+  }
+
+  async getPartRoadcallStats(partId: number, windowMonths: number): Promise<{ count: number; downtimeHours: number }> {
+    const windowStart = new Date();
+    windowStart.setMonth(windowStart.getMonth() - windowMonths);
+    
+    const result = await db.execute(sql`
+      SELECT 
+        COUNT(DISTINCT e.id) as count,
+        COALESCE(SUM(CAST(e.downtime_hours AS DECIMAL)), 0) as "downtimeHours"
+      FROM events e
+      INNER JOIN event_parts ep ON e.id = ep.event_id
+      WHERE ep.part_id = ${partId}
+        AND e.event_type = 'ROAD_CALL'
+        AND e.start_time >= ${windowStart}
+    `);
+    
+    const row = (result.rows as any[])[0];
+    return {
+      count: Number(row?.count || 0),
+      downtimeHours: Number(row?.downtimeHours || 0)
+    };
   }
 }
 

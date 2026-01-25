@@ -2837,6 +2837,252 @@ export async function registerRoutes(
     }
   });
 
+  // SMART Classification System (tenant-scoped)
+  app.get("/api/classification/runs", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      if (!orgId) return res.status(403).json({ error: "Organization context required" });
+      const runs = await storage.getClassificationRuns(orgId);
+      res.json(runs);
+    } catch (error) {
+      console.error("Failed to fetch classification runs:", error);
+      res.status(500).json({ error: "Failed to fetch classification runs" });
+    }
+  });
+
+  app.get("/api/classification/runs/:id", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      if (!orgId) return res.status(403).json({ error: "Organization context required" });
+      const run = await storage.getClassificationRun(parseInt(req.params.id));
+      if (!run) return res.status(404).json({ error: "Run not found" });
+      if (run.orgId !== orgId) return res.status(403).json({ error: "Access denied" });
+      res.json(run);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch classification run" });
+    }
+  });
+
+  app.post("/api/classification/run", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      if (!orgId) return res.status(403).json({ error: "Organization context required" });
+      
+      const { runClassification } = await import("./services/classificationService");
+      const rawWindowMonths = req.body.windowMonths;
+      const windowMonths = typeof rawWindowMonths === "number" && rawWindowMonths >= 1 && rawWindowMonths <= 60 
+        ? rawWindowMonths 
+        : 12;
+      const result = await runClassification(orgId, windowMonths);
+      
+      res.json({ 
+        success: true, 
+        runId: result.runId,
+        partsProcessed: result.results.length,
+        classBreakdown: {
+          S: result.results.filter(r => r.smartClass === "S").length,
+          A: result.results.filter(r => r.smartClass === "A").length,
+          B: result.results.filter(r => r.smartClass === "B").length,
+          C: result.results.filter(r => r.smartClass === "C").length,
+        }
+      });
+    } catch (error) {
+      console.error("Failed to run classification:", error);
+      res.status(500).json({ error: "Failed to run classification" });
+    }
+  });
+
+  app.get("/api/classification/runs/:runId/snapshots", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      if (!orgId) return res.status(403).json({ error: "Organization context required" });
+      const run = await storage.getClassificationRun(parseInt(req.params.runId));
+      if (!run) return res.status(404).json({ error: "Run not found" });
+      if (run.orgId !== orgId) return res.status(403).json({ error: "Access denied" });
+      
+      const snapshots = await storage.getPartClassificationSnapshots(parseInt(req.params.runId));
+      res.json(snapshots);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch snapshots" });
+    }
+  });
+
+  app.get("/api/parts/:id/classification", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      if (!orgId) return res.status(403).json({ error: "Organization context required" });
+      const partId = parseInt(req.params.id);
+      const part = await storage.getPart(partId);
+      if (!part) return res.status(404).json({ error: "Part not found" });
+      if (part.orgId !== orgId) return res.status(403).json({ error: "Access denied" });
+      
+      const latestSnapshot = await storage.getLatestPartClassificationSnapshot(partId);
+      const auditLog = await storage.getClassificationAuditLog(orgId, partId);
+      
+      res.json({
+        currentClass: part.smartClass,
+        currentXyz: part.xyzClass,
+        priorityScore: part.priorityScore,
+        lastClassifiedAt: part.lastClassifiedAt,
+        isLocked: part.classificationLocked,
+        safetySystem: part.safetySystem,
+        failureSeverity: part.failureSeverity,
+        complianceOverride: part.complianceOverride,
+        traceabilityRequired: part.traceabilityRequired,
+        leadTimeDays: part.leadTimeDays,
+        latestSnapshot,
+        recentAuditLog: auditLog.slice(0, 10),
+      });
+    } catch (error) {
+      console.error("Failed to get part classification:", error);
+      res.status(500).json({ error: "Failed to get part classification" });
+    }
+  });
+
+  app.post("/api/parts/:id/classification/override", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      const userId = (req.user as any)?.claims?.sub;
+      if (!orgId) return res.status(403).json({ error: "Organization context required" });
+      if (!userId) return res.status(401).json({ error: "Unauthorized" });
+      
+      const partId = parseInt(req.params.id);
+      const { newClass, newXyz, reason } = req.body;
+      
+      if (!["S", "A", "B", "C"].includes(newClass)) {
+        return res.status(400).json({ error: "Invalid class. Must be S, A, B, or C" });
+      }
+      
+      const { overridePartClassification } = await import("./services/classificationService");
+      await overridePartClassification(partId, newClass, newXyz, reason || "Manual override", userId, orgId);
+      
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to override classification:", error);
+      res.status(500).json({ error: "Failed to override classification" });
+    }
+  });
+
+  app.post("/api/parts/:id/classification/unlock", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      const userId = (req.user as any)?.claims?.sub;
+      if (!orgId) return res.status(403).json({ error: "Organization context required" });
+      if (!userId) return res.status(401).json({ error: "Unauthorized" });
+      
+      const { unlockPartClassification } = await import("./services/classificationService");
+      await unlockPartClassification(parseInt(req.params.id), userId, orgId);
+      
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to unlock classification:", error);
+      res.status(500).json({ error: "Failed to unlock classification" });
+    }
+  });
+
+  app.get("/api/classification/audit", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      if (!orgId) return res.status(403).json({ error: "Organization context required" });
+      const partId = req.query.partId ? parseInt(req.query.partId as string) : undefined;
+      const auditLog = await storage.getClassificationAuditLog(orgId, partId);
+      res.json(auditLog);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch audit log" });
+    }
+  });
+
+  app.patch("/api/parts/:id/safety-settings", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      if (!orgId) return res.status(403).json({ error: "Organization context required" });
+      const partId = parseInt(req.params.id);
+      const part = await storage.getPart(partId);
+      if (!part) return res.status(404).json({ error: "Part not found" });
+      if (part.orgId !== orgId) return res.status(403).json({ error: "Access denied" });
+      
+      const { safetySystem, failureSeverity, complianceOverride, traceabilityRequired, substituteAllowed, leadTimeDays } = req.body;
+      
+      const updateData: any = {};
+      if (safetySystem !== undefined) updateData.safetySystem = safetySystem;
+      if (failureSeverity !== undefined) updateData.failureSeverity = failureSeverity;
+      if (complianceOverride !== undefined) updateData.complianceOverride = complianceOverride;
+      if (traceabilityRequired !== undefined) updateData.traceabilityRequired = traceabilityRequired;
+      if (substituteAllowed !== undefined) updateData.substituteAllowed = substituteAllowed;
+      if (leadTimeDays !== undefined) updateData.leadTimeDays = leadTimeDays;
+      
+      const updated = await storage.updatePart(partId, updateData);
+      res.json(updated);
+    } catch (error) {
+      console.error("Failed to update safety settings:", error);
+      res.status(500).json({ error: "Failed to update safety settings" });
+    }
+  });
+
+  // Events (Road Calls, Breakdowns, etc.) - tenant-scoped
+  app.get("/api/events", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      if (!orgId) return res.status(403).json({ error: "Organization context required" });
+      const evts = await storage.getEventsByOrg(orgId);
+      res.json(evts);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch events" });
+    }
+  });
+
+  app.post("/api/events", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      if (!orgId) return res.status(403).json({ error: "Organization context required" });
+      
+      const { insertEventSchema } = await import("@shared/schema");
+      const validated = insertEventSchema.parse({ ...req.body, orgId });
+      const event = await storage.createEvent(validated);
+      res.status(201).json(event);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: "Failed to create event" });
+    }
+  });
+
+  app.get("/api/events/:id/parts", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      if (!orgId) return res.status(403).json({ error: "Organization context required" });
+      const event = await storage.getEvent(parseInt(req.params.id));
+      if (!event) return res.status(404).json({ error: "Event not found" });
+      if (event.orgId !== orgId) return res.status(403).json({ error: "Access denied" });
+      
+      const eventParts = await storage.getEventParts(parseInt(req.params.id));
+      res.json(eventParts);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch event parts" });
+    }
+  });
+
+  app.post("/api/events/:id/parts", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      if (!orgId) return res.status(403).json({ error: "Organization context required" });
+      const event = await storage.getEvent(parseInt(req.params.id));
+      if (!event) return res.status(404).json({ error: "Event not found" });
+      if (event.orgId !== orgId) return res.status(403).json({ error: "Access denied" });
+      
+      const { insertEventPartSchema } = await import("@shared/schema");
+      const validated = insertEventPartSchema.parse({ ...req.body, eventId: parseInt(req.params.id) });
+      const eventPart = await storage.createEventPart(validated);
+      res.status(201).json(eventPart);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: "Failed to link part to event" });
+    }
+  });
+
   // Saved Reports (tenant-scoped)
   app.get("/api/saved-reports", tenantMiddleware({ required: false }), async (req, res) => {
     try {

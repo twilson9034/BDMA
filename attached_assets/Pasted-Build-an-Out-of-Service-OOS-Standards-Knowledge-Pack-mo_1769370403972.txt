@@ -1,0 +1,133 @@
+Build an “Out-of-Service (OOS) Standards Knowledge Pack” module inside our CMMS.
+
+WHAT WE MEAN BY “CURRENT OOS STANDARDS”
+- Use CVSA’s North American Standard Out-of-Service Criteria (OOSC) as the inspection pass/fail criteria, updated annually effective April 1.
+- As of now, the 2025 OOSC is in effect (effective April 1, 2025) and replaces prior versions.
+- FMCSA references/incorporates CVSA OOSC editions by reference in certain rulemakings (e.g., HMSP context); track those references as supporting context, but our main operational checklist aligns to the current CVSA OOSC.
+
+IMPORTANT: COPYRIGHT / LICENSING SAFE IMPLEMENTATION
+- Do NOT embed or redistribute the full text/images of the CVSA OOSC handbook unless we provide a licensed copy.
+- Instead:
+  (a) store metadata + links to official sources
+  (b) allow admin upload of the purchased PDF (if we have it) for internal parsing/lookup
+  (c) store structured “rules as data” representing only what we operationally need (thresholds, defect flags, CFR references, and decision outcomes), with citations and a version tag
+- Provide a “Source Integrity” record: handbook edition date, hash of uploaded PDF, and last updated timestamp.
+
+GOALS
+1) Versioned OOS Rules Engine
+- Store OOS rules as structured data with an effective date range:
+  - rules_version (e.g., “CVSA_OOSC_2025”, effective 2025-04-01 to 2026-03-31)
+  - rule category: DRIVER, VEHICLE, CARGO_SECUREMENT, HM_DG, ADMIN
+  - system mapping: tie vehicle rules to VMRS system codes where possible (e.g., brakes=013, steering=015, tires=017, suspension=016, lighting=034)
+  - each rule includes:
+    - rule_id
+    - title (short)
+    - condition schema (fields + operators)
+    - enforcement outcome: OOS_DRIVER / OOS_VEHICLE / OOS_CARGO / NOT_OOS
+    - references: CFR/Canadian regs where applicable; plus “CVSA OOSC edition” pointer
+    - explanation template for UI
+
+2) Inspection + Work Order Integration
+- Create an “Inspection Checklist” flow that:
+  - uses the active rules_version by date
+  - lets tech/inspector record observations (tire tread defect, air leak, inop lamp, etc.)
+  - outputs:
+    - pass/fail
+    - which items trigger OOS and why
+    - corrective action required
+    - links to work orders and parts (parts get usage and can feed our ABC scoring)
+
+3) Smart Suggestions (but explainable)
+- If an inspector flags a defect category (e.g., “brake issue”), suggest the likely VMRS system and common parts (using our VMRS auto-assign + historical usage).
+- Always show “Why”: the matched rule + observed values.
+
+4) Update mechanism
+- Admin screen: “Check for updated OOS edition”
+  - If new edition announced, create a new rules_version record and mark as “draft”.
+  - Allow import of a structured “changes file” (CSV/JSON) so we can update rules without code deploy.
+  - Keep prior versions for historical inspections.
+
+DATA MODEL
+A) oos_sources
+- id
+- source_type (CVSA_NEWS, CVSA_PAGE, FMCSA_FR, UPLOADED_PDF)
+- title
+- url
+- published_date
+- edition_date (e.g., 2025-04-01)
+- hash (for uploaded pdf)
+- notes
+
+B) oos_rules_versions
+- id
+- name (e.g., “CVSA_OOSC_2025”)
+- effective_start (date)
+- effective_end (date)
+- status (DRAFT, ACTIVE, RETIRED)
+- created_at
+- source_ids (array fk to oos_sources)
+
+C) oos_rules
+- id
+- version_id
+- category enum
+- vmrs_system_code (nullable)
+- title
+- condition_json (a small DSL: field/operator/value, with AND/OR nesting)
+- outcome enum (OOS_DRIVER, OOS_VEHICLE, OOS_CARGO, NOT_OOS)
+- reference_json (CFR refs + internal pointers)
+- explanation_template
+
+D) inspections
+- id
+- unit_id
+- inspection_type (LEVEL I-VIII, SHOP_PRETRIP, etc.)
+- performed_by
+- performed_at
+- rules_version_id
+- status (PASS/FAIL/OOS)
+- notes
+
+E) inspection_findings
+- id
+- inspection_id
+- finding_type (enum or string)
+- vmrs_system_code (nullable)
+- observed_json (measurements/flags)
+- triggered_rule_ids (array)
+- outcome
+
+F) oos_change_log
+- id
+- version_id
+- change_summary
+- changed_by
+- changed_at
+
+BOOTSTRAP SOURCES (store links + metadata)
+Create oos_sources records for:
+- CVSA 2025 OOSC in effect announcement (effective April 1, 2025)
+- CVSA Out-of-Service Criteria overview page (annual update statement)
+- FMCSA Federal Register actions referencing incorporation-by-reference (for compliance context)
+
+NOTE: We can’t scrape and store full CVSA handbook text unless we have a licensed copy. Prefer “metadata + change summaries + our structured rules”.
+
+INITIAL RULE SET (SAFE BOOTSTRAP)
+Implement a limited starter rule set as “triage rules” that mark items for review (not full OOS determination) unless backed by licensed content or admin-provided rules file:
+- Driver documentation triage (license/medical/cert status flags)
+- Brake system triage (major air leak/inop brake indicator flags)
+- Tire triage (tread/sidewall/leak flags)
+- Lighting triage (inop critical lamps flags)
+These starter rules must be marked “TRIAGE ONLY” and require a supervisor/inspector confirmation before declaring OOS.
+
+ADMIN IMPORT
+Add “Import OOS Rules (CSV/JSON)” that can fully define our OOS rules for the active edition.
+- Validate schema, store as oos_rules, and enable full OOS decision support.
+- Provide diff view vs prior version.
+
+DELIVERABLES
+- DB migrations + seed oos_sources for the links above
+- Rules engine evaluator (condition_json DSL)
+- Inspection UI + OOS explanation UI
+- Admin import + versioning UI
+- Tests for rules evaluation and version selection by date

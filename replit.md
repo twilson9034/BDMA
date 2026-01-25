@@ -48,6 +48,7 @@ Preferred communication style: Simple, everyday language.
 - **Workflow Management**: Dedicated pages for Receiving, Part Requests, Ready for Review (work order approvals), and Reorder Alerts.
 - **Transaction Reversals**: Atomic reversal of inventory and labor transactions.
 - **Part Kits**: Bundling of parts for common maintenance tasks with automatic consumption.
+- **SMART Inventory Classification**: Intelligent classification system using S/A/B/C classes (S=Safety/Compliance, A=High Priority, B=Medium, C=Low) plus X/Y/Z volatility (X=steady demand, Y=moderate, Z=sporadic). Classification scoring combines cost percentile (35%), roadcall impact (35%), and safety factors (30%) with lead time bonuses. Features admin page with classification run history, class breakdown statistics, part filtering, manual overrides with reason tracking, and comprehensive "Why this class?" explanations. Parts can be locked to prevent auto-reclassification.
 - **ABC Classification & Cycle Counting**: Automatic ABC classification of parts for optimized cycle counting schedules and inventory reconciliation.
 - **PM Dues & Batch Work Order Creation**: Tracking PM due dates/meters and batch creation of work orders for multiple PM instances.
 - **Enhanced Dashboard**: KPI metrics (MTTR, MTBF, Asset Uptime %, PM Compliance, Avg Cost/WO), Procurement Overview widget, and Parts Analytics widget.

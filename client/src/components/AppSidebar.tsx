@@ -29,6 +29,7 @@ import {
   Mail,
   Share2,
   Database,
+  Shield,
 } from "lucide-react";
 import {
   Sidebar,
@@ -66,6 +67,7 @@ const mainNavItems = [
   { title: "Tires", url: "/tires", icon: Circle },
   { title: "Part Kits", url: "/part-kits", icon: Boxes },
   { title: "Cycle Counts", url: "/cycle-counts", icon: RefreshCw },
+  { title: "SMART Classification", url: "/smart-classification", icon: Shield },
 ];
 
 const operationsItems = [

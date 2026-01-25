@@ -62,6 +62,7 @@ import ReorderAlerts from "@/pages/reorder-alerts";
 import PartKits from "@/pages/part-kits";
 import PartKitDetail from "@/pages/part-kit-detail";
 import CycleCounts from "@/pages/cycle-counts";
+import SmartClassification from "@/pages/smart-classification";
 import PmDues from "@/pages/pm-dues";
 import Tires from "@/pages/tires";
 import Messages from "@/pages/messages";
@@ -123,6 +124,7 @@ function AuthenticatedRouter() {
       <Route path="/part-kits" component={PartKits} />
       <Route path="/part-kits/:id" component={PartKitDetail} />
       <Route path="/cycle-counts" component={CycleCounts} />
+      <Route path="/smart-classification" component={SmartClassification} />
       <Route path="/pm-dues" component={PmDues} />
       <Route path="/settings" component={Settings} />
       <Route path="/settings/vmrs" component={VmrsSettings} />

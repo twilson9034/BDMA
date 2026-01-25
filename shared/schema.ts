@@ -312,6 +312,9 @@ export type Vendor = typeof vendors.$inferSelect;
 // ============================================================
 export const partCategoryEnum = ["filters", "fluids", "electrical", "brakes", "engine", "transmission", "hvac", "body", "tires", "general"] as const;
 export const abcClassEnum = ["A", "B", "C"] as const;
+export const smartClassEnum = ["S", "A", "B", "C"] as const;
+export const xyzClassEnum = ["X", "Y", "Z"] as const;
+export const safetySystemEnum = ["BRAKES", "STEERING", "TIRES_WHEELS", "SUSPENSION", "ELECTRICAL", "HVAC", "OTHER"] as const;
 
 export const parts = pgTable("parts", {
   id: serial("id").primaryKey(),
@@ -354,6 +357,17 @@ export const parts = pgTable("parts", {
   avgShipDays: integer("avg_ship_days"),
   imageUrl: text("image_url"),
   isActive: boolean("is_active").default(true),
+  safetySystem: text("safety_system").$type<typeof safetySystemEnum[number]>(),
+  failureSeverity: integer("failure_severity").default(1),
+  complianceOverride: boolean("compliance_override").default(false),
+  traceabilityRequired: boolean("traceability_required").default(false),
+  substituteAllowed: boolean("substitute_allowed").default(true),
+  smartClass: text("smart_class").$type<typeof smartClassEnum[number]>(),
+  xyzClass: text("xyz_class").$type<typeof xyzClassEnum[number]>(),
+  priorityScore: decimal("priority_score", { precision: 5, scale: 2 }),
+  lastClassifiedAt: timestamp("last_classified_at"),
+  classificationLocked: boolean("classification_locked").default(false),
+  leadTimeDays: integer("lead_time_days"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [
@@ -361,6 +375,8 @@ export const parts = pgTable("parts", {
   index("idx_parts_category").on(table.category),
   index("idx_parts_location").on(table.locationId),
   index("idx_parts_critical").on(table.isCritical),
+  index("idx_parts_smart_class").on(table.smartClass),
+  index("idx_parts_safety_system").on(table.safetySystem),
 ]);
 
 export const partsRelations = relations(parts, ({ one }) => ({
@@ -371,6 +387,140 @@ export const partsRelations = relations(parts, ({ one }) => ({
 export const insertPartSchema = createInsertSchema(parts).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertPart = z.infer<typeof insertPartSchema>;
 export type Part = typeof parts.$inferSelect;
+
+// ============================================================
+// SMART CLASSIFICATION SYSTEM
+// ============================================================
+export const classificationRunStatusEnum = ["pending", "running", "completed", "failed"] as const;
+export const eventTypeEnum = ["ROAD_CALL", "BREAKDOWN", "INSPECTION_FAIL", "PM", "ACCIDENT", "OTHER"] as const;
+export const eventPartLinkMethodEnum = ["MANUAL", "FROM_WORK_ORDER", "INFERRED"] as const;
+
+export const classificationRuns = pgTable("classification_runs", {
+  id: serial("id").primaryKey(),
+  orgId: integer("org_id").references(() => organizations.id),
+  startedAt: timestamp("started_at").defaultNow(),
+  finishedAt: timestamp("finished_at"),
+  windowMonths: integer("window_months").default(12),
+  parametersJson: jsonb("parameters_json"),
+  status: text("status").notNull().default("pending").$type<typeof classificationRunStatusEnum[number]>(),
+  partsProcessed: integer("parts_processed").default(0),
+  partsUpdated: integer("parts_updated").default(0),
+  errorMessage: text("error_message"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_classification_runs_org").on(table.orgId),
+  index("idx_classification_runs_status").on(table.status),
+]);
+
+export const insertClassificationRunSchema = createInsertSchema(classificationRuns).omit({ id: true, createdAt: true });
+export type InsertClassificationRun = z.infer<typeof insertClassificationRunSchema>;
+export type ClassificationRun = typeof classificationRuns.$inferSelect;
+
+export const partClassificationSnapshots = pgTable("part_classification_snapshots", {
+  id: serial("id").primaryKey(),
+  runId: integer("run_id").notNull().references(() => classificationRuns.id),
+  partId: integer("part_id").notNull().references(() => parts.id),
+  annualQty: decimal("annual_qty", { precision: 12, scale: 2 }),
+  annualSpend: decimal("annual_spend", { precision: 12, scale: 2 }),
+  costScore: decimal("cost_score", { precision: 5, scale: 2 }),
+  roadcallCount: integer("roadcall_count").default(0),
+  downtimeHours: decimal("downtime_hours", { precision: 10, scale: 2 }).default("0"),
+  roadcallScore: decimal("roadcall_score", { precision: 5, scale: 2 }),
+  safetyScore: decimal("safety_score", { precision: 5, scale: 2 }),
+  totalScore: decimal("total_score", { precision: 5, scale: 2 }),
+  classResult: text("class_result").$type<typeof smartClassEnum[number]>(),
+  xyzResult: text("xyz_result").$type<typeof xyzClassEnum[number]>(),
+  explanationJson: jsonb("explanation_json"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_classification_snapshots_run").on(table.runId),
+  index("idx_classification_snapshots_part").on(table.partId),
+]);
+
+export const partClassificationSnapshotsRelations = relations(partClassificationSnapshots, ({ one }) => ({
+  run: one(classificationRuns, { fields: [partClassificationSnapshots.runId], references: [classificationRuns.id] }),
+  part: one(parts, { fields: [partClassificationSnapshots.partId], references: [parts.id] }),
+}));
+
+export const insertPartClassificationSnapshotSchema = createInsertSchema(partClassificationSnapshots).omit({ id: true, createdAt: true });
+export type InsertPartClassificationSnapshot = z.infer<typeof insertPartClassificationSnapshotSchema>;
+export type PartClassificationSnapshot = typeof partClassificationSnapshots.$inferSelect;
+
+export const classificationAuditLog = pgTable("classification_audit_log", {
+  id: serial("id").primaryKey(),
+  orgId: integer("org_id").references(() => organizations.id),
+  partId: integer("part_id").notNull().references(() => parts.id),
+  changedByUserId: varchar("changed_by_user_id"),
+  changedAt: timestamp("changed_at").defaultNow(),
+  oldClass: text("old_class"),
+  newClass: text("new_class"),
+  oldXyz: text("old_xyz"),
+  newXyz: text("new_xyz"),
+  reason: text("reason"),
+  isSystem: boolean("is_system").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_classification_audit_org").on(table.orgId),
+  index("idx_classification_audit_part").on(table.partId),
+  index("idx_classification_audit_changed").on(table.changedAt),
+]);
+
+export const classificationAuditLogRelations = relations(classificationAuditLog, ({ one }) => ({
+  part: one(parts, { fields: [classificationAuditLog.partId], references: [parts.id] }),
+}));
+
+export const insertClassificationAuditLogSchema = createInsertSchema(classificationAuditLog).omit({ id: true, createdAt: true });
+export type InsertClassificationAuditLog = z.infer<typeof insertClassificationAuditLogSchema>;
+export type ClassificationAuditLog = typeof classificationAuditLog.$inferSelect;
+
+export const events = pgTable("events", {
+  id: serial("id").primaryKey(),
+  orgId: integer("org_id").references(() => organizations.id),
+  assetId: integer("asset_id").references(() => assets.id),
+  eventType: text("event_type").notNull().$type<typeof eventTypeEnum[number]>(),
+  startTime: timestamp("start_time"),
+  endTime: timestamp("end_time"),
+  downtimeHours: decimal("downtime_hours", { precision: 10, scale: 2 }),
+  severity: integer("severity").default(1),
+  notes: text("notes"),
+  workOrderId: integer("work_order_id"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_events_org").on(table.orgId),
+  index("idx_events_asset").on(table.assetId),
+  index("idx_events_type").on(table.eventType),
+  index("idx_events_start_time").on(table.startTime),
+]);
+
+export const eventsRelations = relations(events, ({ one }) => ({
+  asset: one(assets, { fields: [events.assetId], references: [assets.id] }),
+}));
+
+export const insertEventSchema = createInsertSchema(events).omit({ id: true, createdAt: true });
+export type InsertEvent = z.infer<typeof insertEventSchema>;
+export type Event = typeof events.$inferSelect;
+
+export const eventParts = pgTable("event_parts", {
+  id: serial("id").primaryKey(),
+  eventId: integer("event_id").notNull().references(() => events.id),
+  partId: integer("part_id").notNull().references(() => parts.id),
+  quantity: decimal("quantity", { precision: 10, scale: 2 }).default("1"),
+  confidence: decimal("confidence", { precision: 3, scale: 2 }).default("1"),
+  linkMethod: text("link_method").default("MANUAL").$type<typeof eventPartLinkMethodEnum[number]>(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_event_parts_event").on(table.eventId),
+  index("idx_event_parts_part").on(table.partId),
+]);
+
+export const eventPartsRelations = relations(eventParts, ({ one }) => ({
+  event: one(events, { fields: [eventParts.eventId], references: [events.id] }),
+  part: one(parts, { fields: [eventParts.partId], references: [parts.id] }),
+}));
+
+export const insertEventPartSchema = createInsertSchema(eventParts).omit({ id: true, createdAt: true });
+export type InsertEventPart = z.infer<typeof insertEventPartSchema>;
+export type EventPart = typeof eventParts.$inferSelect;
 
 // ============================================================
 // WORK ORDERS
