@@ -379,6 +379,39 @@ export async function registerRoutes(
     }
   });
 
+  // Update member hourly rate (only owner/admin/manager can update)
+  app.patch("/api/organizations/current/members/:memberId/hourly-rate", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const userId = (req.user as any)?.claims?.sub;
+      if (!userId) return res.status(401).json({ error: "User not found" });
+      
+      const orgId = getOrgId(req);
+      if (!orgId) return res.status(403).json({ error: "No organization context" });
+      
+      const memberId = parseInt(req.params.memberId);
+      const { hourlyRate } = req.body;
+      
+      // Check user has owner, admin, or manager role
+      const membership = await storage.getOrgMembership(orgId, userId);
+      if (!membership || !["owner", "admin", "manager"].includes(membership.role || "")) {
+        return res.status(403).json({ error: "Only owners, admins, and managers can update hourly rates" });
+      }
+      
+      // Verify the target member belongs to this org
+      const orgMembers = await storage.getOrgMembers(orgId);
+      const targetMember = orgMembers.find(m => m.id === memberId);
+      if (!targetMember) {
+        return res.status(404).json({ error: "Member not found" });
+      }
+      
+      const updated = await storage.updateMemberHourlyRate(memberId, hourlyRate ?? null);
+      res.json(updated);
+    } catch (error) {
+      console.error("Update member hourly rate error:", error);
+      res.status(500).json({ error: "Failed to update member hourly rate" });
+    }
+  });
+
   // Get member location assignments (for multi-location mode)
   app.get("/api/organizations/current/members/:memberId/locations", requireAuth, tenantMiddleware(), async (req, res) => {
     try {
@@ -3659,6 +3692,80 @@ export async function registerRoutes(
   });
 
   // ============================================================
+  // AI LABOR RATE ASSISTANCE
+  // ============================================================
+
+  app.post("/api/ai/suggest-overhead-costs", requireAuth, tenantMiddleware({ required: false }), async (req, res) => {
+    try {
+      const { 
+        location,
+        shopSqFt,
+        technicianCount,
+        region,
+        existingCosts = {}
+      } = req.body;
+
+      const openai = new OpenAI({
+        apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
+        baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+      });
+
+      const prompt = `You are a fleet maintenance shop financial advisor. Based on the following information, suggest reasonable annual overhead costs for a maintenance shop.
+
+Shop Information:
+- Location/Region: ${location || region || 'Unknown'}
+- Shop Size: ${shopSqFt ? `${shopSqFt} sq ft` : 'Unknown'}
+- Number of Technicians: ${technicianCount || 'Unknown'}
+
+Currently known costs (if any):
+${Object.entries(existingCosts).map(([k, v]) => v ? `- ${k}: $${v}` : '').filter(Boolean).join('\n') || '- None specified'}
+
+Please provide estimated annual costs for a typical fleet maintenance shop. Consider regional cost differences. Return ONLY valid JSON in this exact format:
+{
+  "annualRent": <number>,
+  "annualUtilities": <number>,
+  "annualInsurance": <number>,
+  "annualEquipment": <number>,
+  "annualSupplies": <number>,
+  "annualTraining": <number>,
+  "annualSoftware": <number>,
+  "annualOther": <number>,
+  "reasoning": "<brief explanation of your estimates>"
+}`;
+
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4.1-mini",
+        messages: [
+          { role: "system", content: "You are a fleet maintenance business advisor. Provide realistic cost estimates based on industry standards and regional data. Always respond with valid JSON only." },
+          { role: "user", content: prompt }
+        ],
+        max_completion_tokens: 1000,
+      });
+
+      const responseText = completion.choices[0]?.message?.content || '';
+      
+      // Try to parse JSON from the response
+      let suggestions;
+      try {
+        // Find JSON in the response
+        const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          suggestions = JSON.parse(jsonMatch[0]);
+        } else {
+          throw new Error("No JSON found in response");
+        }
+      } catch (parseError) {
+        console.error("Failed to parse AI response:", responseText);
+        return res.status(500).json({ error: "Failed to parse AI suggestions" });
+      }
+
+      res.json(suggestions);
+    } catch (error) {
+      console.error("AI overhead cost suggestion error:", error);
+      res.status(500).json({ error: "Failed to generate suggestions" });
+    }
+  });
+
   // AI CHECKLIST GENERATION
   // ============================================================
 

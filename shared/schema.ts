@@ -64,6 +64,7 @@ export const orgMemberships = pgTable("org_memberships", {
   isCorporateAdmin: boolean("is_corporate_admin").default(false), // Can view/manage subsidiary organizations
   isActive: boolean("is_active").default(true),
   isDefault: boolean("is_default").default(false), // User's default org
+  hourlyRate: decimal("hourly_rate", { precision: 10, scale: 2 }), // Technician's hourly wage rate
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [
@@ -82,6 +83,9 @@ export const updateOrgMemberRoleSchema = z.object({
 export const updateMemberLocationSchema = z.object({
   primaryLocationId: z.number().nullable(),
 });
+export const updateMemberHourlyRateSchema = z.object({
+  hourlyRate: z.string().nullable(),
+});
 export const setParentOrgSchema = z.object({
   parentOrgId: z.number().nullable(),
 });
@@ -91,6 +95,7 @@ export const updateCorporateAdminSchema = z.object({
 export type InsertOrgMembership = z.infer<typeof insertOrgMembershipSchema>;
 export type UpdateOrgMemberRole = z.infer<typeof updateOrgMemberRoleSchema>;
 export type UpdateMemberLocation = z.infer<typeof updateMemberLocationSchema>;
+export type UpdateMemberHourlyRate = z.infer<typeof updateMemberHourlyRateSchema>;
 export type SetParentOrg = z.infer<typeof setParentOrgSchema>;
 export type UpdateCorporateAdmin = z.infer<typeof updateCorporateAdminSchema>;
 export type OrgMembership = typeof orgMemberships.$inferSelect;

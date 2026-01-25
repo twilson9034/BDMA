@@ -165,15 +165,17 @@ export interface IStorage {
   getOrgMembers(orgId: number): Promise<Array<{
     id: number;
     userId: string;
-    role: string;
+    role: string | null;
     joinedAt: Date | null;
     firstName: string | null;
     lastName: string | null;
     email: string | null;
     profileImageUrl: string | null;
+    hourlyRate: string | null;
   }>>;
   getOrgMembership(orgId: number, userId: string): Promise<OrgMembership | undefined>;
   updateOrgMemberRole(memberId: number, role: string): Promise<OrgMembership | undefined>;
+  updateMemberHourlyRate(memberId: number, hourlyRate: string | null): Promise<OrgMembership | undefined>;
   updateMemberPrimaryLocation(memberId: number, primaryLocationId: number | null): Promise<OrgMembership | undefined>;
   getMemberLocations(membershipId: number): Promise<MemberLocation[]>;
   addMemberLocation(data: InsertMemberLocation): Promise<MemberLocation>;
@@ -592,12 +594,13 @@ export class DatabaseStorage implements IStorage {
   async getOrgMembers(orgId: number): Promise<Array<{
     id: number;
     userId: string;
-    role: string;
+    role: string | null;
     joinedAt: Date | null;
     firstName: string | null;
     lastName: string | null;
     email: string | null;
     profileImageUrl: string | null;
+    hourlyRate: string | null;
   }>> {
     const members = await db.select({
       id: orgMemberships.id,
@@ -608,6 +611,7 @@ export class DatabaseStorage implements IStorage {
       lastName: users.lastName,
       email: users.email,
       profileImageUrl: users.profileImageUrl,
+      hourlyRate: orgMemberships.hourlyRate,
     })
       .from(orgMemberships)
       .leftJoin(users, eq(orgMemberships.userId, users.id))
@@ -624,6 +628,14 @@ export class DatabaseStorage implements IStorage {
   async updateOrgMemberRole(memberId: number, role: string): Promise<OrgMembership | undefined> {
     const [updated] = await db.update(orgMemberships)
       .set({ role })
+      .where(eq(orgMemberships.id, memberId))
+      .returning();
+    return updated;
+  }
+
+  async updateMemberHourlyRate(memberId: number, hourlyRate: string | null): Promise<OrgMembership | undefined> {
+    const [updated] = await db.update(orgMemberships)
+      .set({ hourlyRate })
       .where(eq(orgMemberships.id, memberId))
       .returning();
     return updated;
