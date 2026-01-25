@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -47,6 +47,9 @@ interface Organization {
   status: string;
   maxAssets: number;
   allowMultiLocationTechs?: boolean;
+  requireEstimateApproval?: boolean;
+  requireRequisitionApproval?: boolean;
+  requirePOApproval?: boolean;
 }
 
 interface OrgMember {
@@ -97,6 +100,9 @@ export default function Settings() {
   const [addLocationOpen, setAddLocationOpen] = useState(false);
   const [newLocationName, setNewLocationName] = useState("");
   const [newLocationAddress, setNewLocationAddress] = useState("");
+  const [requireEstimateApproval, setRequireEstimateApproval] = useState(false);
+  const [requireRequisitionApproval, setRequireRequisitionApproval] = useState(true);
+  const [requirePOApproval, setRequirePOApproval] = useState(true);
 
   const { data: organization, isLoading: orgLoading } = useQuery<Organization>({
     queryKey: ["/api/organizations/current"],
@@ -110,8 +116,23 @@ export default function Settings() {
     queryKey: ["/api/locations"],
   });
 
+  useEffect(() => {
+    if (organization) {
+      setOrgName(organization.name);
+      setRequireEstimateApproval(organization.requireEstimateApproval ?? false);
+      setRequireRequisitionApproval(organization.requireRequisitionApproval ?? true);
+      setRequirePOApproval(organization.requirePOApproval ?? true);
+    }
+  }, [organization]);
+
   const updateOrgMutation = useMutation({
-    mutationFn: async (data: { name?: string; slug?: string }) => {
+    mutationFn: async (data: { 
+      name?: string; 
+      slug?: string;
+      requireEstimateApproval?: boolean;
+      requireRequisitionApproval?: boolean;
+      requirePOApproval?: boolean;
+    }) => {
       return apiRequest("PATCH", "/api/organizations/current", data);
     },
     onSuccess: () => {
@@ -190,8 +211,29 @@ export default function Settings() {
   const canManageOrg = currentUserMembership?.role === "owner" || currentUserMembership?.role === "admin";
 
   const handleSaveOrgSettings = () => {
-    if (!orgName.trim() || orgName === organization?.name) return;
-    updateOrgMutation.mutate({ name: orgName });
+    const updates: { 
+      name?: string; 
+      requireEstimateApproval?: boolean;
+      requireRequisitionApproval?: boolean;
+      requirePOApproval?: boolean;
+    } = {};
+    
+    if (orgName.trim() && orgName !== organization?.name) {
+      updates.name = orgName;
+    }
+    
+    if (requireEstimateApproval !== organization?.requireEstimateApproval) {
+      updates.requireEstimateApproval = requireEstimateApproval;
+    }
+    if (requireRequisitionApproval !== organization?.requireRequisitionApproval) {
+      updates.requireRequisitionApproval = requireRequisitionApproval;
+    }
+    if (requirePOApproval !== organization?.requirePOApproval) {
+      updates.requirePOApproval = requirePOApproval;
+    }
+    
+    if (Object.keys(updates).length === 0) return;
+    updateOrgMutation.mutate(updates);
   };
 
   return (
@@ -416,6 +458,60 @@ export default function Settings() {
                           </p>
                         </div>
                         <Switch defaultChecked disabled={!canManageOrg} data-testid="switch-auto-status" />
+                      </div>
+                    </div>
+
+                    <Separator />
+
+                    <div className="space-y-4">
+                      <h4 className="font-medium">Approval Workflows</h4>
+                      <p className="text-xs text-muted-foreground">
+                        Configure which documents require approval before processing
+                      </p>
+                      
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm">Require Estimate Approval</p>
+                          <p className="text-xs text-muted-foreground">
+                            Estimates must be approved before converting to work orders
+                          </p>
+                        </div>
+                        <Switch 
+                          checked={requireEstimateApproval} 
+                          onCheckedChange={setRequireEstimateApproval}
+                          disabled={!canManageOrg} 
+                          data-testid="switch-require-estimate-approval" 
+                        />
+                      </div>
+
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm">Require Requisition Approval</p>
+                          <p className="text-xs text-muted-foreground">
+                            Purchase requisitions must be approved before converting to POs
+                          </p>
+                        </div>
+                        <Switch 
+                          checked={requireRequisitionApproval} 
+                          onCheckedChange={setRequireRequisitionApproval}
+                          disabled={!canManageOrg} 
+                          data-testid="switch-require-requisition-approval" 
+                        />
+                      </div>
+
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm">Require PO Approval</p>
+                          <p className="text-xs text-muted-foreground">
+                            Purchase orders must be approved before sending to vendors
+                          </p>
+                        </div>
+                        <Switch 
+                          checked={requirePOApproval} 
+                          onCheckedChange={setRequirePOApproval}
+                          disabled={!canManageOrg} 
+                          data-testid="switch-require-po-approval" 
+                        />
                       </div>
                     </div>
 

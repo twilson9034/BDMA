@@ -29,12 +29,21 @@ export const organizations = pgTable("organizations", {
   email: text("email"),
   maxAssets: integer("max_assets").default(25), // Fleet size limit based on plan
   allowMultiLocationTechs: boolean("allow_multi_location_techs").default(false), // Allow technicians at multiple locations
+  requireEstimateApproval: boolean("require_estimate_approval").default(false), // Require approval before converting estimates to WO
+  requireRequisitionApproval: boolean("require_requisition_approval").default(true), // Require approval for purchase requisitions
+  requirePOApproval: boolean("require_po_approval").default(true), // Require approval for purchase orders
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
 export const insertOrganizationSchema = createInsertSchema(organizations).omit({ id: true, createdAt: true, updatedAt: true });
-export const updateOrganizationSchema = insertOrganizationSchema.partial().pick({ name: true, slug: true });
+export const updateOrganizationSchema = insertOrganizationSchema.partial().pick({ 
+  name: true, 
+  slug: true,
+  requireEstimateApproval: true,
+  requireRequisitionApproval: true,
+  requirePOApproval: true,
+});
 export type InsertOrganization = z.infer<typeof insertOrganizationSchema>;
 export type UpdateOrganization = z.infer<typeof updateOrganizationSchema>;
 export type Organization = typeof organizations.$inferSelect;

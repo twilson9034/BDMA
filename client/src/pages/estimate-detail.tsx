@@ -4,7 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation, useRoute } from "wouter";
 import { 
-  ArrowLeft, Save, Loader2, Edit, Trash2, Plus, 
+  ArrowLeft, ArrowRight, Save, Loader2, Edit, Trash2, Plus, 
   Package, DollarSign, AlertTriangle, Calculator, X, Check
 } from "lucide-react";
 import { z } from "zod";
@@ -60,6 +60,7 @@ export default function EstimateDetail() {
   const [lineQuantity, setLineQuantity] = useState("1");
   const [lineUnitCost, setLineUnitCost] = useState("");
   const [linePartNumber, setLinePartNumber] = useState("");
+  const [lineNotes, setLineNotes] = useState("");
 
   const estimateId = params?.id ? parseInt(params.id) : null;
 
@@ -82,7 +83,18 @@ export default function EstimateDetail() {
   });
   const parts = partsData?.parts;
 
+  const { data: organization } = useQuery<{ requireEstimateApproval?: boolean }>({
+    queryKey: ["/api/organizations/current"],
+  });
+
   const linkedAsset = assets?.find(a => a.id === estimate?.assetId);
+  
+  // Determine if estimate can be converted based on org approval settings
+  const requireApproval = organization?.requireEstimateApproval !== false;
+  const hasLines = lines && lines.length > 0;
+  const canConvert = estimate && !estimate.convertedToWorkOrderId && estimate.status !== "rejected" && hasLines && (
+    !requireApproval || estimate.status === "approved"
+  );
 
   const addLineMutation = useMutation({
     mutationFn: async (lineData: any) => {
@@ -136,6 +148,30 @@ export default function EstimateDetail() {
     },
   });
 
+  const convertToWorkOrderMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("POST", `/api/estimates/${estimateId}/convert`, {});
+      return response.json() as Promise<{ workOrderId: number; workOrderNumber: string; message: string }>;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", estimateId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/work-orders"] });
+      toast({
+        title: "Converted to Work Order",
+        description: `Work Order ${data.workOrderNumber} has been created.`,
+      });
+      navigate(`/work-orders/${data.workOrderId}`);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Conversion Failed",
+        description: error.message || "Failed to convert estimate to work order.",
+        variant: "destructive",
+      });
+    },
+  });
+
   const resetLineForm = () => {
     setLineType("inventory_part");
     setSelectedPartId("");
@@ -143,6 +179,7 @@ export default function EstimateDetail() {
     setLineQuantity("1");
     setLineUnitCost("");
     setLinePartNumber("");
+    setLineNotes("");
   };
 
   const handleAddLine = () => {
@@ -157,6 +194,7 @@ export default function EstimateDetail() {
       quantity: lineQuantity,
       unitCost: lineUnitCost,
       totalCost: totalCost.toFixed(2),
+      notes: lineNotes || null,
     };
 
     if (lineType === "inventory_part" && selectedPartId) {
@@ -271,6 +309,31 @@ export default function EstimateDetail() {
             </Button>
           </>
         )}
+        {canConvert && (
+          <Button 
+            size="sm"
+            onClick={() => convertToWorkOrderMutation.mutate()}
+            disabled={convertToWorkOrderMutation.isPending}
+            data-testid="button-convert-to-wo"
+          >
+            {convertToWorkOrderMutation.isPending ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <ArrowRight className="h-4 w-4 mr-2" />
+            )}
+            Convert to Work Order
+          </Button>
+        )}
+        {estimate.convertedToWorkOrderId && (
+          <Button 
+            size="sm"
+            variant="outline"
+            onClick={() => navigate(`/work-orders/${estimate.convertedToWorkOrderId}`)}
+            data-testid="button-view-wo"
+          >
+            View Work Order
+          </Button>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -321,6 +384,11 @@ export default function EstimateDetail() {
                             <span>On Hand: {line.quantityOnHand}</span>
                           )}
                         </div>
+                        {line.notes && (
+                          <p className="text-sm text-muted-foreground mt-2 italic border-l-2 border-muted-foreground/30 pl-2">
+                            {line.notes}
+                          </p>
+                        )}
                       </div>
                       <div className="flex items-center gap-3">
                         <span className="font-medium">
@@ -499,6 +567,20 @@ export default function EstimateDetail() {
                   data-testid="input-unit-cost"
                 />
               </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Line Notes (Optional)</Label>
+              <Textarea
+                value={lineNotes}
+                onChange={(e) => setLineNotes(e.target.value)}
+                placeholder="Add any notes for this line item (e.g., special instructions, part details)..."
+                rows={2}
+                data-testid="input-line-notes"
+              />
+              <p className="text-xs text-muted-foreground">
+                Notes will be transferred to the work order when this estimate is converted
+              </p>
             </div>
 
             {lineQuantity && lineUnitCost && (

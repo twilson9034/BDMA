@@ -36,7 +36,7 @@ Preferred communication style: Simple, everyday language.
 - **Procurement**: Purchase requisitions and orders with approval workflows.
 - **DVIRs**: Driver Vehicle Inspection Reports with defect tracking.
 - **Predictions**: AI-generated predictive maintenance insights based on telematics, fault codes, and maintenance history, including similar asset and fleet-wide pattern analysis, and manual knowledge integration.
-- **Estimates**: Detailed maintenance cost estimates with line items and fulfillment tracking.
+- **Estimates**: Detailed maintenance cost estimates with line items, fulfillment tracking, line notes, approval workflow settings (per organization), and conversion to work orders with note transfer.
 - **Telematics Data**: Live display and ingestion of engine diagnostic data.
 - **Fault Codes**: Tracking and display of Diagnostic Trouble Codes.
 - **Barcode/QR Scanning**: Quick lookup for assets, parts, or work orders.

@@ -3137,6 +3137,119 @@ export async function registerRoutes(
     }
   });
 
+  // Convert Estimate to Work Order
+  app.post("/api/estimates/:id/convert", requireAuth, tenantMiddleware({ required: false }), async (req, res) => {
+    try {
+      const estimateId = parseInt(req.params.id);
+      
+      // Validate estimateId
+      if (isNaN(estimateId)) {
+        return res.status(400).json({ error: "Invalid estimate ID" });
+      }
+      
+      const orgId = getOrgId(req);
+      
+      // Get the estimate with lines
+      const estimate = await storage.getEstimate(estimateId);
+      if (!estimate) {
+        return res.status(404).json({ error: "Estimate not found" });
+      }
+      
+      // Check tenant access
+      if (orgId && estimate.orgId !== orgId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      
+      // Check if already converted
+      if (estimate.convertedToWorkOrderId) {
+        return res.status(400).json({ error: "Estimate has already been converted to a work order" });
+      }
+      
+      // Get organization settings to check if approval is required
+      // Use estimate's orgId if request orgId is not available
+      let requireApproval = true;
+      const effectiveOrgId = orgId || estimate.orgId;
+      if (effectiveOrgId) {
+        const org = await storage.getOrganization(effectiveOrgId);
+        if (org) {
+          requireApproval = org.requireEstimateApproval !== false;
+        }
+      }
+      
+      // Check if estimate is approved (when approval is required)
+      if (requireApproval && estimate.status !== "approved") {
+        return res.status(400).json({ error: "Estimate must be approved before converting to a work order" });
+      }
+      
+      // If approval is not required, allow conversion from draft or pending_approval status
+      if (!requireApproval && estimate.status === "rejected") {
+        return res.status(400).json({ error: "Rejected estimates cannot be converted to work orders" });
+      }
+      
+      // Get the estimate lines
+      const lines = await storage.getEstimateLines(estimateId);
+      
+      // Validate that estimate has lines
+      if (!lines || lines.length === 0) {
+        return res.status(400).json({ error: "Estimate must have at least one line item before converting to a work order" });
+      }
+      
+      // Get the asset for title
+      const asset = await storage.getAsset(estimate.assetId);
+      
+      // Generate work order number
+      const workOrderNumber = await generateWorkOrderNumber(orgId);
+      
+      // Create the work order
+      const workOrder = await storage.createWorkOrder({
+        orgId: estimate.orgId,
+        workOrderNumber,
+        title: estimate.title || `Work Order from Estimate ${estimate.estimateNumber}`,
+        description: estimate.description || `Converted from estimate ${estimate.estimateNumber}`,
+        type: "corrective" as const,
+        status: "open" as const,
+        priority: "medium" as const,
+        assetId: estimate.assetId,
+        estimatedCost: estimate.grandTotal || "0",
+        notes: estimate.notes,
+      });
+      
+      // Create work order lines from estimate lines
+      for (const line of lines) {
+        // Build description that includes part info if applicable
+        let lineDescription = line.description;
+        if (line.partNumber) {
+          lineDescription = `[${line.partNumber}] ${line.description}`;
+        }
+        
+        await storage.createWorkOrderLine({
+          workOrderId: workOrder.id,
+          lineNumber: line.lineNumber,
+          description: lineDescription,
+          status: "pending" as const,
+          notes: line.notes || undefined,
+          partsCost: line.lineType !== "labor" ? line.totalCost : undefined,
+          laborCost: line.lineType === "labor" ? line.totalCost : undefined,
+        });
+      }
+      
+      // Update the estimate with the work order reference and status
+      await storage.updateEstimate(estimateId, {
+        convertedToWorkOrderId: workOrder.id,
+        status: "converted" as const,
+      });
+      
+      res.json({ 
+        message: "Estimate converted to work order successfully",
+        workOrderId: workOrder.id,
+        workOrderNumber: workOrder.workOrderNumber
+      });
+    } catch (error) {
+      console.error("Error converting estimate to work order:", error);
+      res.status(500).json({ error: "Failed to convert estimate to work order" });
+    }
+  });
+
   // ============================================================
   // PHASE 3: AI Predictions, Scanning, Status Automation
   // ============================================================
