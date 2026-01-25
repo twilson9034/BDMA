@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
-import { Building2, Check, ChevronDown, Plus, Loader2 } from "lucide-react";
+import { Building2, Check, ChevronDown, Plus, Loader2, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -19,6 +19,19 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
@@ -54,20 +67,55 @@ interface CurrentTenant {
   };
 }
 
+interface Organization {
+  id: number;
+  name: string;
+  slug: string;
+  plan: string | null;
+  status: string | null;
+  maxAssets: number | null;
+}
+
 export function OrganizationSwitcher() {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [newOrgName, setNewOrgName] = useState("");
   const [newOrgSlug, setNewOrgSlug] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const { data: organizations = [], isLoading: orgsLoading } = useQuery<OrgMembership[]>({
+  const { data: memberships = [], isLoading: orgsLoading } = useQuery<OrgMembership[]>({
     queryKey: ["/api/organizations"],
   });
 
   const { data: currentTenant, isLoading: currentLoading } = useQuery<CurrentTenant>({
     queryKey: ["/api/organizations/current"],
   });
+
+  // Check if user is an owner of any org
+  const isOwner = memberships.some(m => m.role === "owner");
+
+  // Fetch all organizations if user is an owner
+  const { data: allOrganizations = [] } = useQuery<Organization[]>({
+    queryKey: ["/api/organizations/all"],
+    enabled: isOwner,
+  });
+
+  // Combine: if owner, use all orgs; otherwise use memberships
+  const displayOrganizations = useMemo(() => {
+    if (isOwner && allOrganizations.length > 0) {
+      return allOrganizations.map(org => ({
+        orgId: org.id,
+        organization: org,
+        isMember: memberships.some(m => m.orgId === org.id),
+      }));
+    }
+    return memberships.map(m => ({
+      orgId: m.orgId,
+      organization: m.organization,
+      isMember: true,
+    }));
+  }, [isOwner, allOrganizations, memberships]);
 
   const switchOrgMutation = useMutation({
     mutationFn: async (orgId: number) => {
@@ -138,58 +186,126 @@ export function OrganizationSwitcher() {
     );
   }
 
-  // Only show org switcher if user has multiple orgs or is a corporate admin
-  const hasMultipleOrgs = organizations.length > 1;
-  const isCorporateAdmin = currentTenant?.isCorporateAdmin || organizations.some(m => m.isCorporateAdmin);
+  // Show org switcher if:
+  // - User has multiple org memberships, OR
+  // - User is a corporate admin, OR  
+  // - User is an owner of any org (can view all orgs)
+  const hasMultipleOrgs = memberships.length > 1;
+  const isCorporateAdmin = currentTenant?.isCorporateAdmin || memberships.some(m => m.isCorporateAdmin);
   
-  if (!hasMultipleOrgs && !isCorporateAdmin) {
+  if (!hasMultipleOrgs && !isCorporateAdmin && !isOwner) {
     return null;
   }
 
+  // Use searchable UI when there are more than 10 organizations
+  const useSearchableUI = displayOrganizations.length > 10;
+
+  // Handler for switching organizations (works for both member and non-member orgs for owners)
+  const handleOrgSwitch = (orgId: number) => {
+    if (orgId !== currentTenant?.orgId) {
+      switchOrgMutation.mutate(orgId);
+    }
+    setSearchOpen(false);
+  };
+
   return (
     <>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="sm" className="gap-2" data-testid="org-switcher-trigger">
-            <Building2 className="h-4 w-4" />
-            <span className="truncate max-w-[150px]">
-              {currentTenant?.organization?.name || "Select Organization"}
-            </span>
-            <ChevronDown className="h-4 w-4 opacity-50" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-[240px]">
-          <DropdownMenuLabel>Organizations</DropdownMenuLabel>
-          <DropdownMenuSeparator />
-          {organizations.map((membership) => (
+      {useSearchableUI ? (
+        <Popover open={searchOpen} onOpenChange={setSearchOpen}>
+          <PopoverTrigger asChild>
+            <Button variant="outline" size="sm" className="gap-2" data-testid="org-switcher-trigger">
+              <Building2 className="h-4 w-4" />
+              <span className="truncate max-w-[150px]">
+                {currentTenant?.organization?.name || "Select Organization"}
+              </span>
+              <ChevronDown className="h-4 w-4 opacity-50" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-[280px] p-0" align="end">
+            <Command>
+              <CommandInput placeholder="Search organizations..." data-testid="org-search-input" />
+              <CommandList>
+                <CommandEmpty>No organization found.</CommandEmpty>
+                <CommandGroup heading="Organizations">
+                  {displayOrganizations.map((item) => (
+                    <CommandItem
+                      key={item.orgId}
+                      value={item.organization.name}
+                      onSelect={() => handleOrgSwitch(item.orgId)}
+                      className="cursor-pointer"
+                      data-testid={`org-option-${item.orgId}`}
+                    >
+                      <Building2 className="mr-2 h-4 w-4" />
+                      <span className="flex-1 truncate">{item.organization.name}</span>
+                      {!item.isMember && (
+                        <span className="text-xs text-muted-foreground ml-1">(view only)</span>
+                      )}
+                      {item.orgId === currentTenant?.orgId && (
+                        <Check className="ml-2 h-4 w-4" />
+                      )}
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+                <CommandGroup>
+                  <CommandItem
+                    onSelect={() => {
+                      setShowCreateDialog(true);
+                      setSearchOpen(false);
+                    }}
+                    className="cursor-pointer"
+                    data-testid="create-org-button"
+                  >
+                    <Plus className="mr-2 h-4 w-4" />
+                    Create Organization
+                  </CommandItem>
+                </CommandGroup>
+              </CommandList>
+            </Command>
+          </PopoverContent>
+        </Popover>
+      ) : (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="sm" className="gap-2" data-testid="org-switcher-trigger">
+              <Building2 className="h-4 w-4" />
+              <span className="truncate max-w-[150px]">
+                {currentTenant?.organization?.name || "Select Organization"}
+              </span>
+              <ChevronDown className="h-4 w-4 opacity-50" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-[240px]">
+            <DropdownMenuLabel>Organizations</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            {displayOrganizations.map((item) => (
+              <DropdownMenuItem
+                key={item.orgId}
+                onClick={() => handleOrgSwitch(item.orgId)}
+                className="cursor-pointer"
+                data-testid={`org-option-${item.orgId}`}
+              >
+                <Building2 className="mr-2 h-4 w-4" />
+                <span className="flex-1 truncate">{item.organization.name}</span>
+                {!item.isMember && (
+                  <span className="text-xs text-muted-foreground ml-1">(view only)</span>
+                )}
+                {item.orgId === currentTenant?.orgId && (
+                  <Check className="ml-2 h-4 w-4" />
+                )}
+              </DropdownMenuItem>
+            ))}
+            <DropdownMenuSeparator />
             <DropdownMenuItem
-              key={membership.orgId}
-              onClick={() => {
-                if (membership.orgId !== currentTenant?.orgId) {
-                  switchOrgMutation.mutate(membership.orgId);
-                }
-              }}
+              onClick={() => setShowCreateDialog(true)}
               className="cursor-pointer"
-              data-testid={`org-option-${membership.orgId}`}
+              data-testid="create-org-button"
             >
-              <Building2 className="mr-2 h-4 w-4" />
-              <span className="flex-1 truncate">{membership.organization.name}</span>
-              {membership.orgId === currentTenant?.orgId && (
-                <Check className="ml-2 h-4 w-4" />
-              )}
+              <Plus className="mr-2 h-4 w-4" />
+              Create Organization
             </DropdownMenuItem>
-          ))}
-          <DropdownMenuSeparator />
-          <DropdownMenuItem
-            onClick={() => setShowCreateDialog(true)}
-            className="cursor-pointer"
-            data-testid="create-org-button"
-          >
-            <Plus className="mr-2 h-4 w-4" />
-            Create Organization
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
 
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
         <DialogContent>

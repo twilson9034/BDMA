@@ -215,8 +215,17 @@ export async function registerRoutes(
       const memberships = await getUserOrgMemberships(userId);
       const hasMembership = memberships.some(m => m.orgId === orgId);
       
+      // Allow switching if user is a member OR if user is an owner of any org (can view all orgs)
       if (!hasMembership) {
-        return res.status(403).json({ error: "Not a member of this organization" });
+        const isOwner = await storage.isOwnerOfAnyOrg(userId);
+        if (!isOwner) {
+          return res.status(403).json({ error: "Not a member of this organization" });
+        }
+        // Verify the target org exists
+        const targetOrg = await storage.getOrganization(orgId);
+        if (!targetOrg) {
+          return res.status(404).json({ error: "Organization not found" });
+        }
       }
       
       if (req.session) {
@@ -557,6 +566,26 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Set parent org error:", error);
       res.status(500).json({ error: "Failed to set parent organization" });
+    }
+  });
+
+  // Get all organizations (requires owner role in any org)
+  app.get("/api/organizations/all", requireAuth, async (req, res) => {
+    try {
+      const userId = (req.user as any)?.claims?.sub;
+      if (!userId) return res.status(401).json({ error: "User not found" });
+      
+      // Verify user is an owner of at least one organization
+      const isOwner = await storage.isOwnerOfAnyOrg(userId);
+      if (!isOwner) {
+        return res.status(403).json({ error: "Access denied. Owner role required." });
+      }
+      
+      const orgs = await storage.getAllOrganizations();
+      res.json(orgs);
+    } catch (error) {
+      console.error("Get all organizations error:", error);
+      res.status(500).json({ error: "Failed to get organizations" });
     }
   });
 
