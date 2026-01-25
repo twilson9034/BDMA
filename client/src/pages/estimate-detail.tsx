@@ -40,7 +40,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import type { Estimate, EstimateLine, Asset, Part } from "@shared/schema";
+import type { Estimate, EstimateLine, Asset, Part, VmrsCode } from "@shared/schema";
 
 const lineTypeLabels: Record<string, string> = {
   inventory_part: "Inventory Part",
@@ -61,6 +61,7 @@ export default function EstimateDetail() {
   const [lineUnitCost, setLineUnitCost] = useState("");
   const [linePartNumber, setLinePartNumber] = useState("");
   const [lineNotes, setLineNotes] = useState("");
+  const [selectedVmrsCode, setSelectedVmrsCode] = useState("");
 
   const estimateId = params?.id ? parseInt(params.id) : null;
 
@@ -87,10 +88,15 @@ export default function EstimateDetail() {
     queryKey: ["/api/organizations/current"],
   });
 
+  const { data: vmrsCodes } = useQuery<VmrsCode[]>({
+    queryKey: ["/api/vmrs-codes"],
+  });
+
   const linkedAsset = assets?.find(a => a.id === estimate?.assetId);
   
   // Determine if estimate can be converted based on org approval settings
-  const requireApproval = organization?.requireEstimateApproval !== false;
+  // When org is loading (undefined), we wait; when loaded, check if approval is explicitly required
+  const requireApproval = organization?.requireEstimateApproval === true;
   const hasLines = lines && lines.length > 0;
   const canConvert = estimate && !estimate.convertedToWorkOrderId && estimate.status !== "rejected" && hasLines && (
     !requireApproval || estimate.status === "approved"
@@ -180,6 +186,7 @@ export default function EstimateDetail() {
     setLineUnitCost("");
     setLinePartNumber("");
     setLineNotes("");
+    setSelectedVmrsCode("");
   };
 
   const handleAddLine = () => {
@@ -187,6 +194,9 @@ export default function EstimateDetail() {
     const unitCost = parseFloat(lineUnitCost);
     const totalCost = quantity * unitCost;
 
+    // Get selected VMRS code details
+    const selectedVmrs = vmrsCodes?.find(v => v.code === selectedVmrsCode);
+    
     let partData: any = {
       lineNumber: (lines?.length || 0) + 1,
       lineType,
@@ -195,6 +205,8 @@ export default function EstimateDetail() {
       unitCost: lineUnitCost,
       totalCost: totalCost.toFixed(2),
       notes: lineNotes || null,
+      vmrsCode: selectedVmrsCode || null,
+      vmrsTitle: selectedVmrs?.title || null,
     };
 
     if (lineType === "inventory_part" && selectedPartId) {
@@ -376,6 +388,9 @@ export default function EstimateDetail() {
                         <p className="font-medium">{line.description}</p>
                         {line.partNumber && (
                           <p className="text-sm text-muted-foreground">Part #: {line.partNumber}</p>
+                        )}
+                        {line.vmrsCode && (
+                          <p className="text-sm text-muted-foreground">Task: {line.vmrsCode}{line.vmrsTitle ? ` - ${line.vmrsTitle}` : ""}</p>
                         )}
                         <div className="flex gap-4 text-sm text-muted-foreground mt-1">
                           <span>Qty: {line.quantity}</span>
@@ -567,6 +582,26 @@ export default function EstimateDetail() {
                   data-testid="input-unit-cost"
                 />
               </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Task / VMRS Code (Optional)</Label>
+              <Select value={selectedVmrsCode} onValueChange={setSelectedVmrsCode}>
+                <SelectTrigger data-testid="select-vmrs-code">
+                  <SelectValue placeholder="Select a task/VMRS code..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">None</SelectItem>
+                  {vmrsCodes?.map((vmrs) => (
+                    <SelectItem key={vmrs.id} value={vmrs.code}>
+                      {vmrs.code} - {vmrs.title}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                VMRS codes categorize the type of maintenance work
+              </p>
             </div>
 
             <div className="space-y-2">

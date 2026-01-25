@@ -1021,6 +1021,8 @@ export const estimateLines = pgTable("estimate_lines", {
   needsOrdering: boolean("needs_ordering").default(false),
   vendorId: integer("vendor_id").references(() => vendors.id),
   notes: text("notes"),
+  vmrsCode: text("vmrs_code"),
+  vmrsTitle: text("vmrs_title"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
