@@ -243,7 +243,7 @@ export default function CycleCounts() {
   };
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col min-h-full pb-8">
       <PageHeader
         title="Cycle Counting"
         description="Track and execute inventory cycle counts based on ABC classification"
@@ -332,7 +332,7 @@ export default function CycleCounts() {
         </Select>
       </div>
 
-      <div className="flex-1 px-4 pb-4 overflow-auto">
+      <div className="flex-1 px-4">
         {isLoading ? (
           <div className="text-center py-8 text-muted-foreground">Loading counts...</div>
         ) : filteredCounts.length === 0 ? (
