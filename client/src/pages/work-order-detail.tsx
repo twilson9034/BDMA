@@ -962,8 +962,8 @@ export default function WorkOrderDetail() {
           {/* Deferred Lines Card */}
           <DeferredLines workOrderId={workOrder.id} />
 
-          {/* Brake & Tire Inspections (for vehicle assets only) */}
-          {linkedAsset?.type === "vehicle" && workOrder.assetId && (
+          {/* Brake & Tire Inspections (for non-vehicle assets only) */}
+          {linkedAsset?.type !== "vehicle" && workOrder.assetId && (
             <BrakeTireInspection workOrderId={workOrder.id} assetId={workOrder.assetId} />
           )}
 

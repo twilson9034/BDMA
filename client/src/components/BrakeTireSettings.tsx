@@ -259,7 +259,7 @@ export function BrakeTireSettings({ assetId, assetType }: Props) {
     setTireAxles(updated);
   };
 
-  if (assetType !== "vehicle") {
+  if (assetType === "vehicle") {
     return null;
   }
 

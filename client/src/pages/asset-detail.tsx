@@ -1011,7 +1011,7 @@ export default function AssetDetail() {
             </CardContent>
           </Card>
 
-          {asset.type === "vehicle" && (
+          {asset.type !== "vehicle" && (
             <div className="lg:col-span-2" data-testid="section-brake-tire-settings">
               <BrakeTireSettings assetId={asset.id} assetType={asset.type} />
             </div>
