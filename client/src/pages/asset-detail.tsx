@@ -45,8 +45,9 @@ import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { Asset, Location, WorkOrder, TelematicsData, FaultCode, Prediction, DVIR, PmAssetInstance, InventoryTransaction } from "@shared/schema";
 import { AssetImages, AssetDocuments } from "@/components/AssetImagesDocuments";
+import { BrakeTireSettings } from "@/components/BrakeTireSettings";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ClipboardList, Package, History, Plus } from "lucide-react";
+import { ClipboardList, Package, History, Plus, Disc, CircleDot } from "lucide-react";
 
 const assetFormSchema = z.object({
   name: z.string().min(1, "Name is required"),
@@ -1009,6 +1010,12 @@ export default function AssetDetail() {
               )}
             </CardContent>
           </Card>
+
+          {asset.type === "vehicle" && (
+            <div className="lg:col-span-2" data-testid="section-brake-tire-settings">
+              <BrakeTireSettings assetId={asset.id} assetType={asset.type} />
+            </div>
+          )}
 
           <Card className="glass-card lg:col-span-2">
             <CardHeader>

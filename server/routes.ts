@@ -1302,6 +1302,258 @@ export async function registerRoutes(
     }
   });
 
+  // ============================================================
+  // ASSET BRAKE SETTINGS
+  // ============================================================
+  app.get("/api/assets/:assetId/brake-settings", requireAuth, tenantMiddleware({ required: false }), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      const assetId = parseInt(req.params.assetId);
+      if (orgId) {
+        const asset = await storage.getAsset(assetId);
+        if (!asset || asset.orgId !== orgId) {
+          return res.status(403).json({ error: "Access denied" });
+        }
+      }
+      const settings = await storage.getAssetBrakeSettings(assetId);
+      if (!settings) {
+        return res.json({ settings: null, axles: [] });
+      }
+      const axles = await storage.getAssetBrakeAxles(settings.id);
+      res.json({ settings, axles });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch brake settings" });
+    }
+  });
+
+  app.put("/api/assets/:assetId/brake-settings", requireAuth, tenantMiddleware({ required: false }), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      const assetId = parseInt(req.params.assetId);
+      if (orgId) {
+        const asset = await storage.getAsset(assetId);
+        if (!asset || asset.orgId !== orgId) {
+          return res.status(403).json({ error: "Access denied" });
+        }
+      }
+      const { settings, axles } = req.body;
+      if (!settings || typeof settings !== 'object') {
+        return res.status(400).json({ error: "Invalid settings data" });
+      }
+      if (!Array.isArray(axles)) {
+        return res.status(400).json({ error: "Axles must be an array" });
+      }
+      const result = await storage.upsertAssetBrakeSettings(assetId, settings, axles);
+      const updatedAxles = await storage.getAssetBrakeAxles(result.id);
+      res.json({ settings: result, axles: updatedAxles });
+    } catch (error) {
+      console.error("Failed to save brake settings:", error);
+      res.status(500).json({ error: "Failed to save brake settings" });
+    }
+  });
+
+  // ============================================================
+  // ASSET TIRE SETTINGS
+  // ============================================================
+  app.get("/api/assets/:assetId/tire-settings", requireAuth, tenantMiddleware({ required: false }), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      const assetId = parseInt(req.params.assetId);
+      if (orgId) {
+        const asset = await storage.getAsset(assetId);
+        if (!asset || asset.orgId !== orgId) {
+          return res.status(403).json({ error: "Access denied" });
+        }
+      }
+      const settings = await storage.getAssetTireSettings(assetId);
+      if (!settings) {
+        return res.json({ settings: null, axles: [] });
+      }
+      const axles = await storage.getAssetTireAxles(settings.id);
+      res.json({ settings, axles });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch tire settings" });
+    }
+  });
+
+  app.put("/api/assets/:assetId/tire-settings", requireAuth, tenantMiddleware({ required: false }), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      const { settings, axles } = req.body;
+      if (!settings || typeof settings !== 'object') {
+        return res.status(400).json({ error: "Invalid settings data" });
+      }
+      if (!Array.isArray(axles)) {
+        return res.status(400).json({ error: "Axles must be an array" });
+      }
+      const assetId = parseInt(req.params.assetId);
+      if (orgId) {
+        const asset = await storage.getAsset(assetId);
+        if (!asset || asset.orgId !== orgId) {
+          return res.status(403).json({ error: "Access denied" });
+        }
+      }
+      const result = await storage.upsertAssetTireSettings(assetId, settings, axles);
+      const updatedAxles = await storage.getAssetTireAxles(result.id);
+      res.json({ settings: result, axles: updatedAxles });
+    } catch (error) {
+      console.error("Failed to save tire settings:", error);
+      res.status(500).json({ error: "Failed to save tire settings" });
+    }
+  });
+
+  // ============================================================
+  // BRAKE INSPECTIONS (Work Order linked)
+  // ============================================================
+  app.get("/api/work-orders/:workOrderId/brake-inspections", requireAuth, tenantMiddleware({ required: false }), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      const workOrderId = parseInt(req.params.workOrderId);
+      if (orgId) {
+        const wo = await storage.getWorkOrder(workOrderId);
+        if (!wo || wo.orgId !== orgId) {
+          return res.status(403).json({ error: "Access denied" });
+        }
+      }
+      const inspections = await storage.getBrakeInspections(workOrderId);
+      res.json(inspections);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch brake inspections" });
+    }
+  });
+
+  app.get("/api/brake-inspections/:id", requireAuth, tenantMiddleware({ required: false }), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      const inspection = await storage.getBrakeInspection(parseInt(req.params.id));
+      if (!inspection) return res.status(404).json({ error: "Inspection not found" });
+      if (orgId && inspection.orgId !== orgId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      const axles = await storage.getBrakeInspectionAxles(inspection.id);
+      res.json({ inspection, axles });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch brake inspection" });
+    }
+  });
+
+  app.post("/api/work-orders/:workOrderId/brake-inspections", requireAuth, tenantMiddleware({ required: false }), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      const workOrderId = parseInt(req.params.workOrderId);
+      const wo = await storage.getWorkOrder(workOrderId);
+      if (!wo) {
+        return res.status(404).json({ error: "Work order not found" });
+      }
+      if (orgId && wo.orgId !== orgId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      if (!wo.assetId) {
+        return res.status(400).json({ error: "Work order has no linked asset" });
+      }
+      const { inspection, axles } = req.body;
+      if (!inspection || typeof inspection !== 'object') {
+        return res.status(400).json({ error: "Invalid inspection data" });
+      }
+      if (!Array.isArray(axles)) {
+        return res.status(400).json({ error: "Axles must be an array" });
+      }
+      const userId = (req.user as any)?.claims?.sub;
+      const inspectionData = {
+        assetId: wo.assetId,
+        notes: inspection.notes || null,
+        passed: inspection.passed !== false,
+        meterReading: inspection.meterReading || null,
+        workOrderId,
+        orgId: orgId || null,
+        inspectorId: userId,
+        inspectedAt: new Date(),
+      };
+      const created = await storage.createBrakeInspection(inspectionData, axles);
+      const createdAxles = await storage.getBrakeInspectionAxles(created.id);
+      res.status(201).json({ inspection: created, axles: createdAxles });
+    } catch (error) {
+      console.error("Failed to create brake inspection:", error);
+      res.status(500).json({ error: "Failed to create brake inspection" });
+    }
+  });
+
+  // ============================================================
+  // TIRE INSPECTIONS (Work Order linked)
+  // ============================================================
+  app.get("/api/work-orders/:workOrderId/tire-inspections", requireAuth, tenantMiddleware({ required: false }), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      const workOrderId = parseInt(req.params.workOrderId);
+      if (orgId) {
+        const wo = await storage.getWorkOrder(workOrderId);
+        if (!wo || wo.orgId !== orgId) {
+          return res.status(403).json({ error: "Access denied" });
+        }
+      }
+      const inspections = await storage.getTireInspections(workOrderId);
+      res.json(inspections);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch tire inspections" });
+    }
+  });
+
+  app.get("/api/tire-inspections/:id", requireAuth, tenantMiddleware({ required: false }), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      const inspection = await storage.getTireInspection(parseInt(req.params.id));
+      if (!inspection) return res.status(404).json({ error: "Inspection not found" });
+      if (orgId && inspection.orgId !== orgId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      const axles = await storage.getTireInspectionAxles(inspection.id);
+      res.json({ inspection, axles });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch tire inspection" });
+    }
+  });
+
+  app.post("/api/work-orders/:workOrderId/tire-inspections", requireAuth, tenantMiddleware({ required: false }), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      const workOrderId = parseInt(req.params.workOrderId);
+      const wo = await storage.getWorkOrder(workOrderId);
+      if (!wo) {
+        return res.status(404).json({ error: "Work order not found" });
+      }
+      if (orgId && wo.orgId !== orgId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      if (!wo.assetId) {
+        return res.status(400).json({ error: "Work order has no linked asset" });
+      }
+      const { inspection, axles } = req.body;
+      if (!inspection || typeof inspection !== 'object') {
+        return res.status(400).json({ error: "Invalid inspection data" });
+      }
+      if (!Array.isArray(axles)) {
+        return res.status(400).json({ error: "Axles must be an array" });
+      }
+      const userId = (req.user as any)?.claims?.sub;
+      const inspectionData = {
+        assetId: wo.assetId,
+        notes: inspection.notes || null,
+        passed: inspection.passed !== false,
+        meterReading: inspection.meterReading || null,
+        workOrderId,
+        orgId: orgId || null,
+        inspectorId: userId,
+        inspectedAt: new Date(),
+      };
+      const created = await storage.createTireInspection(inspectionData, axles);
+      const createdAxles = await storage.getTireInspectionAxles(created.id);
+      res.status(201).json({ inspection: created, axles: createdAxles });
+    } catch (error) {
+      console.error("Failed to create tire inspection:", error);
+      res.status(500).json({ error: "Failed to create tire inspection" });
+    }
+  });
+
   // Public Asset Tokens (for DVIR QR codes)
   app.get("/api/assets/:assetId/dvir-token", requireAuth, tenantMiddleware({ required: false }), async (req, res) => {
     try {

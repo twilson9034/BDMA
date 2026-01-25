@@ -44,6 +44,7 @@ import { PriorityBadge } from "@/components/PriorityBadge";
 import { SignatureCapture, SignatureDisplay } from "@/components/SignatureCapture";
 import { LaborTracker } from "@/components/LaborTracker";
 import { DeferredLines } from "@/components/DeferredLines";
+import { BrakeTireInspection } from "@/components/BrakeTireInspection";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { WorkOrder, Asset, WorkOrderLine, Part, VmrsCode, WorkOrderTransaction, Location } from "@shared/schema";
@@ -960,6 +961,11 @@ export default function WorkOrderDetail() {
 
           {/* Deferred Lines Card */}
           <DeferredLines workOrderId={workOrder.id} />
+
+          {/* Brake & Tire Inspections (for vehicle assets only) */}
+          {linkedAsset?.type === "vehicle" && workOrder.assetId && (
+            <BrakeTireInspection workOrderId={workOrder.id} assetId={workOrder.assetId} />
+          )}
 
           {/* Signatures Card */}
           {(workOrder.technicianSignature || workOrder.customerSignature || workOrder.status === "completed" || workOrder.status === "ready_for_review") && (

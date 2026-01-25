@@ -164,6 +164,30 @@ import {
   type InsertEvent,
   type EventPart,
   type InsertEventPart,
+  assetBrakeSettings,
+  assetBrakeAxles,
+  assetTireSettings,
+  assetTireAxles,
+  brakeInspections,
+  brakeInspectionAxles,
+  tireInspections,
+  tireInspectionAxles,
+  type AssetBrakeSettings,
+  type InsertAssetBrakeSettings,
+  type AssetBrakeAxle,
+  type InsertAssetBrakeAxle,
+  type AssetTireSettings,
+  type InsertAssetTireSettings,
+  type AssetTireAxle,
+  type InsertAssetTireAxle,
+  type BrakeInspection,
+  type InsertBrakeInspection,
+  type BrakeInspectionAxle,
+  type InsertBrakeInspectionAxle,
+  type TireInspection,
+  type InsertTireInspection,
+  type TireInspectionAxle,
+  type InsertTireInspectionAxle,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -239,6 +263,28 @@ export interface IStorage {
   createAssetDocument(document: InsertAssetDocument): Promise<AssetDocument>;
   updateAssetDocument(id: number, document: Partial<InsertAssetDocument>): Promise<AssetDocument | undefined>;
   deleteAssetDocument(id: number): Promise<void>;
+  
+  // Asset Brake Settings
+  getAssetBrakeSettings(assetId: number): Promise<AssetBrakeSettings | undefined>;
+  getAssetBrakeAxles(brakeSettingsId: number): Promise<AssetBrakeAxle[]>;
+  upsertAssetBrakeSettings(assetId: number, settings: InsertAssetBrakeSettings, axles: InsertAssetBrakeAxle[]): Promise<AssetBrakeSettings>;
+  
+  // Asset Tire Settings
+  getAssetTireSettings(assetId: number): Promise<AssetTireSettings | undefined>;
+  getAssetTireAxles(tireSettingsId: number): Promise<AssetTireAxle[]>;
+  upsertAssetTireSettings(assetId: number, settings: InsertAssetTireSettings, axles: InsertAssetTireAxle[]): Promise<AssetTireSettings>;
+  
+  // Brake Inspections
+  getBrakeInspections(workOrderId: number): Promise<BrakeInspection[]>;
+  getBrakeInspection(id: number): Promise<BrakeInspection | undefined>;
+  getBrakeInspectionAxles(brakeInspectionId: number): Promise<BrakeInspectionAxle[]>;
+  createBrakeInspection(inspection: InsertBrakeInspection, axles: InsertBrakeInspectionAxle[]): Promise<BrakeInspection>;
+  
+  // Tire Inspections
+  getTireInspections(workOrderId: number): Promise<TireInspection[]>;
+  getTireInspection(id: number): Promise<TireInspection | undefined>;
+  getTireInspectionAxles(tireInspectionId: number): Promise<TireInspectionAxle[]>;
+  createTireInspection(inspection: InsertTireInspection, axles: InsertTireInspectionAxle[]): Promise<TireInspection>;
   
   // Vendors
   getVendors(): Promise<Vendor[]>;
@@ -931,6 +977,140 @@ export class DatabaseStorage implements IStorage {
 
   async deleteAssetDocument(id: number): Promise<void> {
     await db.delete(assetDocuments).where(eq(assetDocuments.id, id));
+  }
+
+  // Asset Brake Settings
+  async getAssetBrakeSettings(assetId: number): Promise<AssetBrakeSettings | undefined> {
+    const [settings] = await db.select().from(assetBrakeSettings).where(eq(assetBrakeSettings.assetId, assetId));
+    return settings;
+  }
+
+  async getAssetBrakeAxles(brakeSettingsId: number): Promise<AssetBrakeAxle[]> {
+    return db.select().from(assetBrakeAxles).where(eq(assetBrakeAxles.brakeSettingsId, brakeSettingsId)).orderBy(assetBrakeAxles.axlePosition);
+  }
+
+  async upsertAssetBrakeSettings(assetId: number, settings: InsertAssetBrakeSettings, axles: InsertAssetBrakeAxle[]): Promise<AssetBrakeSettings> {
+    // Check if settings exist
+    const existing = await this.getAssetBrakeSettings(assetId);
+    
+    let brakeSettings: AssetBrakeSettings;
+    if (existing) {
+      // Update existing settings
+      const [updated] = await db.update(assetBrakeSettings)
+        .set({ ...settings, updatedAt: new Date() })
+        .where(eq(assetBrakeSettings.id, existing.id))
+        .returning();
+      brakeSettings = updated;
+      
+      // Delete old axles and insert new ones
+      await db.delete(assetBrakeAxles).where(eq(assetBrakeAxles.brakeSettingsId, existing.id));
+    } else {
+      // Create new settings
+      const [created] = await db.insert(assetBrakeSettings).values({ ...settings, assetId }).returning();
+      brakeSettings = created;
+    }
+    
+    // Insert axles
+    if (axles.length > 0) {
+      await db.insert(assetBrakeAxles).values(
+        axles.map(axle => ({ ...axle, brakeSettingsId: brakeSettings.id }))
+      );
+    }
+    
+    return brakeSettings;
+  }
+
+  // Asset Tire Settings
+  async getAssetTireSettings(assetId: number): Promise<AssetTireSettings | undefined> {
+    const [settings] = await db.select().from(assetTireSettings).where(eq(assetTireSettings.assetId, assetId));
+    return settings;
+  }
+
+  async getAssetTireAxles(tireSettingsId: number): Promise<AssetTireAxle[]> {
+    return db.select().from(assetTireAxles).where(eq(assetTireAxles.tireSettingsId, tireSettingsId)).orderBy(assetTireAxles.axlePosition);
+  }
+
+  async upsertAssetTireSettings(assetId: number, settings: InsertAssetTireSettings, axles: InsertAssetTireAxle[]): Promise<AssetTireSettings> {
+    // Check if settings exist
+    const existing = await this.getAssetTireSettings(assetId);
+    
+    let tireSettings: AssetTireSettings;
+    if (existing) {
+      // Update existing settings
+      const [updated] = await db.update(assetTireSettings)
+        .set({ ...settings, updatedAt: new Date() })
+        .where(eq(assetTireSettings.id, existing.id))
+        .returning();
+      tireSettings = updated;
+      
+      // Delete old axles and insert new ones
+      await db.delete(assetTireAxles).where(eq(assetTireAxles.tireSettingsId, existing.id));
+    } else {
+      // Create new settings
+      const [created] = await db.insert(assetTireSettings).values({ ...settings, assetId }).returning();
+      tireSettings = created;
+    }
+    
+    // Insert axles
+    if (axles.length > 0) {
+      await db.insert(assetTireAxles).values(
+        axles.map(axle => ({ ...axle, tireSettingsId: tireSettings.id }))
+      );
+    }
+    
+    return tireSettings;
+  }
+
+  // Brake Inspections
+  async getBrakeInspections(workOrderId: number): Promise<BrakeInspection[]> {
+    return db.select().from(brakeInspections).where(eq(brakeInspections.workOrderId, workOrderId)).orderBy(desc(brakeInspections.inspectedAt));
+  }
+
+  async getBrakeInspection(id: number): Promise<BrakeInspection | undefined> {
+    const [inspection] = await db.select().from(brakeInspections).where(eq(brakeInspections.id, id));
+    return inspection;
+  }
+
+  async getBrakeInspectionAxles(brakeInspectionId: number): Promise<BrakeInspectionAxle[]> {
+    return db.select().from(brakeInspectionAxles).where(eq(brakeInspectionAxles.brakeInspectionId, brakeInspectionId)).orderBy(brakeInspectionAxles.axlePosition);
+  }
+
+  async createBrakeInspection(inspection: InsertBrakeInspection, axles: InsertBrakeInspectionAxle[]): Promise<BrakeInspection> {
+    const [created] = await db.insert(brakeInspections).values(inspection).returning();
+    
+    if (axles.length > 0) {
+      await db.insert(brakeInspectionAxles).values(
+        axles.map(axle => ({ ...axle, brakeInspectionId: created.id }))
+      );
+    }
+    
+    return created;
+  }
+
+  // Tire Inspections
+  async getTireInspections(workOrderId: number): Promise<TireInspection[]> {
+    return db.select().from(tireInspections).where(eq(tireInspections.workOrderId, workOrderId)).orderBy(desc(tireInspections.inspectedAt));
+  }
+
+  async getTireInspection(id: number): Promise<TireInspection | undefined> {
+    const [inspection] = await db.select().from(tireInspections).where(eq(tireInspections.id, id));
+    return inspection;
+  }
+
+  async getTireInspectionAxles(tireInspectionId: number): Promise<TireInspectionAxle[]> {
+    return db.select().from(tireInspectionAxles).where(eq(tireInspectionAxles.tireInspectionId, tireInspectionId)).orderBy(tireInspectionAxles.axlePosition);
+  }
+
+  async createTireInspection(inspection: InsertTireInspection, axles: InsertTireInspectionAxle[]): Promise<TireInspection> {
+    const [created] = await db.insert(tireInspections).values(inspection).returning();
+    
+    if (axles.length > 0) {
+      await db.insert(tireInspectionAxles).values(
+        axles.map(axle => ({ ...axle, tireInspectionId: created.id }))
+      );
+    }
+    
+    return created;
   }
 
   // Vendors
