@@ -151,15 +151,11 @@ export default function Receiving() {
   const handlePartCreated = (part: Part) => {
     setNewlyCreatedPart(part);
     queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders", selectedPO?.id, "lines"] });
-    
-    if (isBarcodeSystemEnabled && part.barcode) {
-      setReceivedItemsForPrint([{
-        lineId: createPartLine?.id || 0,
-        partId: part.id,
-        quantity: 1,
-      }]);
-      setBarcodePrintDialogOpen(true);
-    }
+    queryClient.invalidateQueries({ queryKey: ["/api/parts"] });
+    toast({
+      title: "Part Created",
+      description: `Part ${part.partNumber} has been created and linked. You can now receive items.`,
+    });
   };
 
   const getPartForLine = (line: PurchaseOrderLine) => {
@@ -341,7 +337,6 @@ export default function Receiving() {
                           <Button
                             size="sm"
                             variant="outline"
-                            className="text-amber-600 border-amber-300 hover:bg-amber-50 dark:text-amber-400 dark:border-amber-700 dark:hover:bg-amber-900/30"
                             onClick={() => handleCreatePart(line)}
                             data-testid={`button-create-part-${line.id}`}
                           >
@@ -542,7 +537,7 @@ function ReceiveDialog({
                     <Button 
                       size="sm" 
                       variant="outline" 
-                      className="mt-2 text-amber-700 border-amber-300 hover:bg-amber-100 dark:text-amber-300 dark:border-amber-700 dark:hover:bg-amber-900/50"
+                      className="mt-2"
                       onClick={() => {
                         onOpenChange(false);
                         onCreatePart();
