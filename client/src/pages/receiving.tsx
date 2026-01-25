@@ -11,15 +11,22 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { StatusBadge } from "@/components/StatusBadge";
-import { Package, Truck, CheckCircle, AlertTriangle, Clock, History } from "lucide-react";
+import { BarcodePrintDialog } from "@/components/BarcodePrintDialog";
+import { Package, Truck, CheckCircle, AlertTriangle, Clock, History, Printer } from "lucide-react";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
-import type { PurchaseOrder, PurchaseOrderLine, ReceivingTransaction } from "@shared/schema";
+import type { PurchaseOrder, PurchaseOrderLine, ReceivingTransaction, Part, Organization } from "@shared/schema";
 
 interface POWithLines extends PurchaseOrder {
   lines?: PurchaseOrderLine[];
   vendorName?: string;
+}
+
+interface ReceivedItemForPrint {
+  lineId: number;
+  partId: number | null;
+  quantity: number;
 }
 
 export default function Receiving() {
@@ -28,6 +35,12 @@ export default function Receiving() {
   const [receiveDialogOpen, setReceiveDialogOpen] = useState(false);
   const [selectedLine, setSelectedLine] = useState<PurchaseOrderLine | null>(null);
   const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
+  const [barcodePrintDialogOpen, setBarcodePrintDialogOpen] = useState(false);
+  const [receivedItemsForPrint, setReceivedItemsForPrint] = useState<ReceivedItemForPrint[]>([]);
+
+  const { data: organization } = useQuery<Organization>({
+    queryKey: ["/api/organizations/current"],
+  });
 
   const { data: purchaseOrders = [], isLoading } = useQuery<POWithLines[]>({
     queryKey: ["/api/purchase-orders"],
@@ -35,6 +48,10 @@ export default function Receiving() {
 
   const { data: vendors = [] } = useQuery<{ id: number; name: string }[]>({
     queryKey: ["/api/vendors"],
+  });
+
+  const { data: parts = [] } = useQuery<Part[]>({
+    queryKey: ["/api/parts"],
   });
 
   const { data: poLines = [] } = useQuery<PurchaseOrderLine[]>({
@@ -51,6 +68,8 @@ export default function Receiving() {
     enabled: historyDialogOpen,
   });
 
+  const isBarcodeSystemEnabled = organization?.enableBarcodeSystem ?? false;
+
   const receiveMutation = useMutation({
     mutationFn: async (data: { lineId: number; quantityReceived: string; notes?: string; discrepancyType?: string; discrepancyNotes?: string }) => {
       return apiRequest("POST", `/api/po-lines/${data.lineId}/receive`, {
@@ -60,18 +79,51 @@ export default function Receiving() {
         discrepancyNotes: data.discrepancyNotes,
       });
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       toast({ title: "Success", description: "Items received successfully" });
       queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
       queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders", selectedPO?.id, "lines"] });
       queryClient.invalidateQueries({ queryKey: ["/api/parts"] });
       setReceiveDialogOpen(false);
+      
+      if (isBarcodeSystemEnabled && selectedLine?.partId) {
+        setReceivedItemsForPrint([{
+          lineId: variables.lineId,
+          partId: selectedLine.partId,
+          quantity: parseInt(variables.quantityReceived) || 1,
+        }]);
+        setBarcodePrintDialogOpen(true);
+      }
+      
       setSelectedLine(null);
     },
     onError: (error: any) => {
       toast({ title: "Error", description: error.message || "Failed to receive items", variant: "destructive" });
     },
   });
+
+  const getPartsForPrinting = () => {
+    return receivedItemsForPrint
+      .filter(item => item.partId)
+      .map(item => {
+        const part = parts.find(p => p.id === item.partId);
+        if (!part) return null;
+        return {
+          id: part.id,
+          partNumber: part.partNumber,
+          name: part.name,
+          barcode: part.barcode,
+        };
+      })
+      .filter((p): p is NonNullable<typeof p> => p !== null);
+  };
+
+  const getDefaultPrintQuantity = () => {
+    if (receivedItemsForPrint.length === 1) {
+      return receivedItemsForPrint[0].quantity;
+    }
+    return 1;
+  };
 
   const receivablePOs = purchaseOrders.filter(po => 
     po.status === "sent" || po.status === "acknowledged" || po.status === "partial"
@@ -339,6 +391,15 @@ export default function Receiving() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <BarcodePrintDialog
+        open={barcodePrintDialogOpen}
+        onOpenChange={setBarcodePrintDialogOpen}
+        parts={getPartsForPrinting()}
+        defaultQuantity={getDefaultPrintQuantity()}
+        title="Print Barcode Labels for Received Items"
+        description="Would you like to print barcode labels for the items you just received?"
+      />
     </div>
   );
 }
