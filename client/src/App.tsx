@@ -68,6 +68,8 @@ import Messages from "@/pages/messages";
 import PublicDashboards from "@/pages/public-dashboards";
 import AdminTools from "@/pages/admin-tools";
 import PublicDvir from "@/pages/public-dvir";
+import LaborRateCalculator from "@/pages/labor-rate-calculator";
+import KnowledgeBase from "@/pages/knowledge-base";
 import NotFound from "@/pages/not-found";
 
 function AuthenticatedRouter() {
@@ -125,6 +127,8 @@ function AuthenticatedRouter() {
       <Route path="/settings/vmrs" component={VmrsSettings} />
       <Route path="/public-dashboards" component={PublicDashboards} />
       <Route path="/admin-tools" component={AdminTools} />
+      <Route path="/labor-rate-calculator" component={LaborRateCalculator} />
+      <Route path="/knowledge-base" component={KnowledgeBase} />
       <Route path="/landing" component={LandingPage} />
       <Route component={NotFound} />
     </Switch>

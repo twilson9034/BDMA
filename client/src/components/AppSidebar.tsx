@@ -98,6 +98,11 @@ const resourceItems = [
   { title: "Admin Tools", url: "/admin-tools", icon: Database },
 ];
 
+const toolsItems = [
+  { title: "Knowledge Base", url: "/knowledge-base", icon: BookOpen },
+  { title: "Labor Rate Calculator", url: "/labor-rate-calculator", icon: Calculator },
+];
+
 export function AppSidebar() {
   const [location] = useLocation();
   const { user } = useAuth();
@@ -198,6 +203,26 @@ export function AppSidebar() {
               <SidebarGroupContent>
                 <SidebarMenu>
                   {resourceItems.map((item) => (
+                    <NavItem key={item.title} item={item} />
+                  ))}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </CollapsibleContent>
+          </Collapsible>
+        </SidebarGroup>
+
+        <SidebarGroup>
+          <Collapsible defaultOpen className="group/collapsible">
+            <CollapsibleTrigger asChild>
+              <SidebarGroupLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider cursor-pointer flex items-center justify-between pr-2 hover-elevate rounded">
+                Tools
+                <ChevronDown className="h-3 w-3 transition-transform group-data-[state=open]/collapsible:rotate-180" />
+              </SidebarGroupLabel>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {toolsItems.map((item) => (
                     <NavItem key={item.title} item={item} />
                   ))}
                 </SidebarMenu>
