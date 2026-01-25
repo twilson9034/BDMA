@@ -22,7 +22,9 @@ import {
   Sparkles,
   Download,
   Loader2,
-  MapPin
+  MapPin,
+  Truck,
+  Store
 } from "lucide-react";
 import {
   Tooltip,
@@ -40,6 +42,8 @@ interface OrgMember {
   hourlyRate: string | null;
 }
 
+type ShopType = "commercial" | "fleet";
+
 interface CostInputs {
   technicianCount: number;
   avgHourlyWage: number;
@@ -54,6 +58,7 @@ interface CostInputs {
   annualOther: number;
   targetProfitMargin: number;
   billableHoursPerTech: number;
+  externalLaborRate: number;
 }
 
 const defaultInputs: CostInputs = {
@@ -70,6 +75,7 @@ const defaultInputs: CostInputs = {
   annualOther: 2000,
   targetProfitMargin: 20,
   billableHoursPerTech: 1600,
+  externalLaborRate: 125,
 };
 
 function InfoTooltip({ content }: { content: string }) {
@@ -135,6 +141,7 @@ function CostInput({
 export default function LaborRateCalculator() {
   const { toast } = useToast();
   const { isAuthenticated } = useAuth();
+  const [shopType, setShopType] = useState<ShopType>("fleet");
   const [inputs, setInputs] = useState<CostInputs>(defaultInputs);
   const [shopLocation, setShopLocation] = useState("");
   const [shopSqFt, setShopSqFt] = useState("");
@@ -226,6 +233,7 @@ export default function LaborRateCalculator() {
       annualOther,
       targetProfitMargin,
       billableHoursPerTech,
+      externalLaborRate,
     } = inputs;
 
     const annualHoursPerTech = 2080;
@@ -250,12 +258,22 @@ export default function LaborRateCalculator() {
       ? totalAnnualCosts / totalBillableHours 
       : 0;
 
-    const recommendedRate = costPerBillableHour / (1 - (targetProfitMargin / 100));
+    // For commercial shops, calculate rate with profit margin
+    const effectiveProfitMargin = shopType === "fleet" ? 0 : targetProfitMargin;
+    const recommendedRate = costPerBillableHour / (1 - (effectiveProfitMargin / 100));
     const profitPerHour = recommendedRate - costPerBillableHour;
     const annualProfit = profitPerHour * totalBillableHours;
     const annualRevenue = recommendedRate * totalBillableHours;
 
     const laborEfficiency = (billableHoursPerTech / annualHoursPerTech) * 100;
+
+    // Fleet shop: outsourcing comparison
+    const externalAnnualCost = externalLaborRate * totalBillableHours;
+    const annualSavings = externalAnnualCost - totalAnnualCosts;
+    const savingsPerHour = externalLaborRate - costPerBillableHour;
+    const savingsPercent = externalLaborRate > 0 
+      ? ((externalLaborRate - costPerBillableHour) / externalLaborRate) * 100 
+      : 0;
 
     return {
       totalAnnualWages,
@@ -270,8 +288,12 @@ export default function LaborRateCalculator() {
       annualProfit,
       annualRevenue,
       laborEfficiency,
+      externalAnnualCost,
+      annualSavings,
+      savingsPerHour,
+      savingsPercent,
     };
-  }, [inputs]);
+  }, [inputs, shopType]);
 
   const resetToDefaults = () => {
     setInputs(defaultInputs);
@@ -288,21 +310,63 @@ export default function LaborRateCalculator() {
 
   return (
     <div className="container max-w-6xl mx-auto py-8 px-4">
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-8">
         <div className="space-y-1">
           <h1 className="text-3xl font-bold flex items-center gap-3">
             <Calculator className="h-8 w-8 text-primary" />
             Shop Labor Rate Calculator
           </h1>
           <p className="text-muted-foreground">
-            Calculate your optimal shop labor rate based on your actual costs and target profit margin.
+            {shopType === "fleet" 
+              ? "Calculate your true internal labor cost and compare against outsourcing."
+              : "Calculate your optimal shop labor rate based on your actual costs and target profit margin."
+            }
           </p>
         </div>
-        <Button variant="outline" onClick={resetToDefaults} data-testid="button-reset">
-          <RotateCcw className="h-4 w-4 mr-2" />
-          Reset
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={resetToDefaults} data-testid="button-reset">
+            <RotateCcw className="h-4 w-4 mr-2" />
+            Reset
+          </Button>
+        </div>
       </div>
+
+      {/* Shop Type Toggle */}
+      <Card className="mb-6">
+        <CardContent className="pt-6">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+            <Label className="text-sm font-medium">Shop Type:</Label>
+            <div className="flex gap-2">
+              <Button
+                variant={shopType === "fleet" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setShopType("fleet")}
+                className="gap-2"
+                data-testid="button-shop-type-fleet"
+              >
+                <Truck className="h-4 w-4" />
+                Fleet / Internal
+              </Button>
+              <Button
+                variant={shopType === "commercial" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setShopType("commercial")}
+                className="gap-2"
+                data-testid="button-shop-type-commercial"
+              >
+                <Store className="h-4 w-4" />
+                Commercial Shop
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {shopType === "fleet" 
+                ? "Internal shops are cost centers - calculates true cost per hour for internal allocations and outsourcing comparison."
+                : "Commercial shops charge customers - calculates rates including your target profit margin."
+              }
+            </p>
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="grid lg:grid-cols-3 gap-6">
         {/* Input Section */}
@@ -496,22 +560,36 @@ export default function LaborRateCalculator() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <TrendingUp className="h-5 w-5 text-primary" />
-                Target Parameters
+                {shopType === "fleet" ? "Productivity & Comparison" : "Target Parameters"}
               </CardTitle>
               <CardDescription>
-                Set your profit goals and productivity expectations
+                {shopType === "fleet" 
+                  ? "Set productivity expectations and enter external rates for comparison"
+                  : "Set your profit goals and productivity expectations"
+                }
               </CardDescription>
             </CardHeader>
             <CardContent className="grid sm:grid-cols-2 gap-4">
-              <CostInput
-                label="Target Profit Margin"
-                value={inputs.targetProfitMargin}
-                onChange={(v) => updateInput('targetProfitMargin', v)}
-                prefix=""
-                suffix="%"
-                tooltip="Desired profit margin on labor (typically 15-25%)"
-                testId="input-profit-margin"
-              />
+              {shopType === "commercial" && (
+                <CostInput
+                  label="Target Profit Margin"
+                  value={inputs.targetProfitMargin}
+                  onChange={(v) => updateInput('targetProfitMargin', v)}
+                  prefix=""
+                  suffix="%"
+                  tooltip="Desired profit margin on labor (typically 15-25%)"
+                  testId="input-profit-margin"
+                />
+              )}
+              {shopType === "fleet" && (
+                <CostInput
+                  label="External Shop Rate"
+                  value={inputs.externalLaborRate}
+                  onChange={(v) => updateInput('externalLaborRate', v)}
+                  tooltip="What local shops charge per hour. Used to compare your internal cost against outsourcing."
+                  testId="input-external-rate"
+                />
+              )}
               <CostInput
                 label="Billable Hours Per Tech (Annual)"
                 value={inputs.billableHoursPerTech}
@@ -526,34 +604,72 @@ export default function LaborRateCalculator() {
 
         {/* Results Section */}
         <div className="space-y-6">
-          {/* Recommended Rate */}
-          <Card className="border-primary">
-            <CardHeader className="bg-primary/5">
-              <CardTitle className="flex items-center gap-2">
-                <DollarSign className="h-5 w-5 text-primary" />
-                Recommended Labor Rate
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="pt-6">
-              <div className="text-center">
-                <div className="text-5xl font-bold text-primary" data-testid="text-recommended-rate">
-                  {formatCurrency(calculations.recommendedRate)}
+          {/* Main Rate Card - Different for Fleet vs Commercial */}
+          {shopType === "fleet" ? (
+            <Card className="border-primary">
+              <CardHeader className="bg-primary/5">
+                <CardTitle className="flex items-center gap-2">
+                  <DollarSign className="h-5 w-5 text-primary" />
+                  Internal Cost Rate
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-6">
+                <div className="text-center">
+                  <div className="text-5xl font-bold text-primary" data-testid="text-recommended-rate">
+                    {formatCurrency(calculations.costPerBillableHour)}
+                  </div>
+                  <p className="text-muted-foreground mt-2">true cost per hour</p>
                 </div>
-                <p className="text-muted-foreground mt-2">per billable hour</p>
-              </div>
-              <Separator className="my-6" />
-              <div className="space-y-3 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Cost per hour:</span>
-                  <span className="font-medium">{formatCurrency(calculations.costPerBillableHour)}</span>
+                <Separator className="my-6" />
+                <div className="space-y-3 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">External shop rate:</span>
+                    <span className="font-medium">{formatCurrency(inputs.externalLaborRate)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Savings per hour:</span>
+                    <span className={`font-medium ${calculations.savingsPerHour >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      {formatCurrency(calculations.savingsPerHour)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Savings %:</span>
+                    <span className={`font-medium ${calculations.savingsPercent >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      {calculations.savingsPercent.toFixed(1)}%
+                    </span>
+                  </div>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Profit per hour:</span>
-                  <span className="font-medium text-green-600">{formatCurrency(calculations.profitPerHour)}</span>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card className="border-primary">
+              <CardHeader className="bg-primary/5">
+                <CardTitle className="flex items-center gap-2">
+                  <DollarSign className="h-5 w-5 text-primary" />
+                  Recommended Labor Rate
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-6">
+                <div className="text-center">
+                  <div className="text-5xl font-bold text-primary" data-testid="text-recommended-rate">
+                    {formatCurrency(calculations.recommendedRate)}
+                  </div>
+                  <p className="text-muted-foreground mt-2">per billable hour</p>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
+                <Separator className="my-6" />
+                <div className="space-y-3 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Cost per hour:</span>
+                    <span className="font-medium">{formatCurrency(calculations.costPerBillableHour)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Profit per hour:</span>
+                    <span className="font-medium text-green-600">{formatCurrency(calculations.profitPerHour)}</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Cost Breakdown */}
           <Card>
@@ -589,7 +705,9 @@ export default function LaborRateCalculator() {
           {/* Projections */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Annual Projections</CardTitle>
+              <CardTitle className="text-base">
+                {shopType === "fleet" ? "Annual Comparison" : "Annual Projections"}
+              </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3 text-sm">
               <div className="flex justify-between">
@@ -601,14 +719,36 @@ export default function LaborRateCalculator() {
                 <span>{calculations.laborEfficiency.toFixed(1)}%</span>
               </div>
               <Separator />
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Projected Revenue:</span>
-                <span className="font-medium">{formatCurrency(calculations.annualRevenue)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Projected Profit:</span>
-                <span className="font-medium text-green-600">{formatCurrency(calculations.annualProfit)}</span>
-              </div>
+              {shopType === "fleet" ? (
+                <>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">If outsourced:</span>
+                    <span className="font-medium">{formatCurrency(calculations.externalAnnualCost)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Your internal cost:</span>
+                    <span className="font-medium">{formatCurrency(calculations.totalAnnualCosts)}</span>
+                  </div>
+                  <Separator />
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Annual Savings:</span>
+                    <span className={`font-bold ${calculations.annualSavings >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      {formatCurrency(calculations.annualSavings)}
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Projected Revenue:</span>
+                    <span className="font-medium">{formatCurrency(calculations.annualRevenue)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Projected Profit:</span>
+                    <span className="font-medium text-green-600">{formatCurrency(calculations.annualProfit)}</span>
+                  </div>
+                </>
+              )}
             </CardContent>
           </Card>
 
@@ -619,12 +759,23 @@ export default function LaborRateCalculator() {
                 <Wrench className="h-4 w-4" />
                 Industry Benchmarks
               </h4>
-              <ul className="text-sm text-muted-foreground space-y-1">
-                <li>• Fleet shops typically charge $85-$150/hour</li>
-                <li>• Target 75-85% labor efficiency</li>
-                <li>• Benefits usually run 25-35% of wages</li>
-                <li>• Overhead should be 40-60% of labor costs</li>
-              </ul>
+              {shopType === "fleet" ? (
+                <ul className="text-sm text-muted-foreground space-y-1">
+                  <li>• External shops typically charge $85-$150/hour</li>
+                  <li>• Internal shops often achieve 20-40% savings</li>
+                  <li>• Target 75-85% labor efficiency</li>
+                  <li>• Benefits usually run 25-35% of wages</li>
+                  <li>• Include ALL overhead for accurate comparison</li>
+                </ul>
+              ) : (
+                <ul className="text-sm text-muted-foreground space-y-1">
+                  <li>• Commercial shops typically charge $85-$150/hour</li>
+                  <li>• Target 15-25% profit margin</li>
+                  <li>• Target 75-85% labor efficiency</li>
+                  <li>• Benefits usually run 25-35% of wages</li>
+                  <li>• Overhead should be 40-60% of labor costs</li>
+                </ul>
+              )}
             </CardContent>
           </Card>
         </div>
