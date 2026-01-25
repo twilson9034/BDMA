@@ -125,6 +125,7 @@ import {
   memberLocations,
   tires,
   conversations,
+  conversationParticipants,
   messages,
   savedReports,
   gpsLocations,
@@ -3003,6 +3004,16 @@ export class DatabaseStorage implements IStorage {
   async createConversation(data: InsertConversation & { orgId?: number }): Promise<Conversation> {
     const [conv] = await db.insert(conversations).values(data).returning();
     return conv;
+  }
+
+  async addConversationParticipant(conversationId: number, userId: string): Promise<void> {
+    await db.insert(conversationParticipants).values({ conversationId, userId });
+  }
+
+  async getConversationParticipants(conversationId: number): Promise<{ userId: string }[]> {
+    return db.select({ userId: conversationParticipants.userId })
+      .from(conversationParticipants)
+      .where(eq(conversationParticipants.conversationId, conversationId));
   }
 
   // Messages

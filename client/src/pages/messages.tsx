@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Plus, Search, Send, Users, User, ChevronRight } from "lucide-react";
+import { Plus, Search, Send, Users, User, ChevronRight, X, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/PageHeader";
@@ -15,6 +15,30 @@ import type { Message as MessageType } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import type { Conversation, Message } from "@shared/schema";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
+
+interface OrgMember {
+  id: number;
+  orgId: number;
+  userId: string;
+  role: string;
+  user?: {
+    id: string;
+    email?: string;
+    firstName?: string;
+    lastName?: string;
+    profileImageUrl?: string;
+  };
+}
 
 interface ConversationWithParticipants extends Conversation {
   participantNames?: string[];
@@ -187,12 +211,75 @@ function MessageThread({ conversationId }: { conversationId: number }) {
 }
 
 export default function Messages() {
+  const { user } = useAuth();
+  const { toast } = useToast();
   const [search, setSearch] = useState("");
   const [selectedConversationId, setSelectedConversationId] = useState<number | null>(null);
+  const [showNewConversationDialog, setShowNewConversationDialog] = useState(false);
+  const [conversationName, setConversationName] = useState("");
+  const [selectedParticipants, setSelectedParticipants] = useState<string[]>([]);
 
   const { data: conversations, isLoading } = useQuery<ConversationWithParticipants[]>({
     queryKey: ["/api/conversations"],
   });
+
+  const { data: orgMembers } = useQuery<OrgMember[]>({
+    queryKey: ["/api/organizations/current/members"],
+  });
+
+  const createConversationMutation = useMutation({
+    mutationFn: async (data: { name?: string; isGroup: boolean; participantIds: string[] }) => {
+      const response = await apiRequest("POST", "/api/conversations", {
+        name: data.name || null,
+        isGroup: data.isGroup,
+        participantIds: data.participantIds,
+      });
+      return response.json() as Promise<Conversation>;
+    },
+    onSuccess: (newConversation) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
+      setSelectedConversationId(newConversation.id);
+      setShowNewConversationDialog(false);
+      setConversationName("");
+      setSelectedParticipants([]);
+      toast({
+        title: "Success",
+        description: "Conversation created successfully",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to create conversation",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleCreateConversation = () => {
+    if (selectedParticipants.length === 0) {
+      toast({
+        title: "Error",
+        description: "Please select at least one participant",
+        variant: "destructive",
+      });
+      return;
+    }
+    const isGroup = selectedParticipants.length > 1;
+    createConversationMutation.mutate({
+      name: isGroup ? conversationName : undefined,
+      isGroup,
+      participantIds: selectedParticipants,
+    });
+  };
+
+  const toggleParticipant = (userId: string) => {
+    setSelectedParticipants((prev) =>
+      prev.includes(userId)
+        ? prev.filter((id) => id !== userId)
+        : [...prev, userId]
+    );
+  };
 
   const filteredConversations = conversations?.filter((conv) => {
     const matchesSearch =
@@ -203,13 +290,15 @@ export default function Messages() {
     return search ? matchesSearch : true;
   });
 
+  const availableMembers = orgMembers?.filter((m) => m.userId !== user?.id) || [];
+
   return (
     <div className="h-full flex flex-col fade-in">
       <PageHeader
         title="Messages"
         description="Team communication and collaboration"
         actions={
-          <Button data-testid="button-new-conversation">
+          <Button onClick={() => setShowNewConversationDialog(true)} data-testid="button-new-conversation">
             <Plus className="h-4 w-4 mr-2" />
             New Conversation
           </Button>
@@ -261,6 +350,104 @@ export default function Messages() {
           )}
         </Card>
       </div>
+
+      <Dialog open={showNewConversationDialog} onOpenChange={setShowNewConversationDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>New Conversation</DialogTitle>
+            <DialogDescription>
+              Select team members to start a conversation with.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            {selectedParticipants.length > 1 && (
+              <div className="space-y-2">
+                <Label htmlFor="conversation-name">Group Name (optional)</Label>
+                <Input
+                  id="conversation-name"
+                  placeholder="Enter group name..."
+                  value={conversationName}
+                  onChange={(e) => setConversationName(e.target.value)}
+                  data-testid="input-conversation-name"
+                />
+              </div>
+            )}
+            <div className="space-y-2">
+              <Label>Select Participants</Label>
+              {availableMembers.length === 0 ? (
+                <p className="text-sm text-muted-foreground py-4 text-center" data-testid="text-no-members">
+                  No other team members available
+                </p>
+              ) : (
+                <div className="max-h-60 overflow-y-auto space-y-2 border rounded-md p-2">
+                  {availableMembers.map((member) => {
+                    const displayName = member.user?.firstName && member.user?.lastName
+                      ? `${member.user.firstName} ${member.user.lastName}`
+                      : member.user?.email || member.userId;
+                    const isSelected = selectedParticipants.includes(member.userId);
+                    return (
+                      <div
+                        key={member.id}
+                        className={`flex items-center gap-3 p-2 rounded-md cursor-pointer hover-elevate ${
+                          isSelected ? "bg-accent" : ""
+                        }`}
+                        onClick={() => toggleParticipant(member.userId)}
+                        data-testid={`row-member-${member.id}`}
+                      >
+                        <Checkbox
+                          checked={isSelected}
+                          onCheckedChange={() => toggleParticipant(member.userId)}
+                          data-testid={`checkbox-member-${member.id}`}
+                        />
+                        <Avatar className="h-8 w-8">
+                          <AvatarImage src={member.user?.profileImageUrl || undefined} />
+                          <AvatarFallback>
+                            <User className="h-4 w-4" />
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate" data-testid={`text-member-name-${member.id}`}>
+                            {displayName}
+                          </p>
+                          <p className="text-xs text-muted-foreground capitalize" data-testid={`text-member-role-${member.id}`}>
+                            {member.role}
+                          </p>
+                        </div>
+                        {isSelected && <Check className="h-4 w-4 text-primary" />}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+            {selectedParticipants.length > 0 && (
+              <p className="text-sm text-muted-foreground" data-testid="text-selected-count">
+                {selectedParticipants.length} participant{selectedParticipants.length > 1 ? "s" : ""} selected
+              </p>
+            )}
+          </div>
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowNewConversationDialog(false);
+                setConversationName("");
+                setSelectedParticipants([]);
+              }}
+              data-testid="button-cancel-conversation"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleCreateConversation}
+              disabled={selectedParticipants.length === 0 || createConversationMutation.isPending}
+              data-testid="button-create-conversation"
+            >
+              {createConversationMutation.isPending ? "Creating..." : "Create Conversation"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

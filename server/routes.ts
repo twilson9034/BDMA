@@ -2765,13 +2765,29 @@ export async function registerRoutes(
       const orgId = getOrgId(req);
       if (!orgId) return res.status(403).json({ error: "Organization context required" });
       if (!req.user) return res.status(401).json({ error: "Unauthorized" });
-      const validated = insertConversationSchema.parse({ ...req.body, createdBy: req.user.id });
+      
+      const { participantIds, ...conversationData } = req.body;
+      const validated = insertConversationSchema.parse({ ...conversationData, createdBy: req.user.id });
       const conv = await storage.createConversation({ ...validated, orgId });
+      
+      // Add the creator as a participant
+      await storage.addConversationParticipant(conv.id, req.user.id);
+      
+      // Add other participants if provided
+      if (participantIds && Array.isArray(participantIds)) {
+        for (const participantId of participantIds) {
+          if (participantId !== req.user.id) {
+            await storage.addConversationParticipant(conv.id, participantId);
+          }
+        }
+      }
+      
       res.status(201).json(conv);
     } catch (error) {
       if (error instanceof z.ZodError) {
         return res.status(400).json({ error: error.errors });
       }
+      console.error("Failed to create conversation:", error);
       res.status(500).json({ error: "Failed to create conversation" });
     }
   });
