@@ -27,7 +27,10 @@ import {
   TrendingUp,
   Target,
   Zap,
-  Award
+  Award,
+  Calculator,
+  UserCog,
+  HelpCircle
 } from "lucide-react";
 
 import heroFleetImage from "@assets/images/hero-fleet.jpg";
@@ -135,6 +138,21 @@ const features = [
     title: "Transaction Reversals",
     description: "Atomic reversal of inventory and labor transactions with full audit trail and accountability.",
   },
+  {
+    icon: Calculator,
+    title: "Labor Rate Calculator",
+    description: "Calculate optimal shop labor rates with AI-assisted overhead estimates and real technician wage data integration.",
+  },
+  {
+    icon: UserCog,
+    title: "Technician Management",
+    description: "Manage technician hourly rates with role-based access. Rates flow into labor cost calculations across work orders.",
+  },
+  {
+    icon: HelpCircle,
+    title: "Knowledge Base",
+    description: "Comprehensive help documentation with 20+ articles covering features, API integrations, workflows, and troubleshooting.",
+  },
 ];
 
 const tireFeature = {
@@ -209,6 +227,8 @@ const benefits = [
   "Comprehensive audit trail and compliance documentation",
   "Tire management with lifecycle tracking and TPMS support",
   "ABC classification for optimized inventory investment",
+  "Shop labor rate calculator with AI-assisted overhead estimates",
+  "Technician wage management for accurate labor costing",
 ];
 
 export default function LandingPage() {
