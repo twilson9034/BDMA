@@ -237,6 +237,24 @@ export default function Dashboard() {
     queryKey: [buildUrl("/api/dashboard/parts-analytics")],
   });
 
+  // Determine location display name (uses state for reactivity)
+  // NOTE: This useMemo must be before any early returns to maintain hook order
+  const locationDisplay = useMemo(() => {
+    if (locationPref === "all") {
+      return "All Locations";
+    } else if (locationPref === "assigned") {
+      if (membership?.primaryLocationId) {
+        const loc = locations?.find(l => l.id === membership.primaryLocationId);
+        return loc?.name || "Assigned Location";
+      }
+      return "All Locations"; // No assignment = show all
+    } else {
+      const locationId = parseInt(locationPref);
+      const loc = locations?.find(l => l.id === locationId);
+      return loc?.name || "Unknown Location";
+    }
+  }, [locationPref, membership?.primaryLocationId, locations]);
+
   if (statsLoading) {
     return <PageLoader />;
   }
@@ -260,23 +278,6 @@ export default function Dashboard() {
   ];
 
   const fleetAvailability = Math.round((displayStats.operationalAssets / displayStats.totalAssets) * 100);
-
-  // Determine location display name (uses state for reactivity)
-  const locationDisplay = useMemo(() => {
-    if (locationPref === "all") {
-      return "All Locations";
-    } else if (locationPref === "assigned") {
-      if (membership?.primaryLocationId) {
-        const loc = locations?.find(l => l.id === membership.primaryLocationId);
-        return loc?.name || "Assigned Location";
-      }
-      return "All Locations"; // No assignment = show all
-    } else {
-      const locationId = parseInt(locationPref);
-      const loc = locations?.find(l => l.id === locationId);
-      return loc?.name || "Unknown Location";
-    }
-  }, [locationPref, membership?.primaryLocationId, locations]);
 
   return (
     <div className="space-y-6 fade-in">
