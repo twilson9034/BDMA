@@ -687,8 +687,9 @@ export async function registerRoutes(
   app.get("/api/dashboard/stats", tenantMiddleware({ required: false }), async (req, res) => {
     try {
       const orgId = getOrgId(req);
+      const locationId = req.query.locationId ? parseInt(req.query.locationId as string) : undefined;
       if (orgId) {
-        const stats = await storage.getDashboardStatsByOrg(orgId);
+        const stats = await storage.getDashboardStatsByOrg(orgId, locationId);
         res.json(stats);
       } else {
         const stats = await storage.getDashboardStats();
@@ -702,8 +703,9 @@ export async function registerRoutes(
   app.get("/api/dashboard/kpis", tenantMiddleware({ required: false }), async (req, res) => {
     try {
       const orgId = getOrgId(req);
+      const locationId = req.query.locationId ? parseInt(req.query.locationId as string) : undefined;
       if (orgId) {
-        const kpis = await storage.getKpiMetricsByOrg(orgId);
+        const kpis = await storage.getKpiMetricsByOrg(orgId, locationId);
         res.json(kpis);
       } else {
         const kpis = await storage.getKpiMetrics();
@@ -717,8 +719,9 @@ export async function registerRoutes(
   app.get("/api/dashboard/procurement", tenantMiddleware({ required: false }), async (req, res) => {
     try {
       const orgId = getOrgId(req);
+      const locationId = req.query.locationId ? parseInt(req.query.locationId as string) : undefined;
       if (orgId) {
-        const overview = await storage.getProcurementOverviewByOrg(orgId);
+        const overview = await storage.getProcurementOverviewByOrg(orgId, locationId);
         res.json(overview);
       } else {
         const overview = await storage.getProcurementOverview();
@@ -732,8 +735,9 @@ export async function registerRoutes(
   app.get("/api/dashboard/parts-analytics", tenantMiddleware({ required: false }), async (req, res) => {
     try {
       const orgId = getOrgId(req);
+      const locationId = req.query.locationId ? parseInt(req.query.locationId as string) : undefined;
       if (orgId) {
-        const analytics = await storage.getPartsAnalyticsByOrg(orgId);
+        const analytics = await storage.getPartsAnalyticsByOrg(orgId, locationId);
         res.json(analytics);
       } else {
         const analytics = await storage.getPartsAnalytics();
@@ -748,7 +752,8 @@ export async function registerRoutes(
   app.get("/api/dashboard/tire-health", tenantMiddleware({ required: false }), async (req, res) => {
     try {
       const orgId = getOrgId(req);
-      const tireHealth = await storage.getTireHealthStats(orgId);
+      const locationId = req.query.locationId ? parseInt(req.query.locationId as string) : undefined;
+      const tireHealth = await storage.getTireHealthStats(orgId, locationId);
       res.json(tireHealth);
     } catch (error) {
       res.status(500).json({ error: "Failed to get tire health data" });
@@ -1856,7 +1861,9 @@ export async function registerRoutes(
 
   app.get("/api/work-orders/recent", tenantMiddleware({ required: false }), async (req, res) => {
     const limit = parseInt(req.query.limit as string) || 10;
-    const workOrders = await storage.getRecentWorkOrders(limit);
+    const orgId = getOrgId(req);
+    const locationId = req.query.locationId ? parseInt(req.query.locationId as string) : undefined;
+    const workOrders = await storage.getRecentWorkOrders(limit, orgId ?? undefined, locationId);
     res.json(workOrders);
   });
 

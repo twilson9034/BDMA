@@ -1,4 +1,4 @@
-import { eq, desc, sql, and, or, lt, lte, isNull, isNotNull } from "drizzle-orm";
+import { eq, desc, sql, and, or, lt, lte, isNull, isNotNull, inArray } from "drizzle-orm";
 import { db } from "./db";
 import {
   users,
@@ -313,7 +313,7 @@ export interface IStorage {
   // Work Orders
   getWorkOrders(): Promise<WorkOrder[]>;
   getWorkOrder(id: number): Promise<WorkOrder | undefined>;
-  getRecentWorkOrders(limit: number): Promise<WorkOrder[]>;
+  getRecentWorkOrders(limit: number, orgId?: number, locationId?: number): Promise<WorkOrder[]>;
   createWorkOrder(workOrder: InsertWorkOrder): Promise<WorkOrder>;
   updateWorkOrder(id: number, workOrder: Partial<InsertWorkOrder>): Promise<WorkOrder | undefined>;
   deleteWorkOrder(id: number): Promise<void>;
@@ -1237,7 +1237,24 @@ export class DatabaseStorage implements IStorage {
     return wo;
   }
 
-  async getRecentWorkOrders(limit: number = 10): Promise<WorkOrder[]> {
+  async getRecentWorkOrders(limit: number = 10, orgId?: number, locationId?: number): Promise<WorkOrder[]> {
+    if (orgId && locationId) {
+      // Get assets at this location
+      const locationAssets = await db.select().from(assets).where(and(eq(assets.orgId, orgId), eq(assets.locationId, locationId)));
+      const assetIds = locationAssets.map(a => a.id);
+      if (assetIds.length === 0) return [];
+      
+      // Get work orders for those assets
+      return db.select().from(workOrders)
+        .where(and(eq(workOrders.orgId, orgId), inArray(workOrders.assetId, assetIds)))
+        .orderBy(desc(workOrders.createdAt))
+        .limit(limit);
+    } else if (orgId) {
+      return db.select().from(workOrders)
+        .where(eq(workOrders.orgId, orgId))
+        .orderBy(desc(workOrders.createdAt))
+        .limit(limit);
+    }
     return db.select().from(workOrders).orderBy(desc(workOrders.createdAt)).limit(limit);
   }
 
@@ -3034,10 +3051,30 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(feedback).where(eq(feedback.orgId, orgId)).orderBy(desc(feedback.createdAt));
   }
 
-  async getDashboardStatsByOrg(orgId: number) {
-    const orgAssets = await db.select().from(assets).where(eq(assets.orgId, orgId));
-    const orgWorkOrders = await db.select().from(workOrders).where(eq(workOrders.orgId, orgId));
+  async getDashboardStatsByOrg(orgId: number, locationId?: number) {
+    // Build asset query with optional location filter
+    let orgAssets;
+    if (locationId) {
+      orgAssets = await db.select().from(assets).where(and(eq(assets.orgId, orgId), eq(assets.locationId, locationId)));
+    } else {
+      orgAssets = await db.select().from(assets).where(eq(assets.orgId, orgId));
+    }
+    
+    // Get asset IDs for filtering work orders
+    const assetIds = new Set(orgAssets.map(a => a.id));
+    
+    // Get work orders - filter by location through assets if location specified
+    let orgWorkOrders;
+    if (locationId) {
+      const allOrgWOs = await db.select().from(workOrders).where(eq(workOrders.orgId, orgId));
+      orgWorkOrders = allOrgWOs.filter(wo => wo.assetId && assetIds.has(wo.assetId));
+    } else {
+      orgWorkOrders = await db.select().from(workOrders).where(eq(workOrders.orgId, orgId));
+    }
+    
+    // Parts are org-scoped (not location-specific typically)
     const orgParts = await db.select().from(parts).where(eq(parts.orgId, orgId));
+    
     const now = new Date();
     const endOfWeek = new Date(now);
     endOfWeek.setDate(now.getDate() + 7);
@@ -3049,6 +3086,8 @@ export class DatabaseStorage implements IStorage {
     const allPmInstances = await db.select().from(pmAssetInstances);
     const pmDueThisWeek = allPmInstances.filter(instance => {
       if (!orgPmScheduleIds.has(instance.pmScheduleId)) return false;
+      // If location filter, check if the asset is at that location
+      if (locationId && !assetIds.has(instance.assetId)) return false;
       if (!instance.nextDueDate) return false;
       const dueDate = new Date(instance.nextDueDate);
       return dueDate >= now && dueDate <= endOfWeek;
@@ -3071,10 +3110,25 @@ export class DatabaseStorage implements IStorage {
     };
   }
 
-  async getKpiMetricsByOrg(orgId: number) {
-    const orgWorkOrders = await db.select().from(workOrders).where(eq(workOrders.orgId, orgId));
+  async getKpiMetricsByOrg(orgId: number, locationId?: number) {
+    // Get assets with optional location filter
+    let orgAssets;
+    if (locationId) {
+      orgAssets = await db.select().from(assets).where(and(eq(assets.orgId, orgId), eq(assets.locationId, locationId)));
+    } else {
+      orgAssets = await db.select().from(assets).where(eq(assets.orgId, orgId));
+    }
+    const assetIds = new Set(orgAssets.map(a => a.id));
+    
+    // Get work orders filtered by location through assets
+    let orgWorkOrders;
+    if (locationId) {
+      const allOrgWOs = await db.select().from(workOrders).where(eq(workOrders.orgId, orgId));
+      orgWorkOrders = allOrgWOs.filter(wo => wo.assetId && assetIds.has(wo.assetId));
+    } else {
+      orgWorkOrders = await db.select().from(workOrders).where(eq(workOrders.orgId, orgId));
+    }
     const completedWos = orgWorkOrders.filter(w => w.status === "completed" || w.status === "closed");
-    const orgAssets = await db.select().from(assets).where(eq(assets.orgId, orgId));
     let mttr: number | null = null;
     const wosWithTimes = completedWos.filter(w => w.startedAt && w.completedAt);
     if (wosWithTimes.length > 0) {
@@ -3117,7 +3171,9 @@ export class DatabaseStorage implements IStorage {
     return { mttr, mtbf, assetUptime, pmCompliance, avgCostPerWo };
   }
 
-  async getProcurementOverviewByOrg(orgId: number) {
+  async getProcurementOverviewByOrg(orgId: number, locationId?: number) {
+    // Procurement is org-wide, not location-specific
+    // locationId parameter included for API consistency but not used for filtering
     const orgReqs = await db.select().from(purchaseRequisitions).where(eq(purchaseRequisitions.orgId, orgId));
     const orgPos = await db.select().from(purchaseOrders).where(eq(purchaseOrders.orgId, orgId));
     return {
@@ -3131,7 +3187,9 @@ export class DatabaseStorage implements IStorage {
     };
   }
 
-  async getPartsAnalyticsByOrg(orgId: number) {
+  async getPartsAnalyticsByOrg(orgId: number, locationId?: number) {
+    // Parts are org-wide, not location-specific
+    // locationId parameter included for API consistency but not used for filtering
     const orgParts = await db.select().from(parts).where(eq(parts.orgId, orgId));
     const orgPartIds = new Set(orgParts.map(p => p.id));
     
@@ -3168,7 +3226,7 @@ export class DatabaseStorage implements IStorage {
     return { topUsedParts, lowStockCritical };
   }
 
-  async getTireHealthStats(orgId?: number) {
+  async getTireHealthStats(orgId?: number, locationId?: number) {
     let allTires: Tire[];
     if (orgId) {
       allTires = await db.select().from(tires).where(eq(tires.orgId, orgId));
@@ -3176,7 +3234,25 @@ export class DatabaseStorage implements IStorage {
       allTires = await db.select().from(tires);
     }
     
-    const installedTires = allTires.filter(t => t.status === "installed");
+    // Get assets for location filtering
+    let allAssets;
+    if (orgId && locationId) {
+      allAssets = await db.select().from(assets).where(and(eq(assets.orgId, orgId), eq(assets.locationId, locationId)));
+    } else if (orgId) {
+      allAssets = await db.select().from(assets).where(eq(assets.orgId, orgId));
+    } else {
+      allAssets = await db.select().from(assets);
+    }
+    const assetMap = new Map(allAssets.map(a => [a.id, a]));
+    const locationAssetIds = new Set(allAssets.map(a => a.id));
+    
+    // Filter tires by location if specified
+    let filteredTires = allTires;
+    if (locationId) {
+      filteredTires = allTires.filter(t => t.assetId && locationAssetIds.has(t.assetId));
+    }
+    
+    const installedTires = filteredTires.filter(t => t.status === "installed");
     const healthyTires = installedTires.filter(t => t.condition === "new" || t.condition === "good");
     const warningTires = installedTires.filter(t => t.condition === "fair" || t.condition === "worn");
     const criticalTires = installedTires.filter(t => t.condition === "critical" || t.condition === "failed");
@@ -3185,9 +3261,6 @@ export class DatabaseStorage implements IStorage {
     const avgTreadDepth = tiresWithDepth.length > 0 
       ? tiresWithDepth.reduce((sum, t) => sum + Number(t.treadDepth || 0), 0) / tiresWithDepth.length
       : 0;
-    
-    const allAssets = await db.select().from(assets);
-    const assetMap = new Map(allAssets.map(a => [a.id, a]));
     
     const tiresNeedingReplacement = criticalTires.slice(0, 5).map(tire => ({
       id: tire.id,

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { 
@@ -17,10 +18,18 @@ import {
   Target,
   DollarSign,
   FileText,
-  Bell
+  Bell,
+  MapPin
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { KPICard } from "@/components/KPICard";
 import { StatusBadge } from "@/components/StatusBadge";
 import { PriorityBadge } from "@/components/PriorityBadge";
@@ -137,13 +146,32 @@ const assetStatusData = [
   { name: "Down", value: 3, color: "#ef4444" },
 ];
 
+interface Location {
+  id: number;
+  name: string;
+  city?: string;
+  state?: string;
+}
+
 export default function Dashboard() {
+  const [selectedLocationId, setSelectedLocationId] = useState<string>("all");
+  
+  // Fetch locations for the dropdown
+  const { data: locations } = useQuery<Location[]>({
+    queryKey: ["/api/locations"],
+  });
+
+  // Build URL with location filter
+  const buildUrl = (baseUrl: string) => {
+    return selectedLocationId !== "all" ? `${baseUrl}?locationId=${selectedLocationId}` : baseUrl;
+  };
+  
   const { data: stats, isLoading: statsLoading } = useQuery<DashboardStats>({
-    queryKey: ["/api/dashboard/stats"],
+    queryKey: [buildUrl("/api/dashboard/stats")],
   });
 
   const { data: recentWorkOrders, isLoading: workOrdersLoading } = useQuery<RecentWorkOrder[]>({
-    queryKey: ["/api/work-orders/recent"],
+    queryKey: [buildUrl("/api/work-orders/recent")],
   });
 
   const { data: unfulfilledParts } = useQuery<UnfulfilledPart[]>({
@@ -151,15 +179,15 @@ export default function Dashboard() {
   });
 
   const { data: kpis } = useQuery<KpiMetrics>({
-    queryKey: ["/api/dashboard/kpis"],
+    queryKey: [buildUrl("/api/dashboard/kpis")],
   });
 
   const { data: procurement } = useQuery<ProcurementOverview>({
-    queryKey: ["/api/dashboard/procurement"],
+    queryKey: [buildUrl("/api/dashboard/procurement")],
   });
 
   const { data: partsAnalytics } = useQuery<PartsAnalytics>({
-    queryKey: ["/api/dashboard/parts-analytics"],
+    queryKey: [buildUrl("/api/dashboard/parts-analytics")],
   });
 
   if (statsLoading) {
@@ -186,18 +214,47 @@ export default function Dashboard() {
 
   const fleetAvailability = Math.round((displayStats.operationalAssets / displayStats.totalAssets) * 100);
 
+  const selectedLocation = locations?.find(l => l.id === parseInt(selectedLocationId));
+  const locationDisplay = selectedLocationId === "all" 
+    ? "All Locations" 
+    : selectedLocation?.name || "Unknown";
+
   return (
     <div className="space-y-6 fade-in">
       <PageHeader 
         title="Dashboard" 
-        description="Overview of your maintenance operations"
+        description={`Overview of your maintenance operations${selectedLocationId !== "all" ? ` - ${locationDisplay}` : ""}`}
         actions={
-          <Button asChild data-testid="button-new-work-order">
-            <Link href="/work-orders/new">
-              <Wrench className="h-4 w-4 mr-2" />
-              New Work Order
-            </Link>
-          </Button>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Select
+              value={selectedLocationId}
+              onValueChange={setSelectedLocationId}
+            >
+              <SelectTrigger className="w-[200px]" data-testid="select-location-filter">
+                <MapPin className="h-4 w-4 mr-2 text-muted-foreground" />
+                <SelectValue placeholder="All Locations" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all" data-testid="option-all-locations">All Locations</SelectItem>
+                {locations?.map((location) => (
+                  <SelectItem 
+                    key={location.id} 
+                    value={location.id.toString()}
+                    data-testid={`option-location-${location.id}`}
+                  >
+                    {location.name}
+                    {location.city && location.state && ` (${location.city}, ${location.state})`}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button asChild data-testid="button-new-work-order">
+              <Link href="/work-orders/new">
+                <Wrench className="h-4 w-4 mr-2" />
+                New Work Order
+              </Link>
+            </Button>
+          </div>
         }
       />
 
