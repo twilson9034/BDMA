@@ -1,4 +1,4 @@
-import { eq, desc, sql, and, or, lt, lte, isNull } from "drizzle-orm";
+import { eq, desc, sql, and, or, lt, lte, isNull, isNotNull } from "drizzle-orm";
 import { db } from "./db";
 import {
   users,
@@ -255,6 +255,7 @@ export interface IStorage {
   updateAsset(id: number, asset: Partial<InsertAsset>): Promise<Asset | undefined>;
   deleteAsset(id: number): Promise<void>;
   batchUpdateAssetMeters(updates: Array<{ assetId: number; meterReading: string; meterType?: string }>): Promise<Asset[]>;
+  getAssetMakeModels(orgId?: number): Promise<Array<{ manufacturer: string; model: string | null; year: number | null }>>;
   
   // Asset Images
   getAssetImages(assetId: number): Promise<AssetImage[]>;
@@ -936,6 +937,21 @@ export class DatabaseStorage implements IStorage {
       if (updated) updatedAssets.push(updated);
     }
     return updatedAssets;
+  }
+
+  async getAssetMakeModels(orgId?: number): Promise<Array<{ manufacturer: string; model: string | null; year: number | null }>> {
+    const conditions = orgId ? eq(assets.orgId, orgId) : undefined;
+    const results = await db
+      .selectDistinct({
+        manufacturer: assets.manufacturer,
+        model: assets.model,
+        year: assets.year,
+      })
+      .from(assets)
+      .where(conditions ? and(conditions, isNotNull(assets.manufacturer)) : isNotNull(assets.manufacturer))
+      .orderBy(assets.manufacturer, assets.model);
+    
+    return results.filter(r => r.manufacturer !== null) as Array<{ manufacturer: string; model: string | null; year: number | null }>;
   }
 
   // Asset Images

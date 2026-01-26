@@ -1056,6 +1056,17 @@ export async function registerRoutes(
     }
   });
 
+  // NOTE: This must come before /api/assets/:id to prevent :id from catching "make-models"
+  app.get("/api/assets/make-models", tenantMiddleware({ required: false }), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      const makeModels = await storage.getAssetMakeModels(orgId || undefined);
+      res.json(makeModels);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get asset make/models" });
+    }
+  });
+
   app.get("/api/assets/:id", tenantMiddleware({ required: false }), async (req, res) => {
     const asset = await storage.getAsset(parseInt(req.params.id));
     if (!asset) return res.status(404).json({ error: "Asset not found" });
