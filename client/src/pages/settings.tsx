@@ -1399,7 +1399,7 @@ function TireReplacementSettingsTab() {
   });
 
   const createMutation = useMutation({
-    mutationFn: (data: any) => apiRequest("/api/tire-replacement-settings", { method: "POST", body: JSON.stringify(data), headers: { "Content-Type": "application/json" } }),
+    mutationFn: (data: any) => apiRequest("POST", "/api/tire-replacement-settings", data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/tire-replacement-settings"] });
       toast({ title: "Setting created", description: "Tire replacement setting has been added." });
@@ -1412,7 +1412,7 @@ function TireReplacementSettingsTab() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: any }) => apiRequest(`/api/tire-replacement-settings/${id}`, { method: "PATCH", body: JSON.stringify(data), headers: { "Content-Type": "application/json" } }),
+    mutationFn: ({ id, data }: { id: number; data: any }) => apiRequest("PATCH", `/api/tire-replacement-settings/${id}`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/tire-replacement-settings"] });
       toast({ title: "Setting updated", description: "Tire replacement setting has been updated." });
@@ -1424,7 +1424,7 @@ function TireReplacementSettingsTab() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: number) => apiRequest(`/api/tire-replacement-settings/${id}`, { method: "DELETE" }),
+    mutationFn: (id: number) => apiRequest("DELETE", `/api/tire-replacement-settings/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/tire-replacement-settings"] });
       toast({ title: "Setting deleted", description: "Tire replacement setting has been removed." });

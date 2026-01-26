@@ -33,10 +33,11 @@ export function GlobalSearch() {
     enabled: open && query.length >= 2,
   });
 
-  const { data: parts } = useQuery<Part[]>({
+  const { data: partsData } = useQuery<{ parts: Part[]; total: number }>({
     queryKey: ["/api/parts"],
     enabled: open && query.length >= 2,
   });
+  const parts = partsData?.parts;
 
   const { data: workOrders } = useQuery<WorkOrder[]>({
     queryKey: ["/api/work-orders"],
