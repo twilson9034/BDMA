@@ -2322,7 +2322,11 @@ export async function registerRoutes(
   app.post("/api/pm-schedules", requireAuth, tenantMiddleware(), async (req, res) => {
     try {
       const orgId = getOrgId(req);
-      const validated = insertPmScheduleSchema.parse(req.body);
+      // Convert empty strings to null for numeric fields
+      const body = { ...req.body };
+      if (body.estimatedHours === "") body.estimatedHours = null;
+      if (body.estimatedCost === "") body.estimatedCost = null;
+      const validated = insertPmScheduleSchema.parse(body);
       const schedule = await storage.createPmSchedule({ ...validated, orgId });
       res.status(201).json(schedule);
     } catch (error: any) {
@@ -2342,8 +2346,12 @@ export async function registerRoutes(
       if (orgId && schedule.orgId !== orgId) {
         return res.status(403).json({ error: "Access denied" });
       }
+      // Convert empty strings to null for numeric fields
+      const body = { ...req.body };
+      if (body.estimatedHours === "") body.estimatedHours = null;
+      if (body.estimatedCost === "") body.estimatedCost = null;
       const partialSchema = insertPmScheduleSchema.partial();
-      const validated = partialSchema.parse(req.body);
+      const validated = partialSchema.parse(body);
       const updated = await storage.updatePmSchedule(parseInt(req.params.id), validated);
       res.json(updated);
     } catch (error) {
