@@ -35,7 +35,8 @@ import {
   Settings2,
   Plus,
   Trash2,
-  MapPin
+  MapPin,
+  LayoutDashboard
 } from "lucide-react";
 import { Link } from "wouter";
 
@@ -112,6 +113,11 @@ export default function Settings() {
   const [enableOosChecking, setEnableOosChecking] = useState(false);
   const [simulatedRole, setSimulatedRole] = useState<string>(() => {
     return localStorage.getItem("bdma_simulated_role") || "";
+  });
+  
+  // Dashboard settings state
+  const [dashboardLocationPref, setDashboardLocationPref] = useState<string>(() => {
+    return localStorage.getItem("bdma_dashboard_location") || "assigned";
   });
   
   // Customization tab state
@@ -284,6 +290,10 @@ export default function Settings() {
             <User className="h-4 w-4" />
             Profile
           </TabsTrigger>
+          <TabsTrigger value="dashboard" className="gap-2" data-testid="tab-dashboard">
+            <LayoutDashboard className="h-4 w-4" />
+            Dashboard & KPIs
+          </TabsTrigger>
           <TabsTrigger value="notifications" className="gap-2" data-testid="tab-notifications">
             <Bell className="h-4 w-4" />
             Notifications
@@ -367,6 +377,75 @@ export default function Settings() {
               </CardContent>
             </Card>
           </div>
+        </TabsContent>
+
+        <TabsContent value="dashboard">
+          <Card>
+            <CardHeader>
+              <CardTitle>Dashboard & KPI Settings</CardTitle>
+              <CardDescription>
+                Configure your dashboard view and KPI preferences
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="space-y-4">
+                <div>
+                  <Label className="text-base font-medium">Dashboard Location Filter</Label>
+                  <p className="text-sm text-muted-foreground mb-3">
+                    Choose which location data to display on your dashboard
+                  </p>
+                  <Select
+                    value={dashboardLocationPref}
+                    onValueChange={(value) => {
+                      setDashboardLocationPref(value);
+                      localStorage.setItem("bdma_dashboard_location", value);
+                      toast({ title: "Dashboard preference saved", description: "Your dashboard will now show data for the selected location." });
+                    }}
+                  >
+                    <SelectTrigger className="w-full max-w-md" data-testid="select-dashboard-location">
+                      <MapPin className="h-4 w-4 mr-2 text-muted-foreground" />
+                      <SelectValue placeholder="Select location preference" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="assigned" data-testid="option-assigned-location">
+                        My Assigned Location
+                      </SelectItem>
+                      <SelectItem value="all" data-testid="option-all-locations">
+                        All Locations
+                      </SelectItem>
+                      <Separator className="my-1" />
+                      {locations.map((location) => (
+                        <SelectItem key={location.id} value={String(location.id)} data-testid={`option-location-${location.id}`}>
+                          {location.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <Separator />
+
+                <div className="space-y-3">
+                  <Label className="text-base font-medium">Current Assignment</Label>
+                  <p className="text-sm text-muted-foreground">
+                    Your primary location assignment determines the default dashboard view when "My Assigned Location" is selected.
+                  </p>
+                  {currentUserMembership?.primaryLocationId ? (
+                    <div className="flex items-center gap-2">
+                      <MapPin className="h-4 w-4 text-primary" />
+                      <span className="font-medium">
+                        {locations.find(l => l.id === currentUserMembership.primaryLocationId)?.name || "Unknown Location"}
+                      </span>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground italic">
+                      No location assigned. Contact your administrator to set your primary location.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="notifications">

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { 
@@ -19,17 +19,11 @@ import {
   DollarSign,
   FileText,
   Bell,
-  MapPin
+  MapPin,
+  Settings
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { KPICard } from "@/components/KPICard";
 import { StatusBadge } from "@/components/StatusBadge";
 import { PriorityBadge } from "@/components/PriorityBadge";
@@ -153,17 +147,42 @@ interface Location {
   state?: string;
 }
 
+interface Membership {
+  id: number;
+  primaryLocationId: number | null;
+  role: string;
+}
+
 export default function Dashboard() {
-  const [selectedLocationId, setSelectedLocationId] = useState<string>("all");
+  // Get user's membership to determine their assigned location
+  const { data: membership } = useQuery<Membership>({
+    queryKey: ["/api/organizations/current/my-membership"],
+  });
   
-  // Fetch locations for the dropdown
+  // Fetch locations for display
   const { data: locations } = useQuery<Location[]>({
     queryKey: ["/api/locations"],
   });
 
+  // Calculate effective location ID based on user preference
+  const effectiveLocationId = useMemo(() => {
+    const pref = localStorage.getItem("bdma_dashboard_location") || "assigned";
+    
+    if (pref === "all") {
+      return null; // Show all locations
+    } else if (pref === "assigned") {
+      // Use user's assigned location, or null if not assigned
+      return membership?.primaryLocationId || null;
+    } else {
+      // Specific location ID selected
+      const locationId = parseInt(pref);
+      return isNaN(locationId) ? null : locationId;
+    }
+  }, [membership?.primaryLocationId]);
+
   // Build URL with location filter
   const buildUrl = (baseUrl: string) => {
-    return selectedLocationId !== "all" ? `${baseUrl}?locationId=${selectedLocationId}` : baseUrl;
+    return effectiveLocationId ? `${baseUrl}?locationId=${effectiveLocationId}` : baseUrl;
   };
   
   const { data: stats, isLoading: statsLoading } = useQuery<DashboardStats>({
@@ -214,40 +233,45 @@ export default function Dashboard() {
 
   const fleetAvailability = Math.round((displayStats.operationalAssets / displayStats.totalAssets) * 100);
 
-  const selectedLocation = locations?.find(l => l.id === parseInt(selectedLocationId));
-  const locationDisplay = selectedLocationId === "all" 
-    ? "All Locations" 
-    : selectedLocation?.name || "Unknown";
+  // Determine location display name
+  const getLocationDisplay = () => {
+    const pref = localStorage.getItem("bdma_dashboard_location") || "assigned";
+    
+    if (pref === "all") {
+      return "All Locations";
+    } else if (pref === "assigned") {
+      if (membership?.primaryLocationId) {
+        const loc = locations?.find(l => l.id === membership.primaryLocationId);
+        return loc?.name || "Assigned Location";
+      }
+      return "All Locations"; // No assignment = show all
+    } else {
+      const locationId = parseInt(pref);
+      const loc = locations?.find(l => l.id === locationId);
+      return loc?.name || "Unknown Location";
+    }
+  };
+  
+  const locationDisplay = getLocationDisplay();
 
   return (
     <div className="space-y-6 fade-in">
       <PageHeader 
         title="Dashboard" 
-        description={`Overview of your maintenance operations${selectedLocationId !== "all" ? ` - ${locationDisplay}` : ""}`}
+        description={
+          <span className="flex items-center gap-2 flex-wrap">
+            Overview of your maintenance operations
+            <span className="inline-flex items-center gap-1 text-primary">
+              <MapPin className="h-3 w-3" />
+              {locationDisplay}
+            </span>
+            <Link href="/settings" className="text-xs text-muted-foreground hover:text-primary underline">
+              Change
+            </Link>
+          </span>
+        }
         actions={
           <div className="flex items-center gap-2 flex-wrap">
-            <Select
-              value={selectedLocationId}
-              onValueChange={setSelectedLocationId}
-            >
-              <SelectTrigger className="w-[200px]" data-testid="select-location-filter">
-                <MapPin className="h-4 w-4 mr-2 text-muted-foreground" />
-                <SelectValue placeholder="All Locations" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all" data-testid="option-all-locations">All Locations</SelectItem>
-                {locations?.map((location) => (
-                  <SelectItem 
-                    key={location.id} 
-                    value={location.id.toString()}
-                    data-testid={`option-location-${location.id}`}
-                  >
-                    {location.name}
-                    {location.city && location.state && ` (${location.city}, ${location.state})`}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
             <Button asChild data-testid="button-new-work-order">
               <Link href="/work-orders/new">
                 <Wrench className="h-4 w-4 mr-2" />
