@@ -11,6 +11,8 @@ import {
   workOrderLines,
   workOrderTransactions,
   pmSchedules,
+  pmScheduleModels,
+  pmScheduleKitModels,
   pmAssetInstances,
   purchaseRequisitions,
   purchaseRequisitionLines,
@@ -61,6 +63,10 @@ import {
   type WorkOrderLine,
   type InsertPmSchedule,
   type PmSchedule,
+  type InsertPmScheduleModel,
+  type PmScheduleModel,
+  type InsertPmScheduleKitModel,
+  type PmScheduleKitModel,
   type InsertPmAssetInstance,
   type PmAssetInstance,
   type InsertPurchaseRequisition,
@@ -324,6 +330,16 @@ export interface IStorage {
   getPmSchedule(id: number): Promise<PmSchedule | undefined>;
   createPmSchedule(schedule: InsertPmSchedule): Promise<PmSchedule>;
   updatePmSchedule(id: number, schedule: Partial<InsertPmSchedule>): Promise<PmSchedule | undefined>;
+  
+  // PM Schedule Models (link PM to makes/models)
+  getPmScheduleModels(pmScheduleId: number): Promise<PmScheduleModel[]>;
+  addPmScheduleModel(data: InsertPmScheduleModel): Promise<PmScheduleModel>;
+  deletePmScheduleModel(id: number): Promise<void>;
+  
+  // PM Schedule Kit Models (link kits to specific models within a PM)
+  getPmScheduleKitModels(pmScheduleKitId: number): Promise<PmScheduleKitModel[]>;
+  addPmScheduleKitModel(data: InsertPmScheduleKitModel): Promise<PmScheduleKitModel>;
+  deletePmScheduleKitModel(id: number): Promise<void>;
   
   // PM Asset Instances
   getPmAssetInstances(): Promise<PmAssetInstance[]>;
@@ -1294,6 +1310,34 @@ export class DatabaseStorage implements IStorage {
   async updatePmSchedule(id: number, schedule: Partial<InsertPmSchedule>): Promise<PmSchedule | undefined> {
     const [updated] = await db.update(pmSchedules).set({ ...schedule, updatedAt: new Date() }).where(eq(pmSchedules.id, id)).returning();
     return updated;
+  }
+
+  // PM Schedule Models
+  async getPmScheduleModels(pmScheduleId: number): Promise<PmScheduleModel[]> {
+    return db.select().from(pmScheduleModels).where(eq(pmScheduleModels.pmScheduleId, pmScheduleId));
+  }
+
+  async addPmScheduleModel(data: InsertPmScheduleModel): Promise<PmScheduleModel> {
+    const [created] = await db.insert(pmScheduleModels).values(data).returning();
+    return created;
+  }
+
+  async deletePmScheduleModel(id: number): Promise<void> {
+    await db.delete(pmScheduleModels).where(eq(pmScheduleModels.id, id));
+  }
+
+  // PM Schedule Kit Models
+  async getPmScheduleKitModels(pmScheduleKitId: number): Promise<PmScheduleKitModel[]> {
+    return db.select().from(pmScheduleKitModels).where(eq(pmScheduleKitModels.pmScheduleKitId, pmScheduleKitId));
+  }
+
+  async addPmScheduleKitModel(data: InsertPmScheduleKitModel): Promise<PmScheduleKitModel> {
+    const [created] = await db.insert(pmScheduleKitModels).values(data).returning();
+    return created;
+  }
+
+  async deletePmScheduleKitModel(id: number): Promise<void> {
+    await db.delete(pmScheduleKitModels).where(eq(pmScheduleKitModels.id, id));
   }
 
   // PM Asset Instances
