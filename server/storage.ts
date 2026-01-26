@@ -347,6 +347,7 @@ export interface IStorage {
   
   // PM Schedule Checklists (link checklist templates to PM schedules)
   getPmScheduleChecklists(pmScheduleId: number): Promise<PmScheduleChecklist[]>;
+  getPmSchedulesByChecklistId(checklistTemplateId: number, orgId?: number): Promise<Array<{ pmScheduleChecklist: PmScheduleChecklist; pmSchedule: PmSchedule }>>;
   addPmScheduleChecklist(data: InsertPmScheduleChecklist): Promise<PmScheduleChecklist>;
   deletePmScheduleChecklist(id: number): Promise<void>;
   getPmScheduleByVmrsCode(vmrsCodeId: number, orgId?: number): Promise<PmSchedule | undefined>;
@@ -1368,6 +1369,21 @@ export class DatabaseStorage implements IStorage {
   // PM Schedule Checklists
   async getPmScheduleChecklists(pmScheduleId: number): Promise<PmScheduleChecklist[]> {
     return db.select().from(pmScheduleChecklists).where(eq(pmScheduleChecklists.pmScheduleId, pmScheduleId));
+  }
+
+  async getPmSchedulesByChecklistId(checklistTemplateId: number, orgId?: number): Promise<Array<{ pmScheduleChecklist: PmScheduleChecklist; pmSchedule: PmSchedule }>> {
+    const conditions = [eq(pmScheduleChecklists.checklistTemplateId, checklistTemplateId)];
+    if (orgId) conditions.push(eq(pmSchedules.orgId, orgId));
+    
+    const results = await db
+      .select({
+        pmScheduleChecklist: pmScheduleChecklists,
+        pmSchedule: pmSchedules,
+      })
+      .from(pmScheduleChecklists)
+      .innerJoin(pmSchedules, eq(pmScheduleChecklists.pmScheduleId, pmSchedules.id))
+      .where(and(...conditions));
+    return results;
   }
 
   async addPmScheduleChecklist(data: InsertPmScheduleChecklist): Promise<PmScheduleChecklist> {

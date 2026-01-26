@@ -5,7 +5,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation, useRoute } from "wouter";
 import { 
   ArrowLeft, Save, Loader2, Edit, X, Plus, Trash2, 
-  ClipboardList, CheckCircle2, Sparkles, Truck
+  ClipboardList, CheckCircle2, Sparkles, Truck, CalendarClock, Link
 } from "lucide-react";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
@@ -115,6 +115,16 @@ export default function ChecklistTemplateDetail() {
   // Fetch available asset make/models for dropdown
   const { data: assetMakeModels } = useQuery<Array<{ manufacturer: string; model: string | null; year: number | null }>>({
     queryKey: ["/api/assets/make-models"],
+  });
+
+  // Fetch linked PM schedules
+  interface PmScheduleLink {
+    pmScheduleChecklist: { id: number; pmScheduleId: number; checklistTemplateId: number };
+    pmSchedule: { id: number; name: string; description: string | null };
+  }
+  const { data: pmScheduleLinks } = useQuery<PmScheduleLink[]>({
+    queryKey: ["/api/checklist-templates", templateId, "pm-schedules"],
+    enabled: !!templateId,
   });
 
   // Filter out make/models that are already assigned
@@ -639,6 +649,39 @@ export default function ChecklistTemplateDetail() {
               )}
             </CardContent>
           </Card>
+
+          {pmScheduleLinks && pmScheduleLinks.length > 0 && (
+            <Card data-testid="card-linked-pm-schedules">
+              <CardHeader className="flex flex-row items-center gap-2">
+                <CalendarClock className="h-5 w-5 text-muted-foreground" />
+                <CardTitle>Linked PM Schedules</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  This checklist is linked to the following PM schedules. When a linked schedule is assigned to an asset, this checklist will be included automatically.
+                </p>
+                <div className="space-y-2">
+                  {pmScheduleLinks.map((link) => (
+                    <div 
+                      key={link.pmScheduleChecklist.id} 
+                      className="flex items-center gap-2 p-2 rounded-lg border"
+                      data-testid={`pm-schedule-link-${link.pmScheduleChecklist.id}`}
+                    >
+                      <Link className="h-4 w-4 text-muted-foreground" />
+                      <div className="text-sm">
+                        <span className="font-medium" data-testid={`text-pm-schedule-name-${link.pmScheduleChecklist.id}`}>
+                          {link.pmSchedule.name}
+                        </span>
+                        {link.pmSchedule.description && (
+                          <p className="text-xs text-muted-foreground">{link.pmSchedule.description}</p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           <Card>
             <CardHeader>

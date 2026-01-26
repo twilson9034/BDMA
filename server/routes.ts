@@ -4437,6 +4437,17 @@ export async function registerRoutes(
     }
   });
 
+  // Get PM schedules linked to a checklist template
+  app.get("/api/checklist-templates/:id/pm-schedules", requireAuth, tenantMiddleware({ required: false }), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      const links = await storage.getPmSchedulesByChecklistId(parseInt(req.params.id), orgId ?? undefined);
+      res.json(links);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get linked PM schedules" });
+    }
+  });
+
   app.delete("/api/checklist-assignments/:id", requireAuth, async (req, res) => {
     try {
       await storage.deleteChecklistAssignment(parseInt(req.params.id));
