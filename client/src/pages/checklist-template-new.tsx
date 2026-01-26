@@ -36,6 +36,7 @@ const templateFormSchema = z.object({
   category: z.enum(["pm_service", "inspection", "safety", "pre_trip", "post_trip", "seasonal", "other"]),
   estimatedMinutes: z.number().optional(),
   isActive: z.boolean(),
+  isOosSensitive: z.boolean(),
 });
 
 type TemplateFormValues = z.infer<typeof templateFormSchema>;
@@ -55,6 +56,7 @@ export default function ChecklistTemplateNew() {
       category: "pm_service",
       estimatedMinutes: undefined,
       isActive: true,
+      isOosSensitive: false,
     },
   });
 
@@ -64,6 +66,7 @@ export default function ChecklistTemplateNew() {
         ...data,
         items: tasks,
         estimatedMinutes: data.estimatedMinutes || null,
+        isOosSensitive: data.isOosSensitive ?? false,
       });
     },
     onSuccess: async (response) => {
@@ -220,6 +223,23 @@ export default function ChecklistTemplateNew() {
                         </div>
                         <FormControl>
                           <Switch checked={field.value} onCheckedChange={field.onChange} />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="isOosSensitive"
+                    render={({ field }) => (
+                      <FormItem className="flex items-center justify-between rounded-lg border p-4">
+                        <div className="space-y-0.5">
+                          <FormLabel>OOS Sensitive</FormLabel>
+                          <FormDescription>
+                            When enabled, out-of-service rules will evaluate responses inline and flag violations
+                          </FormDescription>
+                        </div>
+                        <FormControl>
+                          <Switch checked={field.value} onCheckedChange={field.onChange} data-testid="switch-oos-sensitive" />
                         </FormControl>
                       </FormItem>
                     )}

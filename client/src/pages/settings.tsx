@@ -51,6 +51,7 @@ interface Organization {
   requireRequisitionApproval?: boolean;
   requirePOApproval?: boolean;
   enableBarcodeSystem?: boolean;
+  enableOosChecking?: boolean;
 }
 
 interface OrgMember {
@@ -108,6 +109,7 @@ export default function Settings() {
   const [requireRequisitionApproval, setRequireRequisitionApproval] = useState(true);
   const [requirePOApproval, setRequirePOApproval] = useState(true);
   const [enableBarcodeSystem, setEnableBarcodeSystem] = useState(false);
+  const [enableOosChecking, setEnableOosChecking] = useState(false);
   const [simulatedRole, setSimulatedRole] = useState<string>(() => {
     return localStorage.getItem("bdma_simulated_role") || "";
   });
@@ -131,6 +133,7 @@ export default function Settings() {
       setRequireRequisitionApproval(organization.requireRequisitionApproval ?? true);
       setRequirePOApproval(organization.requirePOApproval ?? true);
       setEnableBarcodeSystem(organization.enableBarcodeSystem ?? false);
+      setEnableOosChecking(organization.enableOosChecking ?? false);
     }
   }, [organization]);
 
@@ -142,6 +145,7 @@ export default function Settings() {
       requireRequisitionApproval?: boolean;
       requirePOApproval?: boolean;
       enableBarcodeSystem?: boolean;
+      enableOosChecking?: boolean;
     }) => {
       return apiRequest("PATCH", "/api/organizations/current", data);
     },
@@ -227,6 +231,7 @@ export default function Settings() {
       requireRequisitionApproval?: boolean;
       requirePOApproval?: boolean;
       enableBarcodeSystem?: boolean;
+      enableOosChecking?: boolean;
     } = {};
     
     if (orgName?.trim() && orgName !== organization?.name) {
@@ -244,6 +249,9 @@ export default function Settings() {
     }
     if (enableBarcodeSystem !== organization?.enableBarcodeSystem) {
       updates.enableBarcodeSystem = enableBarcodeSystem;
+    }
+    if (enableOosChecking !== organization?.enableOosChecking) {
+      updates.enableOosChecking = enableOosChecking;
     }
     
     if (Object.keys(updates).length === 0) return;
@@ -544,6 +552,21 @@ export default function Settings() {
                           onCheckedChange={setEnableBarcodeSystem}
                           disabled={!canManageOrg} 
                           data-testid="switch-enable-barcode-system" 
+                        />
+                      </div>
+                      <Separator className="my-4" />
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm">Enable OOS Compliance Checking</p>
+                          <p className="text-xs text-muted-foreground">
+                            Enable out-of-service rule evaluation on OOS-sensitive checklists and DVIRs
+                          </p>
+                        </div>
+                        <Switch 
+                          checked={enableOosChecking} 
+                          onCheckedChange={setEnableOosChecking}
+                          disabled={!canManageOrg} 
+                          data-testid="switch-enable-oos-checking" 
                         />
                       </div>
                     </div>

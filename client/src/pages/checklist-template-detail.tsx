@@ -53,6 +53,7 @@ interface ChecklistTemplate {
   estimatedMinutes: number | null;
   items: string[] | null;
   isActive: boolean;
+  isOosSensitive: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -82,6 +83,7 @@ const templateFormSchema = z.object({
   category: z.enum(["pm_service", "inspection", "safety", "pre_trip", "post_trip", "seasonal", "other"]),
   estimatedMinutes: z.number().optional(),
   isActive: z.boolean(),
+  isOosSensitive: z.boolean(),
 });
 
 type TemplateFormValues = z.infer<typeof templateFormSchema>;
@@ -117,6 +119,7 @@ export default function ChecklistTemplateDetail() {
       category: "pm_service",
       estimatedMinutes: undefined,
       isActive: true,
+      isOosSensitive: false,
     },
   });
 
@@ -128,6 +131,7 @@ export default function ChecklistTemplateDetail() {
         category: (template.category as any) || "pm_service",
         estimatedMinutes: template.estimatedMinutes || undefined,
         isActive: template.isActive ?? true,
+        isOosSensitive: template.isOosSensitive ?? false,
       });
       setTasks(template.items || []);
     }
@@ -139,6 +143,7 @@ export default function ChecklistTemplateDetail() {
         ...data,
         items: tasks,
         estimatedMinutes: data.estimatedMinutes || null,
+        isOosSensitive: data.isOosSensitive ?? false,
       });
     },
     onSuccess: () => {
@@ -430,6 +435,23 @@ export default function ChecklistTemplateDetail() {
                         </div>
                         <FormControl>
                           <Switch checked={field.value} onCheckedChange={field.onChange} disabled={!isEditing} />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="isOosSensitive"
+                    render={({ field }) => (
+                      <FormItem className="flex items-center justify-between rounded-lg border p-4">
+                        <div className="space-y-0.5">
+                          <FormLabel>OOS Sensitive</FormLabel>
+                          <FormDescription>
+                            When enabled, out-of-service rules will evaluate responses inline and flag violations
+                          </FormDescription>
+                        </div>
+                        <FormControl>
+                          <Switch checked={field.value} onCheckedChange={field.onChange} disabled={!isEditing} data-testid="switch-oos-sensitive" />
                         </FormControl>
                       </FormItem>
                     )}

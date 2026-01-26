@@ -33,6 +33,7 @@ export const organizations = pgTable("organizations", {
   requireRequisitionApproval: boolean("require_requisition_approval").default(true), // Require approval for purchase requisitions
   requirePOApproval: boolean("require_po_approval").default(true), // Require approval for purchase orders
   enableBarcodeSystem: boolean("enable_barcode_system").default(false), // Enable barcode printing for inventory
+  enableOosChecking: boolean("enable_oos_checking").default(false), // Enable OOS compliance checking on checklists/DVIRs
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -45,6 +46,7 @@ export const updateOrganizationSchema = insertOrganizationSchema.partial().pick(
   requireRequisitionApproval: true,
   requirePOApproval: true,
   enableBarcodeSystem: true,
+  enableOosChecking: true,
 });
 export type InsertOrganization = z.infer<typeof insertOrganizationSchema>;
 export type UpdateOrganization = z.infer<typeof updateOrganizationSchema>;
@@ -1730,6 +1732,7 @@ export const checklistTemplates = pgTable("checklist_templates", {
   estimatedMinutes: integer("estimated_minutes"),
   items: jsonb("items").$type<string[]>(),
   isActive: boolean("is_active").default(true),
+  isOosSensitive: boolean("is_oos_sensitive").default(false), // When true, OOS rules evaluate responses inline
   createdById: varchar("created_by_id"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
