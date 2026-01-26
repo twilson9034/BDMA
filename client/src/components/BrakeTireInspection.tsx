@@ -520,6 +520,200 @@ export function BrakeTireInspection({ workOrderId, assetId }: Props) {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* View Brake Inspection Dialog */}
+        <Dialog open={showBrakeViewModal !== null} onOpenChange={() => setShowBrakeViewModal(null)}>
+          <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Brake Inspection Details</DialogTitle>
+              <DialogDescription>View recorded brake measurements</DialogDescription>
+            </DialogHeader>
+            {showBrakeViewModal && brakeInspections && (() => {
+              const insp = brakeInspections.find((i: any) => i.id === showBrakeViewModal);
+              if (!insp) return <p>Inspection not found</p>;
+              return (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-3">
+                    <Badge variant={insp.passed ? "default" : "destructive"}>
+                      {insp.passed ? <CheckCircle className="h-3 w-3 mr-1" /> : <AlertTriangle className="h-3 w-3 mr-1" />}
+                      {insp.passed ? "Passed" : "Failed"}
+                    </Badge>
+                    <span className="text-sm text-muted-foreground">
+                      Inspected: {new Date(insp.inspectedAt).toLocaleString()}
+                    </span>
+                  </div>
+                  {insp.axles && insp.axles.map((axle: any, idx: number) => (
+                    <div key={idx} className="p-3 rounded-lg bg-muted/50 space-y-2">
+                      <div className="font-medium flex items-center gap-2">
+                        {axle.axleLabel || `Axle ${axle.axlePosition}`}
+                        {axle.passed === false && <Badge variant="destructive" className="text-xs">Failed</Badge>}
+                      </div>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+                        {axle.leftPadThickness && (
+                          <div>
+                            <span className="text-muted-foreground">Left Pad:</span>
+                            <span className="ml-1 font-medium">{axle.leftPadThickness}"</span>
+                          </div>
+                        )}
+                        {axle.rightPadThickness && (
+                          <div>
+                            <span className="text-muted-foreground">Right Pad:</span>
+                            <span className="ml-1 font-medium">{axle.rightPadThickness}"</span>
+                          </div>
+                        )}
+                        {axle.leftRotorThickness && (
+                          <div>
+                            <span className="text-muted-foreground">Left Rotor:</span>
+                            <span className="ml-1 font-medium">{axle.leftRotorThickness}"</span>
+                          </div>
+                        )}
+                        {axle.rightRotorThickness && (
+                          <div>
+                            <span className="text-muted-foreground">Right Rotor:</span>
+                            <span className="ml-1 font-medium">{axle.rightRotorThickness}"</span>
+                          </div>
+                        )}
+                        {axle.leftBrakeStroke && (
+                          <div>
+                            <span className="text-muted-foreground">Left Stroke:</span>
+                            <span className="ml-1 font-medium">{axle.leftBrakeStroke}"</span>
+                          </div>
+                        )}
+                        {axle.rightBrakeStroke && (
+                          <div>
+                            <span className="text-muted-foreground">Right Stroke:</span>
+                            <span className="ml-1 font-medium">{axle.rightBrakeStroke}"</span>
+                          </div>
+                        )}
+                      </div>
+                      {axle.notes && (
+                        <p className="text-sm text-muted-foreground">{axle.notes}</p>
+                      )}
+                    </div>
+                  ))}
+                  {insp.notes && (
+                    <div className="p-3 rounded-lg bg-muted/30">
+                      <Label className="text-xs text-muted-foreground">Notes</Label>
+                      <p className="text-sm">{insp.notes}</p>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowBrakeViewModal(null)}>Close</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* View Tire Inspection Dialog */}
+        <Dialog open={showTireViewModal !== null} onOpenChange={() => setShowTireViewModal(null)}>
+          <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Tire Inspection Details</DialogTitle>
+              <DialogDescription>View recorded tire measurements</DialogDescription>
+            </DialogHeader>
+            {showTireViewModal && tireInspections && (() => {
+              const insp = tireInspections.find((i: any) => i.id === showTireViewModal);
+              if (!insp) return <p>Inspection not found</p>;
+              return (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-3">
+                    <Badge variant={insp.passed ? "default" : "destructive"}>
+                      {insp.passed ? <CheckCircle className="h-3 w-3 mr-1" /> : <AlertTriangle className="h-3 w-3 mr-1" />}
+                      {insp.passed ? "Passed" : "Failed"}
+                    </Badge>
+                    <span className="text-sm text-muted-foreground">
+                      Inspected: {new Date(insp.inspectedAt).toLocaleString()}
+                    </span>
+                  </div>
+                  {insp.axles && insp.axles.map((axle: any, idx: number) => (
+                    <div key={idx} className="p-3 rounded-lg bg-muted/50 space-y-2">
+                      <div className="font-medium flex items-center gap-2">
+                        {axle.axleLabel || `Axle ${axle.axlePosition}`}
+                        {axle.passed === false && <Badge variant="destructive" className="text-xs">Failed</Badge>}
+                      </div>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+                        {axle.leftPsi && (
+                          <div>
+                            <span className="text-muted-foreground">Left PSI:</span>
+                            <span className="ml-1 font-medium">{axle.leftPsi}</span>
+                          </div>
+                        )}
+                        {axle.rightPsi && (
+                          <div>
+                            <span className="text-muted-foreground">Right PSI:</span>
+                            <span className="ml-1 font-medium">{axle.rightPsi}</span>
+                          </div>
+                        )}
+                        {axle.innerLeftPsi && (
+                          <div>
+                            <span className="text-muted-foreground">Inner Left PSI:</span>
+                            <span className="ml-1 font-medium">{axle.innerLeftPsi}</span>
+                          </div>
+                        )}
+                        {axle.innerRightPsi && (
+                          <div>
+                            <span className="text-muted-foreground">Inner Right PSI:</span>
+                            <span className="ml-1 font-medium">{axle.innerRightPsi}</span>
+                          </div>
+                        )}
+                        {axle.leftTreadDepth && (
+                          <div>
+                            <span className="text-muted-foreground">Left Tread:</span>
+                            <span className="ml-1 font-medium">{axle.leftTreadDepth}/32"</span>
+                          </div>
+                        )}
+                        {axle.rightTreadDepth && (
+                          <div>
+                            <span className="text-muted-foreground">Right Tread:</span>
+                            <span className="ml-1 font-medium">{axle.rightTreadDepth}/32"</span>
+                          </div>
+                        )}
+                        {axle.innerLeftTreadDepth && (
+                          <div>
+                            <span className="text-muted-foreground">Inner Left Tread:</span>
+                            <span className="ml-1 font-medium">{axle.innerLeftTreadDepth}/32"</span>
+                          </div>
+                        )}
+                        {axle.innerRightTreadDepth && (
+                          <div>
+                            <span className="text-muted-foreground">Inner Right Tread:</span>
+                            <span className="ml-1 font-medium">{axle.innerRightTreadDepth}/32"</span>
+                          </div>
+                        )}
+                        {axle.leftCondition && (
+                          <div>
+                            <span className="text-muted-foreground">Left Condition:</span>
+                            <Badge variant="outline" className="ml-1 capitalize">{axle.leftCondition}</Badge>
+                          </div>
+                        )}
+                        {axle.rightCondition && (
+                          <div>
+                            <span className="text-muted-foreground">Right Condition:</span>
+                            <Badge variant="outline" className="ml-1 capitalize">{axle.rightCondition}</Badge>
+                          </div>
+                        )}
+                      </div>
+                      {axle.notes && (
+                        <p className="text-sm text-muted-foreground">{axle.notes}</p>
+                      )}
+                    </div>
+                  ))}
+                  {insp.notes && (
+                    <div className="p-3 rounded-lg bg-muted/30">
+                      <Label className="text-xs text-muted-foreground">Notes</Label>
+                      <p className="text-sm">{insp.notes}</p>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowTireViewModal(null)}>Close</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </CardContent>
     </Card>
   );
