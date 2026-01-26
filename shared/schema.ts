@@ -1184,6 +1184,8 @@ export const pmSchedules = pgTable("pm_schedules", {
 
 export const pmSchedulesRelations = relations(pmSchedules, ({ many }) => ({
   assetInstances: many(pmAssetInstances),
+  scheduleModels: many(pmScheduleModels),
+  scheduleKits: many(pmScheduleKits),
 }));
 
 export const insertPmScheduleSchema = createInsertSchema(pmSchedules).omit({ id: true, createdAt: true, updatedAt: true });
@@ -1986,6 +1988,50 @@ export const pmScheduleKitsRelations = relations(pmScheduleKits, ({ one }) => ({
 export const insertPmScheduleKitSchema = createInsertSchema(pmScheduleKits).omit({ id: true, createdAt: true });
 export type InsertPmScheduleKit = z.infer<typeof insertPmScheduleKitSchema>;
 export type PmScheduleKit = typeof pmScheduleKits.$inferSelect;
+
+// ============================================================
+// PM SCHEDULE MODELS (Link PM schedules to make/model combinations)
+// ============================================================
+export const pmScheduleModels = pgTable("pm_schedule_models", {
+  id: serial("id").primaryKey(),
+  pmScheduleId: integer("pm_schedule_id").notNull().references(() => pmSchedules.id, { onDelete: "cascade" }),
+  make: text("make").notNull(),
+  model: text("model"),
+  year: integer("year"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_pm_schedule_models_pm").on(table.pmScheduleId),
+  index("idx_pm_schedule_models_make_model").on(table.make, table.model),
+]);
+
+export const pmScheduleModelsRelations = relations(pmScheduleModels, ({ one }) => ({
+  pmSchedule: one(pmSchedules, { fields: [pmScheduleModels.pmScheduleId], references: [pmSchedules.id] }),
+}));
+
+export const insertPmScheduleModelSchema = createInsertSchema(pmScheduleModels).omit({ id: true, createdAt: true });
+export type InsertPmScheduleModel = z.infer<typeof insertPmScheduleModelSchema>;
+export type PmScheduleModel = typeof pmScheduleModels.$inferSelect;
+
+// ============================================================
+// PM SCHEDULE KIT MODELS (Link specific part kits to models within a PM schedule)
+// ============================================================
+export const pmScheduleKitModels = pgTable("pm_schedule_kit_models", {
+  id: serial("id").primaryKey(),
+  pmScheduleKitId: integer("pm_schedule_kit_id").notNull().references(() => pmScheduleKits.id, { onDelete: "cascade" }),
+  make: text("make").notNull(),
+  model: text("model"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_pm_schedule_kit_models_kit").on(table.pmScheduleKitId),
+]);
+
+export const pmScheduleKitModelsRelations = relations(pmScheduleKitModels, ({ one }) => ({
+  pmScheduleKit: one(pmScheduleKits, { fields: [pmScheduleKitModels.pmScheduleKitId], references: [pmScheduleKits.id] }),
+}));
+
+export const insertPmScheduleKitModelSchema = createInsertSchema(pmScheduleKitModels).omit({ id: true, createdAt: true });
+export type InsertPmScheduleKitModel = z.infer<typeof insertPmScheduleKitModelSchema>;
+export type PmScheduleKitModel = typeof pmScheduleKitModels.$inferSelect;
 
 // ============================================================
 // CYCLE COUNTS (Inventory cycle counting)
