@@ -154,6 +154,36 @@ interface Membership {
 }
 
 export default function Dashboard() {
+  // Track location preference in state for reactivity
+  const [locationPref, setLocationPref] = useState<string>(() => {
+    return localStorage.getItem("bdma_dashboard_location") || "assigned";
+  });
+  
+  // Listen for localStorage changes (from settings page or other tabs)
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === "bdma_dashboard_location") {
+        setLocationPref(e.newValue || "assigned");
+      }
+    };
+    
+    // Also check on focus in case settings was changed in same tab
+    const handleFocus = () => {
+      const current = localStorage.getItem("bdma_dashboard_location") || "assigned";
+      if (current !== locationPref) {
+        setLocationPref(current);
+      }
+    };
+    
+    window.addEventListener("storage", handleStorageChange);
+    window.addEventListener("focus", handleFocus);
+    
+    return () => {
+      window.removeEventListener("storage", handleStorageChange);
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, [locationPref]);
+  
   // Get user's membership to determine their assigned location
   const { data: membership } = useQuery<Membership>({
     queryKey: ["/api/organizations/current/my-membership"],
@@ -166,19 +196,17 @@ export default function Dashboard() {
 
   // Calculate effective location ID based on user preference
   const effectiveLocationId = useMemo(() => {
-    const pref = localStorage.getItem("bdma_dashboard_location") || "assigned";
-    
-    if (pref === "all") {
+    if (locationPref === "all") {
       return null; // Show all locations
-    } else if (pref === "assigned") {
+    } else if (locationPref === "assigned") {
       // Use user's assigned location, or null if not assigned
       return membership?.primaryLocationId || null;
     } else {
       // Specific location ID selected
-      const locationId = parseInt(pref);
+      const locationId = parseInt(locationPref);
       return isNaN(locationId) ? null : locationId;
     }
-  }, [membership?.primaryLocationId]);
+  }, [locationPref, membership?.primaryLocationId]);
 
   // Build URL with location filter
   const buildUrl = (baseUrl: string) => {
@@ -233,26 +261,22 @@ export default function Dashboard() {
 
   const fleetAvailability = Math.round((displayStats.operationalAssets / displayStats.totalAssets) * 100);
 
-  // Determine location display name
-  const getLocationDisplay = () => {
-    const pref = localStorage.getItem("bdma_dashboard_location") || "assigned";
-    
-    if (pref === "all") {
+  // Determine location display name (uses state for reactivity)
+  const locationDisplay = useMemo(() => {
+    if (locationPref === "all") {
       return "All Locations";
-    } else if (pref === "assigned") {
+    } else if (locationPref === "assigned") {
       if (membership?.primaryLocationId) {
         const loc = locations?.find(l => l.id === membership.primaryLocationId);
         return loc?.name || "Assigned Location";
       }
       return "All Locations"; // No assignment = show all
     } else {
-      const locationId = parseInt(pref);
+      const locationId = parseInt(locationPref);
       const loc = locations?.find(l => l.id === locationId);
       return loc?.name || "Unknown Location";
     }
-  };
-  
-  const locationDisplay = getLocationDisplay();
+  }, [locationPref, membership?.primaryLocationId, locations]);
 
   return (
     <div className="space-y-6 fade-in">
@@ -261,11 +285,11 @@ export default function Dashboard() {
         description={
           <span className="flex items-center gap-2 flex-wrap">
             Overview of your maintenance operations
-            <span className="inline-flex items-center gap-1 text-primary">
+            <span className="inline-flex items-center gap-1 font-medium">
               <MapPin className="h-3 w-3" />
               {locationDisplay}
             </span>
-            <Link href="/settings" className="text-xs text-muted-foreground hover:text-primary underline">
+            <Link href="/settings" className="text-xs text-muted-foreground hover:underline">
               Change
             </Link>
           </span>
