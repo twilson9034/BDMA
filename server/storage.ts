@@ -496,6 +496,16 @@ export interface IStorage {
     }>;
   }>;
   
+  // Admin record counts for data purge page
+  getAdminRecordCounts(orgId?: number): Promise<{
+    assets: number;
+    workOrders: number;
+    parts: number;
+    dvirs: number;
+    pmSchedules: number;
+    documents: number;
+  }>;
+
   // Additional methods for Phase 3
   getWorkOrdersByAsset(assetId: number): Promise<WorkOrder[]>;
   getAssetByNumber(assetNumber: string): Promise<Asset | undefined>;
@@ -3196,6 +3206,49 @@ export class DatabaseStorage implements IStorage {
       averageTreadDepth: avgTreadDepth,
       tiresNeedingReplacement,
     };
+  }
+
+  async getAdminRecordCounts(orgId?: number): Promise<{
+    assets: number;
+    workOrders: number;
+    parts: number;
+    dvirs: number;
+    pmSchedules: number;
+    documents: number;
+  }> {
+    if (orgId) {
+      const [assetCount] = await db.select({ count: sql<number>`count(*)::int` }).from(assets).where(eq(assets.orgId, orgId));
+      const [woCount] = await db.select({ count: sql<number>`count(*)::int` }).from(workOrders).where(eq(workOrders.orgId, orgId));
+      const [partCount] = await db.select({ count: sql<number>`count(*)::int` }).from(parts).where(eq(parts.orgId, orgId));
+      const [dvirCount] = await db.select({ count: sql<number>`count(*)::int` }).from(dvirs).where(eq(dvirs.orgId, orgId));
+      const [pmCount] = await db.select({ count: sql<number>`count(*)::int` }).from(pmSchedules).where(eq(pmSchedules.orgId, orgId));
+      const [docCount] = await db.select({ count: sql<number>`count(*)::int` }).from(documents).where(eq(documents.orgId, orgId));
+      
+      return {
+        assets: assetCount?.count || 0,
+        workOrders: woCount?.count || 0,
+        parts: partCount?.count || 0,
+        dvirs: dvirCount?.count || 0,
+        pmSchedules: pmCount?.count || 0,
+        documents: docCount?.count || 0,
+      };
+    } else {
+      const [assetCount] = await db.select({ count: sql<number>`count(*)::int` }).from(assets);
+      const [woCount] = await db.select({ count: sql<number>`count(*)::int` }).from(workOrders);
+      const [partCount] = await db.select({ count: sql<number>`count(*)::int` }).from(parts);
+      const [dvirCount] = await db.select({ count: sql<number>`count(*)::int` }).from(dvirs);
+      const [pmCount] = await db.select({ count: sql<number>`count(*)::int` }).from(pmSchedules);
+      const [docCount] = await db.select({ count: sql<number>`count(*)::int` }).from(documents);
+      
+      return {
+        assets: assetCount?.count || 0,
+        workOrders: woCount?.count || 0,
+        parts: partCount?.count || 0,
+        dvirs: dvirCount?.count || 0,
+        pmSchedules: pmCount?.count || 0,
+        documents: docCount?.count || 0,
+      };
+    }
   }
 
   async getPartKitsByOrg(orgId: number): Promise<PartKit[]> {

@@ -755,6 +755,20 @@ export async function registerRoutes(
     }
   });
 
+  // Admin record counts for data purge page (org-scoped)
+  app.get("/api/admin/record-counts", requireAuth, tenantMiddleware({ required: true }), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      if (!orgId) {
+        return res.status(403).json({ error: "Organization context required" });
+      }
+      const counts = await storage.getAdminRecordCounts(orgId);
+      res.json(counts);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get record counts" });
+    }
+  });
+
   // Locations (tenant-scoped)
   app.get("/api/locations", tenantMiddleware({ required: false }), async (req, res) => {
     const orgId = getOrgId(req);

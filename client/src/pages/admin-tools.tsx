@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { 
   Database, 
   Trash2, 
@@ -38,21 +39,30 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 
+interface RecordCounts {
+  assets: number;
+  workOrders: number;
+  parts: number;
+  dvirs: number;
+  pmSchedules: number;
+  documents: number;
+}
+
 interface DataType {
   id: string;
   name: string;
   icon: typeof Truck;
-  count: number;
+  countKey: keyof RecordCounts;
   description: string;
 }
 
-const dataTypes: DataType[] = [
-  { id: "assets", name: "Assets", icon: Truck, count: 58, description: "Vehicles, trailers, and equipment" },
-  { id: "work_orders", name: "Work Orders", icon: Wrench, count: 234, description: "Maintenance work orders" },
-  { id: "parts", name: "Parts/Inventory", icon: Package, count: 1250, description: "Parts and inventory items" },
-  { id: "dvirs", name: "DVIRs", icon: ClipboardList, count: 892, description: "Driver vehicle inspections" },
-  { id: "pm_schedules", name: "PM Schedules", icon: RefreshCw, count: 45, description: "Preventive maintenance schedules" },
-  { id: "documents", name: "Documents", icon: FileText, count: 67, description: "Manuals and attachments" },
+const dataTypeDefinitions: DataType[] = [
+  { id: "assets", name: "Assets", icon: Truck, countKey: "assets", description: "Vehicles, trailers, and equipment" },
+  { id: "work_orders", name: "Work Orders", icon: Wrench, countKey: "workOrders", description: "Maintenance work orders" },
+  { id: "parts", name: "Parts/Inventory", icon: Package, countKey: "parts", description: "Parts and inventory items" },
+  { id: "dvirs", name: "DVIRs", icon: ClipboardList, countKey: "dvirs", description: "Driver vehicle inspections" },
+  { id: "pm_schedules", name: "PM Schedules", icon: RefreshCw, countKey: "pmSchedules", description: "Preventive maintenance schedules" },
+  { id: "documents", name: "Documents", icon: FileText, countKey: "documents", description: "Manuals and attachments" },
 ];
 
 export default function AdminTools() {
@@ -63,6 +73,11 @@ export default function AdminTools() {
   const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
   const [purgeConfirmText, setPurgeConfirmText] = useState("");
   const [isPurgeDialogOpen, setIsPurgeDialogOpen] = useState(false);
+
+  // Fetch actual record counts from the database
+  const { data: recordCounts, isLoading: countsLoading } = useQuery<RecordCounts>({
+    queryKey: ["/api/admin/record-counts"],
+  });
   
   const [generatorConfig, setGeneratorConfig] = useState({
     assets: 10,
@@ -254,9 +269,10 @@ export default function AdminTools() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-3">
-              {dataTypes.map((type) => {
+              {dataTypeDefinitions.map((type) => {
                 const Icon = type.icon;
                 const isSelected = selectedTypes.includes(type.id);
+                const count = recordCounts?.[type.countKey] ?? 0;
                 return (
                   <div 
                     key={type.id}
@@ -276,7 +292,9 @@ export default function AdminTools() {
                         <p className="text-xs text-muted-foreground" data-testid={`text-type-desc-${type.id}`}>{type.description}</p>
                       </div>
                     </div>
-                    <Badge variant="secondary" data-testid={`badge-count-${type.id}`}>{type.count} records</Badge>
+                    <Badge variant="secondary" data-testid={`badge-count-${type.id}`}>
+                      {countsLoading ? "..." : count.toLocaleString()} records
+                    </Badge>
                   </div>
                 );
               })}
@@ -309,11 +327,12 @@ export default function AdminTools() {
                     <p className="text-sm font-medium text-destructive mb-2" data-testid="text-delete-heading">You are about to delete:</p>
                     <ul className="text-sm space-y-1">
                       {selectedTypes.map(typeId => {
-                        const type = dataTypes.find(t => t.id === typeId);
+                        const type = dataTypeDefinitions.find(t => t.id === typeId);
+                        const count = recordCounts?.[type?.countKey ?? "assets"] ?? 0;
                         return type && (
                           <li key={typeId} className="flex items-center gap-2" data-testid={`text-delete-item-${typeId}`}>
                             <Trash2 className="h-3 w-3" />
-                            {type.name}: {type.count} records
+                            {type.name}: {count.toLocaleString()} records
                           </li>
                         );
                       })}
@@ -366,12 +385,15 @@ export default function AdminTools() {
         </CardHeader>
         <CardContent>
           <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-6">
-            {dataTypes.map((type) => {
+            {dataTypeDefinitions.map((type) => {
               const Icon = type.icon;
+              const count = recordCounts?.[type.countKey] ?? 0;
               return (
                 <div key={type.id} className="text-center p-4 rounded-lg border" data-testid={`stat-${type.id}`}>
-                  <Icon className="h-6 w-6 mx-auto mb-2 text-primary" />
-                  <p className="text-2xl font-bold" data-testid={`text-count-${type.id}`}>{type.count}</p>
+                  <Icon className="h-6 w-6 mx-auto mb-2 text-muted-foreground" />
+                  <p className="text-2xl font-bold" data-testid={`text-count-${type.id}`}>
+                    {countsLoading ? "..." : count.toLocaleString()}
+                  </p>
                   <p className="text-xs text-muted-foreground" data-testid={`text-stat-name-${type.id}`}>{type.name}</p>
                 </div>
               );
