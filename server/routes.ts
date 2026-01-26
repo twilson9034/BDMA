@@ -1416,7 +1416,14 @@ export async function registerRoutes(
         }
       }
       const inspections = await storage.getBrakeInspections(workOrderId);
-      res.json(inspections);
+      // Include axles with each inspection for viewing
+      const inspectionsWithAxles = await Promise.all(
+        inspections.map(async (insp) => {
+          const axles = await storage.getBrakeInspectionAxles(insp.id);
+          return { ...insp, axles };
+        })
+      );
+      res.json(inspectionsWithAxles);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch brake inspections" });
     }
@@ -1492,7 +1499,14 @@ export async function registerRoutes(
         }
       }
       const inspections = await storage.getTireInspections(workOrderId);
-      res.json(inspections);
+      // Include axles with each inspection for viewing
+      const inspectionsWithAxles = await Promise.all(
+        inspections.map(async (insp) => {
+          const axles = await storage.getTireInspectionAxles(insp.id);
+          return { ...insp, axles };
+        })
+      );
+      res.json(inspectionsWithAxles);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch tire inspections" });
     }

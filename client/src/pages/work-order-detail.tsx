@@ -108,6 +108,15 @@ export default function WorkOrderDetail() {
   const [newLineTireSerialRemoved, setNewLineTireSerialRemoved] = useState("");
   const [newLineTireTreadDepth, setNewLineTireTreadDepth] = useState("");
   
+  // Request Part dialog state
+  const [showRequestPartDialog, setShowRequestPartDialog] = useState<number | null>(null);
+  const [requestPartSearch, setRequestPartSearch] = useState("");
+  const [requestPartId, setRequestPartId] = useState("");
+  const [requestPartQuantity, setRequestPartQuantity] = useState("1");
+  
+  // Close line confirmation dialog
+  const [showCloseLineConfirm, setShowCloseLineConfirm] = useState<number | null>(null);
+  
   const isTireVmrsCode = (code: string | undefined): boolean => {
     if (!code) return false;
     const normalized = code.replace(/-/g, "").replace(/^0+/, "");
@@ -1232,9 +1241,20 @@ export default function WorkOrderDetail() {
                                 </Button>
                                 <Button
                                   size="sm"
+                                  variant="secondary"
                                   className="h-8"
-                                  onClick={() => stopTimerMutation.mutate({ lineId: line.id, complete: true })}
+                                  onClick={() => stopTimerMutation.mutate({ lineId: line.id, complete: false })}
                                   disabled={stopTimerMutation.isPending}
+                                  data-testid={`button-stop-timer-${line.id}`}
+                                >
+                                  <Square className="h-3 w-3 mr-1" />
+                                  Stop Timer
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  className="h-8"
+                                  onClick={() => setShowCloseLineConfirm(line.id)}
+                                  data-testid={`button-close-line-${line.id}`}
                                 >
                                   <CheckCircle2 className="h-3 w-3 mr-1" />
                                   Close Line
@@ -1255,9 +1275,20 @@ export default function WorkOrderDetail() {
                                 </Button>
                                 <Button
                                   size="sm"
+                                  variant="secondary"
                                   className="h-8"
-                                  onClick={() => stopTimerMutation.mutate({ lineId: line.id, complete: true })}
+                                  onClick={() => stopTimerMutation.mutate({ lineId: line.id, complete: false })}
                                   disabled={stopTimerMutation.isPending}
+                                  data-testid={`button-stop-timer-paused-${line.id}`}
+                                >
+                                  <Square className="h-3 w-3 mr-1" />
+                                  Stop Timer
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  className="h-8"
+                                  onClick={() => setShowCloseLineConfirm(line.id)}
+                                  data-testid={`button-close-line-paused-${line.id}`}
                                 >
                                   <CheckCircle2 className="h-3 w-3 mr-1" />
                                   Close Line
@@ -1297,16 +1328,12 @@ export default function WorkOrderDetail() {
                                 variant="secondary"
                                 className="h-8"
                                 onClick={() => {
-                                  const partId = prompt("Enter Part ID to Request");
-                                  const qty = prompt("Enter Quantity", "1");
-                                  if (partId && qty) {
-                                    requestPartMutation.mutate({ 
-                                      lineId: line.id, 
-                                      partId: parseInt(partId), 
-                                      quantity: parseFloat(qty) 
-                                    });
-                                  }
+                                  setRequestPartSearch("");
+                                  setRequestPartId("");
+                                  setRequestPartQuantity("1");
+                                  setShowRequestPartDialog(line.id);
                                 }}
+                                data-testid={`button-request-part-${line.id}`}
                               >
                                 Request Part
                               </Button>
@@ -1316,16 +1343,12 @@ export default function WorkOrderDetail() {
                                 size="sm"
                                 className="h-8"
                                 onClick={() => {
-                                  const partId = prompt("Enter Part ID to Post");
-                                  const qty = prompt("Enter Quantity", "1");
-                                  if (partId && qty) {
-                                    postPartMutation.mutate({ 
-                                      lineId: line.id, 
-                                      partId: parseInt(partId), 
-                                      quantity: parseFloat(qty) 
-                                    });
-                                  }
+                                  setRequestPartSearch("");
+                                  setRequestPartId("");
+                                  setRequestPartQuantity("1");
+                                  setShowRequestPartDialog(line.id);
                                 }}
+                                data-testid={`button-post-part-${line.id}`}
                               >
                                 Post Part
                               </Button>
@@ -1763,6 +1786,129 @@ export default function WorkOrderDetail() {
             }}
             title={signatureType === "technician" ? "Technician Sign Here" : "Customer Sign Here"}
           />
+        </DialogContent>
+      </Dialog>
+
+      {/* Request Part Dialog */}
+      <Dialog open={showRequestPartDialog !== null} onOpenChange={(open) => !open && setShowRequestPartDialog(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Package className="h-5 w-5" />
+              Request Part
+            </DialogTitle>
+            <DialogDescription>
+              Search for a part and specify the quantity needed.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Search Parts</label>
+              <Input
+                placeholder="Search by name or part number..."
+                value={requestPartSearch}
+                onChange={(e) => setRequestPartSearch(e.target.value)}
+                data-testid="input-request-part-search"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Select Part</label>
+              <Select value={requestPartId} onValueChange={setRequestPartId}>
+                <SelectTrigger data-testid="select-request-part">
+                  <SelectValue placeholder="Select a part..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {parts
+                    ?.filter((p: Part) => 
+                      !requestPartSearch || 
+                      p.name.toLowerCase().includes(requestPartSearch.toLowerCase()) ||
+                      p.partNumber?.toLowerCase().includes(requestPartSearch.toLowerCase())
+                    )
+                    .slice(0, 20)
+                    .map((p: Part) => (
+                      <SelectItem key={p.id} value={p.id.toString()}>
+                        {p.partNumber ? `${p.partNumber} - ` : ""}{p.name} (Qty: {p.quantity || 0})
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Quantity</label>
+              <Input
+                type="number"
+                min="1"
+                value={requestPartQuantity}
+                onChange={(e) => setRequestPartQuantity(e.target.value)}
+                data-testid="input-request-part-quantity"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowRequestPartDialog(null)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (showRequestPartDialog && requestPartId) {
+                  const currentLine = lines?.find((l: WorkOrderLine) => l.id === showRequestPartDialog);
+                  if (currentLine?.partRequestStatus === 'none') {
+                    requestPartMutation.mutate({
+                      lineId: showRequestPartDialog,
+                      partId: parseInt(requestPartId),
+                      quantity: parseFloat(requestPartQuantity) || 1
+                    });
+                  } else {
+                    postPartMutation.mutate({
+                      lineId: showRequestPartDialog,
+                      partId: parseInt(requestPartId),
+                      quantity: parseFloat(requestPartQuantity) || 1
+                    });
+                  }
+                  setShowRequestPartDialog(null);
+                }
+              }}
+              disabled={!requestPartId}
+              data-testid="button-submit-request-part"
+            >
+              Submit
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Close Line Confirmation Dialog */}
+      <Dialog open={showCloseLineConfirm !== null} onOpenChange={(open) => !open && setShowCloseLineConfirm(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CheckCircle2 className="h-5 w-5" />
+              Complete Work Order Line
+            </DialogTitle>
+            <DialogDescription>
+              Are you sure you want to mark this line as completed? Any running timers will be stopped.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowCloseLineConfirm(null)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (showCloseLineConfirm) {
+                  // Stop any running timer first
+                  if (activeTimers[showCloseLineConfirm]) {
+                    stopLineMutation.mutate(showCloseLineConfirm);
+                  }
+                  closeLineMutation.mutate(showCloseLineConfirm);
+                  setShowCloseLineConfirm(null);
+                }
+              }}
+              data-testid="button-confirm-close-line"
+            >
+              Complete Line
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

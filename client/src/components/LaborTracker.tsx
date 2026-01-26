@@ -138,32 +138,11 @@ export function LaborTracker({ workOrderId, workOrderLineId }: LaborTrackerProps
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        {!hasActiveTimer && (
-          <div className="space-y-3">
-            <div className="space-y-2">
-              <Label htmlFor="notes">Notes (optional)</Label>
-              <Textarea
-                id="notes"
-                placeholder="What are you working on?"
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                className="resize-none"
-                rows={2}
-                data-testid="input-labor-notes"
-              />
-            </div>
-            <Button
-              onClick={() => startTimerMutation.mutate()}
-              disabled={startTimerMutation.isPending}
-              className="w-full"
-              data-testid="button-start-timer"
-            >
-              <Play className="h-4 w-4 mr-2" />
-              Start Timer
-            </Button>
+        {(!laborEntries || laborEntries.length === 0) && (
+          <div className="text-sm text-muted-foreground text-center py-4">
+            No time entries yet. Start a timer on a work order line to track labor.
           </div>
         )}
-
         {laborEntries && laborEntries.length > 0 && (
           <div className="space-y-3">
             <div className="text-sm font-medium">Time Entries</div>
@@ -211,46 +190,7 @@ export function LaborTracker({ workOrderId, workOrderLineId }: LaborTrackerProps
                   )}
                 </div>
                 <div className="flex items-center gap-1">
-                  {entry.status === "running" && (
-                    <>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        onClick={() => pauseTimerMutation.mutate(entry.id)}
-                        data-testid={`button-pause-${entry.id}`}
-                      >
-                        <Pause className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        onClick={() => stopTimerMutation.mutate(entry.id)}
-                        data-testid={`button-stop-${entry.id}`}
-                      >
-                        <Square className="h-4 w-4" />
-                      </Button>
-                    </>
-                  )}
-                  {entry.status === "paused" && (
-                    <>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        onClick={() => resumeTimerMutation.mutate(entry.id)}
-                        data-testid={`button-resume-${entry.id}`}
-                      >
-                        <Play className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        onClick={() => stopTimerMutation.mutate(entry.id)}
-                        data-testid={`button-stop-${entry.id}`}
-                      >
-                        <Square className="h-4 w-4" />
-                      </Button>
-                    </>
-                  )}
+                  {/* Timer controls (pause/stop) removed - available on work order lines only */}
                   {entry.status === "completed" && (
                     <Button
                       size="icon"
