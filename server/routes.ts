@@ -5212,6 +5212,66 @@ Example: [{"partNumber": "BP-001", "reason": "Standard brake pads for this model
     }
   });
 
+  // PM Schedule Models (link PM schedules to make/model combinations)
+  app.get("/api/pm-schedules/:id/models", async (req, res) => {
+    try {
+      const models = await storage.getPmScheduleModels(parseInt(req.params.id));
+      res.json(models);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get PM schedule models" });
+    }
+  });
+
+  app.post("/api/pm-schedules/:id/models", requireAuth, async (req, res) => {
+    try {
+      const pmScheduleId = parseInt(req.params.id);
+      const { make, model, year } = req.body;
+      const created = await storage.addPmScheduleModel({ pmScheduleId, make, model, year });
+      res.status(201).json(created);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to add model to PM schedule" });
+    }
+  });
+
+  app.delete("/api/pm-schedule-models/:id", requireAuth, async (req, res) => {
+    try {
+      await storage.deletePmScheduleModel(parseInt(req.params.id));
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to remove model from PM schedule" });
+    }
+  });
+
+  // PM Schedule Kit Models (link kits to specific models within a PM schedule)
+  app.get("/api/pm-schedule-kits/:id/models", async (req, res) => {
+    try {
+      const models = await storage.getPmScheduleKitModels(parseInt(req.params.id));
+      res.json(models);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get PM schedule kit models" });
+    }
+  });
+
+  app.post("/api/pm-schedule-kits/:id/models", requireAuth, async (req, res) => {
+    try {
+      const pmScheduleKitId = parseInt(req.params.id);
+      const { make, model } = req.body;
+      const created = await storage.addPmScheduleKitModel({ pmScheduleKitId, make, model });
+      res.status(201).json(created);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to add model to PM schedule kit" });
+    }
+  });
+
+  app.delete("/api/pm-schedule-kit-models/:id", requireAuth, async (req, res) => {
+    try {
+      await storage.deletePmScheduleKitModel(parseInt(req.params.id));
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to remove model from PM schedule kit" });
+    }
+  });
+
   // ============================================================
   // CYCLE COUNTS
   // ============================================================
