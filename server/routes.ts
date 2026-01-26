@@ -2325,11 +2325,12 @@ export async function registerRoutes(
       const validated = insertPmScheduleSchema.parse(req.body);
       const schedule = await storage.createPmSchedule({ ...validated, orgId });
       res.status(201).json(schedule);
-    } catch (error) {
+    } catch (error: any) {
+      console.error("PM schedule creation error:", error);
       if (error instanceof z.ZodError) {
         return res.status(400).json({ error: error.errors });
       }
-      res.status(500).json({ error: "Failed to create PM schedule" });
+      res.status(500).json({ error: "Failed to create PM schedule", details: error?.message });
     }
   });
 
