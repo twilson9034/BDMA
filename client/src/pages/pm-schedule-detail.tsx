@@ -91,6 +91,12 @@ interface PmScheduleKitModel {
   model: string;
 }
 
+interface AssetMakeModel {
+  manufacturer: string;
+  model: string | null;
+  year: number | null;
+}
+
 // Component to display and manage kit model restrictions
 function KitModelManager({ 
   pmScheduleKitId, 
@@ -98,58 +104,68 @@ function KitModelManager({
   onRemoveModel,
   isAddPending,
   isRemovePending,
+  availableModels,
 }: { 
   pmScheduleKitId: number;
   onAddModel: (pmScheduleKitId: number, make: string, model: string) => void;
   onRemoveModel: (kitModelId: number, pmScheduleKitId: number) => void;
   isAddPending: boolean;
   isRemovePending: boolean;
+  availableModels: PmScheduleModel[];
 }) {
-  const [make, setMake] = useState("");
-  const [model, setModel] = useState("");
+  const [selectedModel, setSelectedModel] = useState<string>("");
 
   const { data: kitModels = [] } = useQuery<PmScheduleKitModel[]>({
     queryKey: ["/api/pm-schedule-kits", pmScheduleKitId, "models"],
   });
 
   const handleAdd = () => {
-    if (make.trim() && model.trim()) {
-      onAddModel(pmScheduleKitId, make.trim(), model.trim());
-      setMake("");
-      setModel("");
+    if (selectedModel) {
+      const [make, model] = selectedModel.split("||");
+      if (make && model) {
+        onAddModel(pmScheduleKitId, make, model);
+        setSelectedModel("");
+      }
     }
   };
+
+  // Filter out models that are already added
+  const unusedModels = availableModels.filter(
+    (am) => !kitModels.some((km) => km.make === am.make && km.model === am.model)
+  );
 
   return (
     <div className="ml-6 mt-2 p-3 rounded-lg bg-muted/50 space-y-3">
       <p className="text-xs text-muted-foreground">
-        Restrict this kit to specific vehicle makes/models. Leave empty to use for all vehicles in this PM schedule.
+        Restrict this kit to specific vehicle makes/models from the schedule. Leave empty to use for all vehicles.
       </p>
-      <div className="flex flex-wrap gap-2">
-        <Input
-          placeholder="Make"
-          value={make}
-          onChange={(e) => setMake(e.target.value)}
-          className="w-28 h-8 text-sm"
-          data-testid={`input-kit-model-make-${pmScheduleKitId}`}
-        />
-        <Input
-          placeholder="Model"
-          value={model}
-          onChange={(e) => setModel(e.target.value)}
-          className="w-28 h-8 text-sm"
-          data-testid={`input-kit-model-model-${pmScheduleKitId}`}
-        />
-        <Button
-          type="button"
-          size="sm"
-          onClick={handleAdd}
-          disabled={!make.trim() || !model.trim() || isAddPending}
-          data-testid={`button-add-kit-model-${pmScheduleKitId}`}
-        >
-          {isAddPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
-        </Button>
-      </div>
+      {availableModels.length > 0 ? (
+        <div className="flex flex-wrap gap-2">
+          <Select value={selectedModel} onValueChange={setSelectedModel}>
+            <SelectTrigger className="w-48 h-8 text-sm" data-testid={`select-kit-model-${pmScheduleKitId}`}>
+              <SelectValue placeholder="Select model..." />
+            </SelectTrigger>
+            <SelectContent>
+              {unusedModels.map((m) => (
+                <SelectItem key={`${m.make}||${m.model}`} value={`${m.make}||${m.model}`}>
+                  {m.make} {m.model}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button
+            type="button"
+            size="sm"
+            onClick={handleAdd}
+            disabled={!selectedModel || isAddPending}
+            data-testid={`button-add-kit-model-${pmScheduleKitId}`}
+          >
+            {isAddPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
+          </Button>
+        </div>
+      ) : (
+        <p className="text-xs text-amber-600">Add vehicle models to this schedule first to restrict kits.</p>
+      )}
       {kitModels.length > 0 ? (
         <div className="flex flex-wrap gap-1">
           {kitModels.map((km) => (
@@ -209,6 +225,11 @@ export default function PmScheduleDetail() {
     queryKey: ["/api/assets"],
   });
 
+  // Get unique make/model combinations from assets for dropdowns
+  const { data: assetMakeModels = [] } = useQuery<AssetMakeModel[]>({
+    queryKey: ["/api/assets/make-models"],
+  });
+
   // Vehicle models linked to this PM schedule
   const { data: scheduleModels = [] } = useQuery<PmScheduleModel[]>({
     queryKey: ["/api/pm-schedules", pmId, "models"],
@@ -226,10 +247,8 @@ export default function PmScheduleDetail() {
     queryKey: ["/api/part-kits"],
   });
 
-  // State for adding new model
-  const [newModelMake, setNewModelMake] = useState("");
-  const [newModelModel, setNewModelModel] = useState("");
-  const [newModelYear, setNewModelYear] = useState("");
+  // State for adding new model (now using dropdown)
+  const [selectedAssetModel, setSelectedAssetModel] = useState<string>("");
 
   // State for adding new kit
   const [selectedKitId, setSelectedKitId] = useState<string>("");
@@ -293,9 +312,6 @@ export default function PmScheduleDetail() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/pm-schedules", pmId, "models"] });
       toast({ title: "Model Added", description: "Vehicle model has been added to this schedule." });
-      setNewModelMake("");
-      setNewModelModel("");
-      setNewModelYear("");
     },
     onError: () => {
       toast({ title: "Error", description: "Failed to add model", variant: "destructive" });
@@ -346,14 +362,25 @@ export default function PmScheduleDetail() {
   });
 
   const handleAddModel = () => {
-    if (newModelMake.trim() && newModelModel.trim()) {
-      addModelMutation.mutate({
-        make: newModelMake.trim(),
-        model: newModelModel.trim(),
-        year: newModelYear ? parseInt(newModelYear) : undefined,
-      });
+    if (selectedAssetModel) {
+      const [manufacturer, model, yearStr] = selectedAssetModel.split("||");
+      if (manufacturer && model) {
+        addModelMutation.mutate({
+          make: manufacturer,
+          model: model,
+          year: yearStr && yearStr !== "null" ? parseInt(yearStr) : undefined,
+        });
+        setSelectedAssetModel("");
+      }
     }
   };
+
+  // Get unique make/model combinations not yet assigned to this schedule
+  const availableAssetModels = assetMakeModels.filter(
+    (am) => !scheduleModels.some(
+      (sm) => sm.make === am.manufacturer && sm.model === am.model
+    )
+  );
 
   const handleAddKit = () => {
     if (selectedKitId) {
@@ -782,35 +809,30 @@ export default function PmScheduleDetail() {
             </CardHeader>
             <CardContent className="space-y-4">
               <p className="text-sm text-muted-foreground">
-                Assign this PM schedule to specific vehicle makes/models. When left empty, it can apply to any asset.
+                Assign this PM schedule to specific vehicle makes/models from your asset list. When left empty, it can apply to any asset.
               </p>
               <div className="flex flex-wrap gap-2">
-                <Input
-                  placeholder="Make (e.g. Ford)"
-                  value={newModelMake}
-                  onChange={(e) => setNewModelMake(e.target.value)}
-                  className="w-32"
-                  data-testid="input-new-model-make"
-                />
-                <Input
-                  placeholder="Model (e.g. F-150)"
-                  value={newModelModel}
-                  onChange={(e) => setNewModelModel(e.target.value)}
-                  className="w-32"
-                  data-testid="input-new-model-model"
-                />
-                <Input
-                  placeholder="Year (optional)"
-                  value={newModelYear}
-                  onChange={(e) => setNewModelYear(e.target.value)}
-                  type="number"
-                  className="w-24"
-                  data-testid="input-new-model-year"
-                />
+                <Select value={selectedAssetModel} onValueChange={setSelectedAssetModel}>
+                  <SelectTrigger className="w-64" data-testid="select-vehicle-model">
+                    <SelectValue placeholder="Select a vehicle make/model..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableAssetModels
+                      .filter(am => am.model) // Only show assets with both make and model
+                      .map((am) => (
+                        <SelectItem 
+                          key={`${am.manufacturer}||${am.model || ""}||${am.year || ""}`} 
+                          value={`${am.manufacturer}||${am.model || ""}||${am.year || ""}`}
+                        >
+                          {am.manufacturer} {am.model}{am.year ? ` (${am.year})` : ""}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
                 <Button 
                   type="button" 
                   onClick={handleAddModel} 
-                  disabled={!newModelMake.trim() || !newModelModel.trim() || addModelMutation.isPending}
+                  disabled={!selectedAssetModel || addModelMutation.isPending}
                   data-testid="button-add-model"
                 >
                   {addModelMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
@@ -921,6 +943,7 @@ export default function PmScheduleDetail() {
                             }}
                             isAddPending={addKitModelMutation.isPending}
                             isRemovePending={removeKitModelMutation.isPending}
+                            availableModels={scheduleModels}
                           />
                         )}
                       </div>
