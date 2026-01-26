@@ -71,6 +71,7 @@ import Messages from "@/pages/messages";
 import PublicDashboards from "@/pages/public-dashboards";
 import AdminTools from "@/pages/admin-tools";
 import PublicDvir from "@/pages/public-dvir";
+import PublicDashboardView from "@/pages/public-dashboard-view";
 import LaborRateCalculator from "@/pages/labor-rate-calculator";
 import KnowledgeBase from "@/pages/knowledge-base";
 import TechnicianManagement from "@/pages/technician-management";
@@ -182,6 +183,10 @@ function AppContent() {
   // Public routes that don't require authentication
   if (location.startsWith("/dvir/")) {
     return <PublicDvir />;
+  }
+  
+  if (location.startsWith("/public/dashboard/")) {
+    return <PublicDashboardView />;
   }
 
   if (isLoading) {
