@@ -2410,6 +2410,8 @@ export const publicDashboards = pgTable("public_dashboards", {
   orgId: integer("org_id").references(() => organizations.id),
   name: varchar("name", { length: 255 }).notNull(),
   accessToken: varchar("access_token", { length: 64 }).notNull().unique(),
+  type: varchar("type", { length: 50 }).default("fleet_status"), // fleet_status, kpi_summary, work_orders, custom
+  locationId: integer("location_id").references(() => locations.id), // null = all locations
   widgets: jsonb("widgets"), // widget configuration
   isActive: boolean("is_active").default(true),
   expiresAt: timestamp("expires_at"),
@@ -2419,6 +2421,7 @@ export const publicDashboards = pgTable("public_dashboards", {
 }, (table) => [
   index("idx_public_dashboards_token").on(table.accessToken),
   index("idx_public_dashboards_org").on(table.orgId),
+  index("idx_public_dashboards_location").on(table.locationId),
 ]);
 
 export const insertPublicDashboardSchema = createInsertSchema(publicDashboards).omit({ id: true, createdAt: true, updatedAt: true });

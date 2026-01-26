@@ -12,7 +12,8 @@ import {
   Globe,
   Lock,
   RefreshCw,
-  Loader2
+  Loader2,
+  MapPin
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -40,6 +41,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
+interface Location {
+  id: number;
+  name: string;
+}
+
 interface PublicDashboard {
   id: string;
   name: string;
@@ -49,6 +55,7 @@ interface PublicDashboard {
   expiresAt: string | null;
   viewCount: number;
   createdAt: string;
+  locationId: number | null;
 }
 
 const mockDashboards: PublicDashboard[] = [
@@ -61,6 +68,7 @@ const mockDashboards: PublicDashboard[] = [
     expiresAt: null,
     viewCount: 142,
     createdAt: "2024-01-10",
+    locationId: null,
   },
   {
     id: "dash-2",
@@ -71,6 +79,7 @@ const mockDashboards: PublicDashboard[] = [
     expiresAt: "2024-06-30",
     viewCount: 89,
     createdAt: "2024-01-15",
+    locationId: 1,
   },
 ];
 
@@ -78,9 +87,23 @@ export default function PublicDashboards() {
   const { toast } = useToast();
   const [showToken, setShowToken] = useState<Record<string, boolean>>({});
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
-  const [newDashboard, setNewDashboard] = useState({ name: "", type: "fleet_status" as const });
+  const [newDashboard, setNewDashboard] = useState({ 
+    name: "", 
+    type: "fleet_status" as const,
+    locationId: null as number | null
+  });
+
+  const { data: locations } = useQuery<Location[]>({
+    queryKey: ["/api/locations"],
+  });
 
   const dashboards = mockDashboards;
+
+  const getLocationName = (locationId: number | null) => {
+    if (locationId === null) return "All Locations";
+    const location = locations?.find(l => l.id === locationId);
+    return location?.name || "Unknown Location";
+  };
 
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
@@ -154,6 +177,43 @@ export default function PublicDashboards() {
                     </SelectContent>
                   </Select>
                 </div>
+                <div className="space-y-2">
+                  <Label data-testid="label-dashboard-location">Location Filter</Label>
+                  <Select 
+                    value={newDashboard.locationId?.toString() || "all"}
+                    onValueChange={(val) => setNewDashboard({ 
+                      ...newDashboard, 
+                      locationId: val === "all" ? null : parseInt(val)
+                    })}
+                  >
+                    <SelectTrigger data-testid="select-dashboard-location">
+                      <SelectValue placeholder="Select location" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all" data-testid="option-location-all">
+                        <span className="flex items-center gap-2">
+                          <Globe className="h-4 w-4" />
+                          All Locations
+                        </span>
+                      </SelectItem>
+                      {locations?.map((location) => (
+                        <SelectItem 
+                          key={location.id} 
+                          value={location.id.toString()}
+                          data-testid={`option-location-${location.id}`}
+                        >
+                          <span className="flex items-center gap-2">
+                            <MapPin className="h-4 w-4" />
+                            {location.name}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Choose which location's data this dashboard will display
+                  </p>
+                </div>
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)} data-testid="button-cancel-create">Cancel</Button>
@@ -161,7 +221,7 @@ export default function PublicDashboards() {
                   onClick={() => {
                     toast({ title: "Dashboard Created", description: "Your public dashboard has been created." });
                     setIsCreateDialogOpen(false);
-                    setNewDashboard({ name: "", type: "fleet_status" });
+                    setNewDashboard({ name: "", type: "fleet_status", locationId: null });
                   }}
                   data-testid="button-confirm-create"
                 >
@@ -186,8 +246,12 @@ export default function PublicDashboards() {
                   )}
                   {dashboard.name}
                 </CardTitle>
-                <CardDescription className="flex items-center gap-2 mt-1" data-testid={`text-dashboard-desc-${dashboard.id}`}>
+                <CardDescription className="flex items-center gap-2 mt-1 flex-wrap" data-testid={`text-dashboard-desc-${dashboard.id}`}>
                   <Badge variant="secondary" data-testid={`badge-dashboard-type-${dashboard.id}`}>{getDashboardTypeLabel(dashboard.type)}</Badge>
+                  <Badge variant="outline" className="gap-1" data-testid={`badge-dashboard-location-${dashboard.id}`}>
+                    <MapPin className="h-3 w-3" />
+                    {getLocationName(dashboard.locationId)}
+                  </Badge>
                   <span className="text-xs" data-testid={`text-view-count-${dashboard.id}`}>{dashboard.viewCount} views</span>
                 </CardDescription>
               </div>
@@ -277,6 +341,42 @@ export default function PublicDashboards() {
                   </div>
                 </TabsContent>
                 <TabsContent value="settings" className="mt-2 space-y-3">
+                  <div className="space-y-2">
+                    <Label className="text-sm" data-testid={`label-settings-location-${dashboard.id}`}>Location Filter</Label>
+                    <Select 
+                      value={dashboard.locationId?.toString() || "all"}
+                      onValueChange={(val) => {
+                        toast({ 
+                          title: "Location Updated", 
+                          description: `Dashboard will now show ${val === "all" ? "all locations" : getLocationName(parseInt(val))}` 
+                        });
+                      }}
+                    >
+                      <SelectTrigger data-testid={`select-settings-location-${dashboard.id}`}>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all" data-testid={`option-settings-all-${dashboard.id}`}>
+                          <span className="flex items-center gap-2">
+                            <Globe className="h-4 w-4" />
+                            All Locations
+                          </span>
+                        </SelectItem>
+                        {locations?.map((location) => (
+                          <SelectItem 
+                            key={location.id} 
+                            value={location.id.toString()}
+                            data-testid={`option-settings-location-${location.id}-${dashboard.id}`}
+                          >
+                            <span className="flex items-center gap-2">
+                              <MapPin className="h-4 w-4" />
+                              {location.name}
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                   <div className="flex items-center justify-between gap-2 flex-wrap">
                     <span className="text-sm" data-testid={`label-expires-${dashboard.id}`}>Expires</span>
                     <span className="text-sm text-muted-foreground" data-testid={`text-expires-${dashboard.id}`}>
