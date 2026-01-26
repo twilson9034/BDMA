@@ -37,7 +37,7 @@ import OpenAI from "openai";
 import { z } from "zod";
 import { setupAuth, registerAuthRoutes } from "./replit_integrations/auth";
 import { tenantMiddleware, getUserOrgMemberships, getOrgId } from "./tenant";
-import { organizations, orgMemberships, insertOrganizationSchema, insertOrgMembershipSchema, updateOrganizationSchema, updateOrgMemberRoleSchema, setParentOrgSchema, updateCorporateAdminSchema, tires, insertTireSchema, conversations, messages, insertConversationSchema, insertMessageSchema, savedReports, insertSavedReportSchema, gpsLocations, insertGpsLocationSchema, tireReplacementSettings, insertTireReplacementSettingSchema, publicAssetTokens, insertPublicAssetTokenSchema } from "@shared/schema";
+import { organizations, orgMemberships, insertOrganizationSchema, insertOrgMembershipSchema, updateOrganizationSchema, updateOrgMemberRoleSchema, setParentOrgSchema, updateCorporateAdminSchema, tires, insertTireSchema, conversations, messages, insertConversationSchema, insertMessageSchema, savedReports, insertSavedReportSchema, gpsLocations, insertGpsLocationSchema, tireReplacementSettings, insertTireReplacementSettingSchema, publicAssetTokens, insertPublicAssetTokenSchema, insertPmScheduleModelSchema, insertPmScheduleKitModelSchema } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, or, isNull } from "drizzle-orm";
 import { users, oosRulesVersions, oosInspections, oosSources, insertOosInspectionSchema } from "@shared/schema";
@@ -5225,10 +5225,13 @@ Example: [{"partNumber": "BP-001", "reason": "Standard brake pads for this model
   app.post("/api/pm-schedules/:id/models", requireAuth, async (req, res) => {
     try {
       const pmScheduleId = parseInt(req.params.id);
-      const { make, model, year } = req.body;
-      const created = await storage.addPmScheduleModel({ pmScheduleId, make, model, year });
+      const validated = insertPmScheduleModelSchema.parse({ ...req.body, pmScheduleId });
+      const created = await storage.addPmScheduleModel(validated);
       res.status(201).json(created);
-    } catch (error) {
+    } catch (error: any) {
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ error: "Invalid data", details: error.errors });
+      }
       res.status(500).json({ error: "Failed to add model to PM schedule" });
     }
   });
@@ -5255,10 +5258,13 @@ Example: [{"partNumber": "BP-001", "reason": "Standard brake pads for this model
   app.post("/api/pm-schedule-kits/:id/models", requireAuth, async (req, res) => {
     try {
       const pmScheduleKitId = parseInt(req.params.id);
-      const { make, model } = req.body;
-      const created = await storage.addPmScheduleKitModel({ pmScheduleKitId, make, model });
+      const validated = insertPmScheduleKitModelSchema.parse({ ...req.body, pmScheduleKitId });
+      const created = await storage.addPmScheduleKitModel(validated);
       res.status(201).json(created);
-    } catch (error) {
+    } catch (error: any) {
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ error: "Invalid data", details: error.errors });
+      }
       res.status(500).json({ error: "Failed to add model to PM schedule kit" });
     }
   });
