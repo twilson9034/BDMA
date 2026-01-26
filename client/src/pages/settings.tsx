@@ -113,6 +113,19 @@ export default function Settings() {
   const [simulatedRole, setSimulatedRole] = useState<string>(() => {
     return localStorage.getItem("bdma_simulated_role") || "";
   });
+  
+  // Customization tab state
+  const [vmrsDialogOpen, setVmrsDialogOpen] = useState(false);
+  const [vmrsEditCode, setVmrsEditCode] = useState<{ code: string; description: string } | null>(null);
+  const [newVmrsCode, setNewVmrsCode] = useState("");
+  const [newVmrsDescription, setNewVmrsDescription] = useState("");
+  const [customFieldDialogOpen, setCustomFieldDialogOpen] = useState(false);
+  const [newFieldName, setNewFieldName] = useState("");
+  const [newFieldType, setNewFieldType] = useState("Text");
+  const [newFieldEntity, setNewFieldEntity] = useState("asset");
+  const [dropdownDialogOpen, setDropdownDialogOpen] = useState(false);
+  const [dropdownCategory, setDropdownCategory] = useState("");
+  const [newDropdownOption, setNewDropdownOption] = useState("");
 
   const { data: organization, isLoading: orgLoading } = useQuery<Organization>({
     queryKey: ["/api/organizations/current"],
@@ -876,18 +889,87 @@ export default function Settings() {
                         <Badge variant="outline" className="font-mono">{vmrs.code}</Badge>
                         <span className="ml-2 text-sm">{vmrs.description}</span>
                       </div>
-                      <Button variant="ghost" size="icon" data-testid={`button-edit-vmrs-${vmrs.code}`}>
+                      <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        data-testid={`button-edit-vmrs-${vmrs.code}`}
+                        onClick={() => {
+                          setVmrsEditCode(vmrs);
+                          setNewVmrsCode(vmrs.code);
+                          setNewVmrsDescription(vmrs.description);
+                          setVmrsDialogOpen(true);
+                        }}
+                      >
                         <ChevronRight className="h-4 w-4" />
                       </Button>
                     </div>
                   ))}
                 </div>
-                <Button variant="outline" className="w-full" data-testid="button-add-vmrs">
+                <Button 
+                  variant="outline" 
+                  className="w-full" 
+                  data-testid="button-add-vmrs"
+                  onClick={() => {
+                    setVmrsEditCode(null);
+                    setNewVmrsCode("");
+                    setNewVmrsDescription("");
+                    setVmrsDialogOpen(true);
+                  }}
+                >
                   <Plus className="h-4 w-4 mr-2" />
                   Add VMRS Code
                 </Button>
               </CardContent>
             </Card>
+
+            {/* VMRS Dialog */}
+            <Dialog open={vmrsDialogOpen} onOpenChange={setVmrsDialogOpen}>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle data-testid="dialog-vmrs-title">{vmrsEditCode ? "Edit VMRS Code" : "Add VMRS Code"}</DialogTitle>
+                  <DialogDescription>
+                    {vmrsEditCode ? "Update the VMRS code details below." : "Enter the details for the new VMRS code."}
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4 py-4">
+                  <div className="space-y-2">
+                    <Label>Code</Label>
+                    <Input 
+                      value={newVmrsCode}
+                      onChange={(e) => setNewVmrsCode(e.target.value)}
+                      placeholder="e.g., 007"
+                      data-testid="input-vmrs-code"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Description</Label>
+                    <Input 
+                      value={newVmrsDescription}
+                      onChange={(e) => setNewVmrsDescription(e.target.value)}
+                      placeholder="e.g., Fuel Systems"
+                      data-testid="input-vmrs-description"
+                    />
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setVmrsDialogOpen(false)} data-testid="button-vmrs-cancel">
+                    Cancel
+                  </Button>
+                  <Button 
+                    onClick={() => {
+                      toast({ 
+                        title: vmrsEditCode ? "VMRS Code Updated" : "VMRS Code Added", 
+                        description: `VMRS code ${newVmrsCode} - ${newVmrsDescription} has been ${vmrsEditCode ? "updated" : "added"}.` 
+                      });
+                      setVmrsDialogOpen(false);
+                    }}
+                    data-testid="button-vmrs-save"
+                  >
+                    {vmrsEditCode ? "Update" : "Add"}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
 
             {/* Custom Fields */}
             <Card data-testid="card-custom-fields">
@@ -914,19 +996,107 @@ export default function Settings() {
                           <span className="font-medium text-sm">{field.name}</span>
                           <Badge variant="secondary" className="text-xs">{field.type}</Badge>
                         </div>
-                        <Button variant="ghost" size="icon" data-testid={`button-delete-field-${index}`}>
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          data-testid={`button-delete-field-${index}`}
+                          onClick={() => {
+                            toast({ 
+                              title: "Field Deleted", 
+                              description: `Custom field "${field.name}" has been removed.` 
+                            });
+                          }}
+                        >
                           <Trash2 className="h-4 w-4 text-muted-foreground" />
                         </Button>
                       </div>
                     ))}
                   </div>
                 </div>
-                <Button variant="outline" className="w-full" data-testid="button-add-custom-field">
+                <Button 
+                  variant="outline" 
+                  className="w-full" 
+                  data-testid="button-add-custom-field"
+                  onClick={() => {
+                    setNewFieldName("");
+                    setNewFieldType("Text");
+                    setNewFieldEntity("asset");
+                    setCustomFieldDialogOpen(true);
+                  }}
+                >
                   <Plus className="h-4 w-4 mr-2" />
                   Add Custom Field
                 </Button>
               </CardContent>
             </Card>
+
+            {/* Custom Field Dialog */}
+            <Dialog open={customFieldDialogOpen} onOpenChange={setCustomFieldDialogOpen}>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle data-testid="dialog-custom-field-title">Add Custom Field</DialogTitle>
+                  <DialogDescription>
+                    Create a new custom field for tracking additional information.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4 py-4">
+                  <div className="space-y-2">
+                    <Label>Field Name</Label>
+                    <Input 
+                      value={newFieldName}
+                      onChange={(e) => setNewFieldName(e.target.value)}
+                      placeholder="e.g., VIN Number"
+                      data-testid="input-field-name"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Field Type</Label>
+                    <Select value={newFieldType} onValueChange={setNewFieldType}>
+                      <SelectTrigger data-testid="select-field-type">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Text">Text</SelectItem>
+                        <SelectItem value="Number">Number</SelectItem>
+                        <SelectItem value="Date">Date</SelectItem>
+                        <SelectItem value="Dropdown">Dropdown</SelectItem>
+                        <SelectItem value="Checkbox">Checkbox</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Apply To</Label>
+                    <Select value={newFieldEntity} onValueChange={setNewFieldEntity}>
+                      <SelectTrigger data-testid="select-field-entity">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="asset">Assets</SelectItem>
+                        <SelectItem value="workOrder">Work Orders</SelectItem>
+                        <SelectItem value="part">Parts</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setCustomFieldDialogOpen(false)} data-testid="button-field-cancel">
+                    Cancel
+                  </Button>
+                  <Button 
+                    onClick={() => {
+                      toast({ 
+                        title: "Custom Field Added", 
+                        description: `Custom field "${newFieldName}" has been added.` 
+                      });
+                      setCustomFieldDialogOpen(false);
+                    }}
+                    data-testid="button-field-save"
+                  >
+                    Add Field
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
 
             {/* Configurable Dropdowns */}
             <Card data-testid="card-dropdown-config">
@@ -947,7 +1117,16 @@ export default function Settings() {
                       {["Low", "Medium", "High", "Critical"].map((priority, index) => (
                         <div key={priority} className="flex items-center justify-between p-2 rounded border text-sm" data-testid={`priority-option-${index}`}>
                           <span>{priority}</span>
-                          <Button variant="ghost" size="icon" className="h-6 w-6">
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="h-6 w-6"
+                            onClick={() => {
+                              setDropdownCategory("Work Order Priorities");
+                              setNewDropdownOption(priority);
+                              setDropdownDialogOpen(true);
+                            }}
+                          >
                             <ChevronRight className="h-3 w-3" />
                           </Button>
                         </div>
@@ -960,7 +1139,16 @@ export default function Settings() {
                       {["Vehicle", "Trailer", "Equipment", "Tool"].map((category, index) => (
                         <div key={category} className="flex items-center justify-between p-2 rounded border text-sm" data-testid={`category-option-${index}`}>
                           <span>{category}</span>
-                          <Button variant="ghost" size="icon" className="h-6 w-6">
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="h-6 w-6"
+                            onClick={() => {
+                              setDropdownCategory("Asset Categories");
+                              setNewDropdownOption(category);
+                              setDropdownDialogOpen(true);
+                            }}
+                          >
                             <ChevronRight className="h-3 w-3" />
                           </Button>
                         </div>
@@ -970,6 +1158,49 @@ export default function Settings() {
                 </div>
               </CardContent>
             </Card>
+
+            {/* Dropdown Options Dialog */}
+            <Dialog open={dropdownDialogOpen} onOpenChange={setDropdownDialogOpen}>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle data-testid="dialog-dropdown-title">Edit Dropdown Option</DialogTitle>
+                  <DialogDescription>
+                    Update this {dropdownCategory} option.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4 py-4">
+                  <div className="space-y-2">
+                    <Label>Category</Label>
+                    <Input value={dropdownCategory} disabled />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Option Value</Label>
+                    <Input 
+                      value={newDropdownOption}
+                      onChange={(e) => setNewDropdownOption(e.target.value)}
+                      data-testid="input-dropdown-option"
+                    />
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setDropdownDialogOpen(false)} data-testid="button-dropdown-cancel">
+                    Cancel
+                  </Button>
+                  <Button 
+                    onClick={() => {
+                      toast({ 
+                        title: "Option Updated", 
+                        description: `${dropdownCategory} option has been updated.` 
+                      });
+                      setDropdownDialogOpen(false);
+                    }}
+                    data-testid="button-dropdown-save"
+                  >
+                    Update
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
 
             {/* Brand Customization */}
             <Card data-testid="card-branding">
