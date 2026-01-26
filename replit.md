@@ -2,7 +2,7 @@
 
 ## Overview
 
-BDMA is a comprehensive Computerized Maintenance Management System (CMMS) designed for efficient fleet and asset management. It enables organizations to track physical assets, manage work orders and maintenance schedules, handle parts inventory with automated reordering, process procurement workflows, and leverage AI-driven predictive maintenance insights. The system aims to optimize asset uptime, reduce maintenance costs, and streamline operational workflows.
+BDMA is a comprehensive Computerized Maintenance Management System (CMMS) designed for efficient fleet and asset management. It enables organizations to track physical assets, manage work orders and maintenance schedules, handle parts inventory with automated reordering, process procurement workflows, and leverage AI-driven predictive maintenance insights. The system aims to optimize asset uptime, reduce maintenance costs, and streamline operational workflows through intelligent automation and data-driven decisions.
 
 ## User Preferences
 
@@ -20,107 +20,35 @@ Preferred communication style: Simple, everyday language.
 
 ### Backend
 - **Framework**: Express.js with TypeScript
-- **Database**: PostgreSQL with Drizzle ORM
+- **Database Interaction**: Drizzle ORM
 - **Authentication**: Replit Auth (OpenID Connect)
 - **API Design**: RESTful endpoints
 - **Build**: esbuild
 
 ### Shared Code
-- **Purpose**: Centralized database schema definitions (Drizzle), TypeScript types, and Zod validation schemas for both frontend and backend.
+Centralized database schema definitions, TypeScript types, and Zod validation schemas for both frontend and backend.
 
-### Core Entities & Features
-- **Assets**: Tracking of physical items with status and hierarchy.
-- **Work Orders**: Management of maintenance tasks, time tracking, parts consumption, and a detailed line item system with status workflows, timer functionality, auto-status updates, signature capture (technician and customer), and batch operations (bulk status updates).
-- **PM Schedules**: Interval-based preventive maintenance scheduling.
-- **Inventory/Parts**: Comprehensive parts management with reorder points.
-- **Procurement**: Purchase requisitions and orders with approval workflows.
-- **DVIRs**: Driver Vehicle Inspection Reports with defect tracking.
-- **Predictions**: AI-generated predictive maintenance insights based on telematics, fault codes, and maintenance history, including similar asset and fleet-wide pattern analysis, and manual knowledge integration.
-- **Estimates**: Detailed maintenance cost estimates with line items, fulfillment tracking, line notes, approval workflow settings (per organization), and conversion to work orders with note transfer.
-- **Telematics Data**: Live display and ingestion of engine diagnostic data.
-- **Fault Codes**: Tracking and display of Diagnostic Trouble Codes.
-- **Barcode/QR Scanning**: Quick lookup for assets, parts, or work orders.
-- **Intelligent Asset Status Automation**: Automated status updates based on real-time conditions.
-- **Parts Fulfillment & Tracking**: Inventory consumption, transaction tracking, and low stock alerts.
-- **Checklist Templates**: Reusable maintenance checklists with AI-powered generation based on make/model and service manuals.
-- **Bulk Data Import**: CSV parsing, field mapping, and detailed error reporting for various data types.
-- **Smart Part Suggestions**: AI-powered and historical data-driven part recommendations for work orders.
-- **Workflow Management**: Dedicated pages for Receiving, Part Requests, Ready for Review (work order approvals), and Reorder Alerts.
-- **Transaction Reversals**: Atomic reversal of inventory and labor transactions.
-- **Part Kits**: Bundling of parts for common maintenance tasks with automatic consumption.
-- **SMART Inventory Classification**: Intelligent classification system using S/A/B/C classes (S=Safety/Compliance, A=High Priority, B=Medium, C=Low) plus X/Y/Z volatility (X=steady demand, Y=moderate, Z=sporadic). Classification scoring combines cost percentile (35%), roadcall impact (35%), and safety factors (30%) with lead time bonuses. Features admin page with classification run history, class breakdown statistics, part filtering, manual overrides with reason tracking, and comprehensive "Why this class?" explanations. Parts can be locked to prevent auto-reclassification.
-- **ABC Classification & Cycle Counting**: Automatic ABC classification of parts for optimized cycle counting schedules and inventory reconciliation.
-- **PM Dues & Batch Work Order Creation**: Tracking PM due dates/meters and batch creation of work orders for multiple PM instances.
-- **Enhanced Dashboard**: KPI metrics (MTTR, MTBF, Asset Uptime %, PM Compliance, Avg Cost/WO), Procurement Overview widget, and Parts Analytics widget.
-- **Multi-User Labor Tracking**: Timer-based labor tracking per technician with hourly rates, start/pause/stop functionality, and calculated labor costs.
-- **Deferred Lines Display**: Visualization of work order lines that have been rescheduled from other work orders.
-- **Notification Center**: In-app notifications with bell icon, unread count badge, real-time polling, priority levels, and entity linking.
-- **Asset Images**: Multiple photo uploads per asset with primary image selection.
-- **Asset Documents**: Document attachments (manuals, warranties, certificates) with expiration tracking.
-- **Asset Lifecycle Tracking**: Lifecycle status (active, disposed, sold, transferred, scrapped), disposition date, salvage value, depreciation tracking.
-- **Batch Meter Updates**: Update meters for multiple assets simultaneously.
-- **Enhanced Parts Fields**: Max quantity, critical flag, and serialization tracking.
-- **Multi-Tenant Architecture**: Organizations with isolated data, user memberships with role-based access (owner/admin/manager/technician/viewer), and plan-based pricing (starter/professional/enterprise with fleet size limits).
-- **Tire Management**: Integrated with parts/inventory system. Parts can be marked as tires (isTire flag) with tire-specific fields (size, DOT code, PSI rating, load index, speed rating, tread depth, brand, model, type). When adding work order lines with tire VMRS codes (17-xxx), the UI displays tire-specific fields: position (LF/RF/LR-O/LR-I/RR-O/RR-I/spare), serial numbers for installed/removed tires, and tread depth measurement. The /tires page shows an inventory-focused view of tire parts with stock levels and low stock alerts.
-- **Messaging System**: In-app direct messages and group conversations with entity tagging, priority levels, and conversation-based threading.
-- **GPS & Location Tracking**: GPS location capture and storage with lat/lng coordinates, speed, heading, and provider integration fields.
-- **Saved Reports**: Custom report definitions with parameters, output formats, and optional scheduling.
-- **Customizable Dashboard**: Drag-and-drop widget layout with persistence, including Tire Health Widget and Parts Usage Analytics.
-- **Bulk DVIR QR Code Printing**: Checkbox selection on assets page for bulk QR code generation, printable 3-column grid layout with vehicle labels.
-- **Enhanced Asset History**: Tabbed interface on asset detail showing work orders, PM schedules, parts consumed, and DVIRs with filtering and navigation.
-- **Part Barcoding**: Auto-generated P-prefixed barcodes (P00000123 format), Code 39 barcode display using Libre Barcode 39 font, and printable labels. Organization-level setting to enable/disable barcode system. When enabled, the system prompts to print barcode labels after receiving goods. Supports multiple label sizes (small/medium/large) for standard barcode printers.
-- **Part Creation from PO Lines**: Ability to create new parts directly from purchase order lines during receiving. Includes "Create Part" button for lines without linked parts, pre-filled form with PO line data, automatic part-to-line linking, and failsafe warning when trying to receive without a linked part.
-- **Custom Asset Fields**: Flexible JSONB-based custom fields for assets with add/edit/remove UI, displayed in both edit and view modes.
-- **Knowledge Base**: Comprehensive help documentation with 20+ articles covering features, API integrations, workflows, and troubleshooting, organized by categories with search functionality.
-- **Shop Labor Rate Calculator**: Client-side utility for managers to calculate optimal shop labor rates. Supports two modes: (1) Fleet/Internal mode for cost centers - calculates true internal cost per hour and compares against external shop rates to show outsourcing savings; (2) Commercial mode - calculates rates including target profit margins. Features AI-assisted overhead cost suggestions based on location/shop size, and ability to pull real technician wage data from the organization's team.
-- **Technician Management**: Dedicated page for managers/admins/owners to view and update technician hourly rates. Rates are used for labor cost calculations in work orders.
-- **VMRS Auto-Assign**: Automatic VMRS code suggestion using keyword matching with confidence scoring (0-1.0). Features vmrs_dictionary table with keyword rules, vmrs_mapping_feedback table for learning from user feedback, abbreviation expansion for common terms, 20+ starter system codes covering HVAC, Brakes, Steering, Suspension, Tires, Electrical, etc. UI page at /vmrs-auto-assign with stats cards, bulk suggestion runner, approval workflow with confidence badges, and alternative suggestions display.
-- **OOS Standards (Out-of-Service Compliance)**: Rules-based inspection engine for CVSA compliance checking. Features oos_sources, oos_rules_versions, oos_rules, oos_inspections, oos_inspection_findings tables. Condition DSL supports AND/OR groups with operators: eq, ne, gt, lt, gte, lte, contains, in, exists. Includes 7 starter CVSA triage rules (brake leaks, tire tread, lamps, driver license/medical cert). UI page at /oos-standards with tabs for Rules, Inspections, and Sources, rule expansion with explanations and condition logic display.
-
-### Multi-Tenant Architecture
-- **Organizations Table**: Stores organization data with name, slug, plan, status, and maxAssets limit.
-- **Org Memberships Table**: Links users to organizations with roles (owner/admin/manager/technician/viewer).
-- **Tenant Scoping**: All tenant-scoped tables have an orgId column. Storage methods filter by orgId.
-- **Tenant Middleware**: Express middleware (server/tenant.ts) that extracts org context from session and adds to request.
-- **Organization Switcher**: UI component in the header for switching between organizations.
-- **Data Isolation**: Routes validate orgId on entity access to prevent cross-tenant data leakage.
-
-#### Multi-Tenant Implementation Status (January 2026)
-**Completed:**
-- Database schema with 30+ tenant-scoped tables (all have orgId column)
-- Tenant middleware pattern: `tenantMiddleware()` for writes, `tenantMiddleware({ required: false })` for reads
-- Major routes tenant-scoped: assets, parts, work orders, locations, vendors, requisitions, POs, estimates, DVIRs, PM schedules, manuals, notifications, predictions, feedback, dashboard
-- Org-scoped storage methods for all major entities including dashboard analytics
-- Organization Settings page with editable name/slug (owners/admins only)
-- Team Member Management with role display and role editing (owners/admins only)
-- Protection against demoting the only organization owner
-- PM due calculation uses pmAssetInstances.nextDueDate within 7-day window
-
-**Storage Layer Methods for Organization Management:**
-- `getOrganization(orgId)` - Get organization by ID
-- `updateOrganization(orgId, data)` - Update organization (validated with updateOrganizationSchema)
-- `getOrgMembers(orgId)` - Get all members with user details
-- `getOrgMembership(orgId, userId)` - Get specific membership
-- `updateOrgMemberRole(membershipId, role)` - Update member role (validated with updateOrgMemberRoleSchema)
-- `countOrgOwners(orgId)` - Count owners (for protection logic)
-- `getSubsidiaryOrgs(parentOrgId)` - Get all subsidiary organizations
-- `setParentOrg(orgId, parentOrgId)` - Link org to parent (validated with setParentOrgSchema)
-- `getOrgsForCorporateAdmin(userId)` - Get all orgs visible to corporate admin
-- `updateMemberCorporateAdmin(orgId, memberId, isCorporateAdmin)` - Set corporate admin status
-- `hasCorporateAdminMembership(userId)` - Check if user has any corporate admin membership
-
-**Parent-Subsidiary Organization Features:**
-- `parentOrgId` field on organizations table for hierarchical relationships
-- `isCorporateAdmin` field on org_memberships for cross-org visibility
-- Circular reference prevention via ancestor chain validation
-- Corporate admins can view parent org and all subsidiaries
-- OrganizationSwitcher only visible to users with multiple orgs or corporate admin role
-- Parent linking requires owner/admin/corporate-admin role on parent organization
-
-**Remaining Work for Complete Isolation:**
-- Helper generators (work order/PO/requisition/estimate numbers) still use unscoped storage
-- Some nested asset routes (images, documents, batch meter updates) need org validation
-- Notification read/dismiss/unread-count endpoints need org membership validation
+### Core Features & Design Principles
+- **Asset Management**: Tracking with status, hierarchy, images, documents, lifecycle, and custom fields.
+- **Work Order Management**: Comprehensive task management, time tracking, parts consumption, status workflows, digital signatures, and batch operations.
+- **Predictive Maintenance**: AI-driven insights from telematics, fault codes, and historical data, including similar asset analysis and manual knowledge integration.
+- **Inventory & Procurement**: Full parts management with reorder points, intelligent classification (SMART, ABC), cycle counting, purchase requisitions, orders, and workflow management.
+- **Scheduling & Inspections**: Interval-based PM schedules and Driver Vehicle Inspection Reports (DVIRs) with defect tracking and bulk QR code printing.
+- **Estimates**: Detailed maintenance cost estimates with approval workflows and conversion to work orders.
+- **Telematics & Diagnostics**: Live display and ingestion of engine diagnostic data and fault codes.
+- **Workflow Automation**: Intelligent asset status updates, smart part suggestions, and transaction reversals.
+- **Checklists**: Reusable templates with AI-powered generation.
+- **Data Handling**: Bulk data import with error reporting, barcode/QR scanning, and part creation from PO lines.
+- **User & Team Management**: Multi-user labor tracking with rates, technician management, and role-based access control.
+- **Notifications**: In-app notification center with priority levels and real-time updates.
+- **Reporting & Dashboards**: Enhanced dashboards with KPI metrics, customizable widgets, and saved reports.
+- **Specialized Modules**: Tire management with tire-specific fields and VMRS auto-assignment for code suggestions.
+- **Out-of-Service (OOS) Compliance**: Rules-based inspection engine for CVSA compliance checking, with configurable rules and integration into checklists.
+- **Multi-Tenant Architecture**:
+    - **Data Isolation**: Organizations have isolated data, managed via `orgId` on all tenant-scoped tables.
+    - **Access Control**: Role-based access (owner/admin/manager/technician/viewer) and plan-based limitations.
+    - **Hierarchy**: Support for parent-subsidiary organizations with `parentOrgId` and `isCorporateAdmin` for cross-org visibility.
+    - **Implementation**: Tenant middleware for request context, organization switcher UI, and robust storage layer methods for managing organizations and memberships.
 
 ## External Dependencies
 
@@ -149,4 +77,3 @@ Preferred communication style: Simple, everyday language.
 ### Utilities
 - **Zod**: Schema validation.
 - **date-fns**: Date manipulation.
-- **class-variance-authority, clsx, tailwind-merge**: Component styling utilities.
