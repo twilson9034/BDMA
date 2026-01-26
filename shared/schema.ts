@@ -1171,6 +1171,7 @@ export const pmSchedules = pgTable("pm_schedules", {
   toleranceValue: integer("tolerance_value"),
   gracePeriodValue: integer("grace_period_value"),
   parentPmId: integer("parent_pm_id"),
+  vmrsCodeId: integer("vmrs_code_id").references(() => vmrsCodes.id),
   estimatedHours: decimal("estimated_hours", { precision: 8, scale: 2 }),
   estimatedCost: decimal("estimated_cost", { precision: 12, scale: 2 }),
   priority: text("priority").default("medium").$type<typeof workOrderPriorityEnum[number]>(),
@@ -1180,12 +1181,15 @@ export const pmSchedules = pgTable("pm_schedules", {
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [
   index("idx_pm_schedules_org").on(table.orgId),
+  index("idx_pm_schedules_vmrs").on(table.vmrsCodeId),
 ]);
 
-export const pmSchedulesRelations = relations(pmSchedules, ({ many }) => ({
+export const pmSchedulesRelations = relations(pmSchedules, ({ one, many }) => ({
+  vmrsCode: one(vmrsCodes, { fields: [pmSchedules.vmrsCodeId], references: [vmrsCodes.id] }),
   assetInstances: many(pmAssetInstances),
   scheduleModels: many(pmScheduleModels),
   scheduleKits: many(pmScheduleKits),
+  scheduleChecklists: many(pmScheduleChecklists),
 }));
 
 export const insertPmScheduleSchema = createInsertSchema(pmSchedules).omit({ id: true, createdAt: true, updatedAt: true });
@@ -2032,6 +2036,29 @@ export const pmScheduleKitModelsRelations = relations(pmScheduleKitModels, ({ on
 export const insertPmScheduleKitModelSchema = createInsertSchema(pmScheduleKitModels).omit({ id: true, createdAt: true });
 export type InsertPmScheduleKitModel = z.infer<typeof insertPmScheduleKitModelSchema>;
 export type PmScheduleKitModel = typeof pmScheduleKitModels.$inferSelect;
+
+// ============================================================
+// PM SCHEDULE CHECKLISTS (Link checklist templates to PM schedules)
+// ============================================================
+export const pmScheduleChecklists = pgTable("pm_schedule_checklists", {
+  id: serial("id").primaryKey(),
+  pmScheduleId: integer("pm_schedule_id").notNull().references(() => pmSchedules.id, { onDelete: "cascade" }),
+  checklistTemplateId: integer("checklist_template_id").notNull().references(() => checklistTemplates.id, { onDelete: "cascade" }),
+  autoSyncModels: boolean("auto_sync_models").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_pm_schedule_checklists_pm").on(table.pmScheduleId),
+  index("idx_pm_schedule_checklists_checklist").on(table.checklistTemplateId),
+]);
+
+export const pmScheduleChecklistsRelations = relations(pmScheduleChecklists, ({ one }) => ({
+  pmSchedule: one(pmSchedules, { fields: [pmScheduleChecklists.pmScheduleId], references: [pmSchedules.id] }),
+  checklistTemplate: one(checklistTemplates, { fields: [pmScheduleChecklists.checklistTemplateId], references: [checklistTemplates.id] }),
+}));
+
+export const insertPmScheduleChecklistSchema = createInsertSchema(pmScheduleChecklists).omit({ id: true, createdAt: true });
+export type InsertPmScheduleChecklist = z.infer<typeof insertPmScheduleChecklistSchema>;
+export type PmScheduleChecklist = typeof pmScheduleChecklists.$inferSelect;
 
 // ============================================================
 // CYCLE COUNTS (Inventory cycle counting)

@@ -5298,6 +5298,90 @@ Example: [{"partNumber": "BP-001", "reason": "Standard brake pads for this model
     }
   });
 
+  // PM Schedule Checklists (link checklist templates to PM schedules)
+  app.get("/api/pm-schedules/:id/checklists", async (req, res) => {
+    try {
+      const checklists = await storage.getPmScheduleChecklists(parseInt(req.params.id));
+      res.json(checklists);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get PM schedule checklists" });
+    }
+  });
+
+  app.post("/api/pm-schedules/:id/checklists", requireAuth, async (req, res) => {
+    try {
+      const pmScheduleId = parseInt(req.params.id);
+      const { checklistTemplateId, autoSyncModels } = req.body;
+      
+      // Create the link
+      const created = await storage.addPmScheduleChecklist({
+        pmScheduleId,
+        checklistTemplateId,
+        autoSyncModels: autoSyncModels ?? true,
+      });
+      
+      // If autoSyncModels is true, sync the PM schedule models to the checklist
+      if (autoSyncModels !== false) {
+        const pmModels = await storage.getPmScheduleModels(pmScheduleId);
+        for (const pmModel of pmModels) {
+          // Check if assignment already exists
+          const existingAssignments = await storage.getChecklistAssignments(checklistTemplateId);
+          const exists = existingAssignments.some(a => 
+            a.manufacturer === pmModel.make && a.model === pmModel.model
+          );
+          if (!exists) {
+            await storage.createChecklistAssignment({
+              checklistTemplateId,
+              manufacturer: pmModel.make,
+              model: pmModel.model,
+            });
+          }
+        }
+      }
+      
+      res.status(201).json(created);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to add checklist to PM schedule" });
+    }
+  });
+
+  app.delete("/api/pm-schedule-checklists/:id", requireAuth, async (req, res) => {
+    try {
+      await storage.deletePmScheduleChecklist(parseInt(req.params.id));
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to remove checklist from PM schedule" });
+    }
+  });
+
+  // Get PM schedule by VMRS code (for WO line auto-population)
+  app.get("/api/pm-schedules/by-vmrs/:vmrsCodeId", tenantMiddleware({ required: false }), async (req, res) => {
+    try {
+      const vmrsCodeId = parseInt(req.params.vmrsCodeId);
+      const orgId = getOrgId(req);
+      const schedule = await storage.getPmScheduleByVmrsCode(vmrsCodeId, orgId || undefined);
+      if (!schedule) {
+        return res.status(404).json({ error: "No PM schedule linked to this VMRS code" });
+      }
+      
+      // Also fetch related data (models, kits, checklists)
+      const [models, kits, checklists] = await Promise.all([
+        storage.getPmScheduleModels(schedule.id),
+        storage.getPmScheduleKits(schedule.id),
+        storage.getPmScheduleChecklists(schedule.id),
+      ]);
+      
+      res.json({
+        schedule,
+        models,
+        kits,
+        checklists,
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get PM schedule by VMRS code" });
+    }
+  });
+
   // ============================================================
   // CYCLE COUNTS
   // ============================================================

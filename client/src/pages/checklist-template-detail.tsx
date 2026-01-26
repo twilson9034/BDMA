@@ -97,7 +97,8 @@ export default function ChecklistTemplateDetail() {
   const [newTask, setNewTask] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
-  const [newAssignment, setNewAssignment] = useState({ manufacturer: "", model: "", assetType: "" });
+  const [selectedAssetModel, setSelectedAssetModel] = useState("");
+  const [newAssetType, setNewAssetType] = useState("");
   
   const templateId = params?.id ? parseInt(params.id) : null;
 
@@ -110,6 +111,18 @@ export default function ChecklistTemplateDetail() {
     queryKey: ["/api/checklist-templates", templateId, "assignments"],
     enabled: !!templateId,
   });
+
+  // Fetch available asset make/models for dropdown
+  const { data: assetMakeModels } = useQuery<Array<{ manufacturer: string; model: string | null; year: number | null }>>({
+    queryKey: ["/api/assets/make-models"],
+  });
+
+  // Filter out make/models that are already assigned
+  const availableAssetModels = (assetMakeModels || []).filter(
+    (am) => !assignments?.some(
+      (a) => a.manufacturer === am.manufacturer && a.model === am.model
+    )
+  );
 
   const form = useForm<TemplateFormValues>({
     resolver: zodResolver(templateFormSchema),
@@ -172,7 +185,7 @@ export default function ChecklistTemplateDetail() {
   });
 
   const createAssignmentMutation = useMutation({
-    mutationFn: async (data: typeof newAssignment) => {
+    mutationFn: async (data: { manufacturer: string; model: string | null; assetType: string | null }) => {
       return apiRequest("POST", `/api/checklist-templates/${templateId}/assignments`, {
         manufacturer: data.manufacturer || null,
         model: data.model || null,
@@ -182,7 +195,8 @@ export default function ChecklistTemplateDetail() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/checklist-templates", templateId, "assignments"] });
       toast({ title: "Assignment Added", description: "Make/model assignment has been added." });
-      setNewAssignment({ manufacturer: "", model: "", assetType: "" });
+      setSelectedAssetModel("");
+      setNewAssetType("");
     },
     onError: () => {
       toast({ title: "Error", description: "Failed to add assignment", variant: "destructive" });
@@ -540,21 +554,29 @@ export default function ChecklistTemplateDetail() {
               </p>
               
               <div className="space-y-2">
-                <Input
-                  placeholder="Manufacturer (e.g., Ford)"
-                  value={newAssignment.manufacturer}
-                  onChange={(e) => setNewAssignment({ ...newAssignment, manufacturer: e.target.value })}
-                  data-testid="input-manufacturer"
-                />
-                <Input
-                  placeholder="Model (e.g., F-150)"
-                  value={newAssignment.model}
-                  onChange={(e) => setNewAssignment({ ...newAssignment, model: e.target.value })}
-                  data-testid="input-model"
-                />
                 <Select 
-                  value={newAssignment.assetType} 
-                  onValueChange={(v) => setNewAssignment({ ...newAssignment, assetType: v })}
+                  value={selectedAssetModel} 
+                  onValueChange={setSelectedAssetModel}
+                >
+                  <SelectTrigger data-testid="select-vehicle-model">
+                    <SelectValue placeholder="Select a vehicle make/model..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableAssetModels
+                      .filter(am => am.model) // Only show assets with both make and model
+                      .map((am) => (
+                        <SelectItem 
+                          key={`${am.manufacturer}||${am.model || ""}||${am.year || ""}`} 
+                          value={`${am.manufacturer}||${am.model || ""}||${am.year || ""}`}
+                        >
+                          {am.manufacturer} {am.model}{am.year ? ` (${am.year})` : ""}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+                <Select 
+                  value={newAssetType} 
+                  onValueChange={setNewAssetType}
                 >
                   <SelectTrigger data-testid="select-asset-type">
                     <SelectValue placeholder="Asset Type (optional)" />
@@ -569,11 +591,24 @@ export default function ChecklistTemplateDetail() {
                 </Select>
                 <Button 
                   className="w-full" 
-                  onClick={() => createAssignmentMutation.mutate(newAssignment)}
-                  disabled={!newAssignment.manufacturer && !newAssignment.model && !newAssignment.assetType}
+                  onClick={() => {
+                    if (selectedAssetModel) {
+                      const [make, model] = selectedAssetModel.split("||");
+                      createAssignmentMutation.mutate({
+                        manufacturer: make,
+                        model: model || null,
+                        assetType: newAssetType || null,
+                      });
+                    }
+                  }}
+                  disabled={!selectedAssetModel || createAssignmentMutation.isPending}
                   data-testid="button-add-assignment"
                 >
-                  <Plus className="h-4 w-4 mr-2" />
+                  {createAssignmentMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Plus className="h-4 w-4 mr-2" />
+                  )}
                   Add Assignment
                 </Button>
               </div>

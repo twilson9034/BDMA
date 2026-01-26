@@ -117,18 +117,44 @@ export default function WorkOrderDetail() {
   // Close line confirmation dialog
   const [showCloseLineConfirm, setShowCloseLineConfirm] = useState<number | null>(null);
   
+  // Linked PM Schedule data for auto-population
+  interface LinkedPmScheduleData {
+    schedule: any;
+    models: any[];
+    kits: any[];
+    checklists: any[];
+  }
+  const [linkedPmData, setLinkedPmData] = useState<LinkedPmScheduleData | null>(null);
+  const [isLoadingPmData, setIsLoadingPmData] = useState(false);
+  
   const isTireVmrsCode = (code: string | undefined): boolean => {
     if (!code) return false;
     const normalized = code.replace(/-/g, "").replace(/^0+/, "");
     return normalized.startsWith("17");
   };
 
-  const handleVmrsCodeSelect = (vmrsCodeId: string) => {
+  const handleVmrsCodeSelect = async (vmrsCodeId: string) => {
     setSelectedVmrsCodeId(vmrsCodeId);
+    setLinkedPmData(null);
+    
     if (vmrsCodeId) {
       const selectedCode = vmrsCodes.find(c => c.id.toString() === vmrsCodeId);
       if (selectedCode) {
         setNewLineDescription(selectedCode.description || selectedCode.title);
+        
+        // Try to fetch linked PM schedule data
+        setIsLoadingPmData(true);
+        try {
+          const response = await fetch(`/api/pm-schedules/by-vmrs/${vmrsCodeId}`);
+          if (response.ok) {
+            const data = await response.json();
+            setLinkedPmData(data);
+          }
+        } catch (error) {
+          // No linked PM schedule - that's okay
+        } finally {
+          setIsLoadingPmData(false);
+        }
       }
     } else {
       setNewLineDescription("");
@@ -1436,6 +1462,49 @@ export default function WorkOrderDetail() {
                   {newLineDescription || "No description available"}
                 </div>
               </div>
+            )}
+
+            {isLoadingPmData && (
+              <div className="p-3 bg-muted/50 rounded-md text-sm flex items-center gap-2">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Checking for linked PM schedule...
+              </div>
+            )}
+
+            {linkedPmData && (
+              <Card className="border-primary/30 bg-primary/5">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <Sparkles className="h-4 w-4 text-primary" />
+                    Linked PM Schedule: {linkedPmData.schedule.name}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2 text-sm">
+                  {linkedPmData.schedule.description && (
+                    <p className="text-muted-foreground">{linkedPmData.schedule.description}</p>
+                  )}
+                  {linkedPmData.kits.length > 0 && (
+                    <div>
+                      <span className="font-medium">Part Kits:</span>{" "}
+                      {linkedPmData.kits.map((kit: any) => kit.partKit?.name || `Kit #${kit.partKitId}`).join(", ")}
+                    </div>
+                  )}
+                  {linkedPmData.checklists.length > 0 && (
+                    <div>
+                      <span className="font-medium">Checklists:</span>{" "}
+                      {linkedPmData.checklists.length} linked checklist(s)
+                    </div>
+                  )}
+                  {linkedPmData.schedule.estimatedHours && (
+                    <div>
+                      <span className="font-medium">Est. Hours:</span> {linkedPmData.schedule.estimatedHours}
+                    </div>
+                  )}
+                  <p className="text-xs text-muted-foreground mt-2">
+                    This VMRS code is linked to a PM schedule. The schedule's parts and checklists will be suggested for this work.
+                  </p>
+                </CardContent>
+              </Card>
             )}
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

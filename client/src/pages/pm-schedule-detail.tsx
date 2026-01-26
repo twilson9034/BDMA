@@ -44,6 +44,7 @@ interface PmSchedule {
   description: string | null;
   intervalType: "days" | "miles" | "hours" | "cycles";
   intervalValue: number;
+  vmrsCodeId: number | null;
   estimatedHours: string | null;
   estimatedCost: string | null;
   priority: string;
@@ -51,6 +52,12 @@ interface PmSchedule {
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+interface VmrsCode {
+  id: number;
+  code: string;
+  title: string;
 }
 
 interface PmAssetInstance {
@@ -197,6 +204,7 @@ const pmFormSchema = z.object({
   description: z.string().optional(),
   intervalType: z.enum(["days", "miles", "hours", "cycles"]),
   intervalValue: z.number().min(1, "Interval must be at least 1"),
+  vmrsCodeId: z.number().optional().nullable(),
   estimatedHours: z.string().optional(),
   estimatedCost: z.string().optional(),
   priority: z.enum(["low", "medium", "high", "critical"]),
@@ -247,6 +255,11 @@ export default function PmScheduleDetail() {
     queryKey: ["/api/part-kits"],
   });
 
+  // All available VMRS codes for linking
+  const { data: vmrsCodes = [] } = useQuery<VmrsCode[]>({
+    queryKey: ["/api/vmrs-codes"],
+  });
+
   // State for adding new model (now using dropdown)
   const [selectedAssetModel, setSelectedAssetModel] = useState<string>("");
 
@@ -263,6 +276,7 @@ export default function PmScheduleDetail() {
       description: "",
       intervalType: "days",
       intervalValue: 30,
+      vmrsCodeId: null,
       estimatedHours: "",
       estimatedCost: "",
       priority: "medium",
@@ -277,6 +291,7 @@ export default function PmScheduleDetail() {
         description: pm.description || "",
         intervalType: pm.intervalType || "days",
         intervalValue: pm.intervalValue || 30,
+        vmrsCodeId: pm.vmrsCodeId || null,
         estimatedHours: pm.estimatedHours || "",
         estimatedCost: pm.estimatedCost || "",
         priority: (pm.priority as any) || "medium",
@@ -608,6 +623,38 @@ export default function PmScheduleDetail() {
                         <FormControl>
                           <Textarea {...field} disabled={!isEditing} rows={3} data-testid="input-description" />
                         </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="vmrsCodeId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>VMRS Code (Optional)</FormLabel>
+                        <Select 
+                          value={field.value?.toString() || ""} 
+                          onValueChange={(v) => field.onChange(v ? parseInt(v) : null)} 
+                          disabled={!isEditing}
+                        >
+                          <FormControl>
+                            <SelectTrigger data-testid="select-vmrs-code">
+                              <SelectValue placeholder="Link to VMRS code..." />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="">No VMRS Code</SelectItem>
+                            {vmrsCodes.map((vmrs) => (
+                              <SelectItem key={vmrs.id} value={vmrs.id.toString()}>
+                                {vmrs.code} - {vmrs.title}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormDescription>
+                          When this VMRS code is added to a work order line, the schedule's linked parts and checklists will be pulled in automatically.
+                        </FormDescription>
                         <FormMessage />
                       </FormItem>
                     )}

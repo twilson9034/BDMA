@@ -38,6 +38,7 @@ import {
   partKits,
   partKitLines,
   pmScheduleKits,
+  pmScheduleChecklists,
   cycleCounts,
   assetImages,
   assetDocuments,
@@ -67,6 +68,8 @@ import {
   type PmScheduleModel,
   type InsertPmScheduleKitModel,
   type PmScheduleKitModel,
+  type InsertPmScheduleChecklist,
+  type PmScheduleChecklist,
   type InsertPmAssetInstance,
   type PmAssetInstance,
   type InsertPurchaseRequisition,
@@ -341,6 +344,12 @@ export interface IStorage {
   getPmScheduleKitModels(pmScheduleKitId: number): Promise<PmScheduleKitModel[]>;
   addPmScheduleKitModel(data: InsertPmScheduleKitModel): Promise<PmScheduleKitModel>;
   deletePmScheduleKitModel(id: number): Promise<void>;
+  
+  // PM Schedule Checklists (link checklist templates to PM schedules)
+  getPmScheduleChecklists(pmScheduleId: number): Promise<PmScheduleChecklist[]>;
+  addPmScheduleChecklist(data: InsertPmScheduleChecklist): Promise<PmScheduleChecklist>;
+  deletePmScheduleChecklist(id: number): Promise<void>;
+  getPmScheduleByVmrsCode(vmrsCodeId: number, orgId?: number): Promise<PmSchedule | undefined>;
   
   // PM Asset Instances
   getPmAssetInstances(): Promise<PmAssetInstance[]>;
@@ -1354,6 +1363,27 @@ export class DatabaseStorage implements IStorage {
 
   async deletePmScheduleKitModel(id: number): Promise<void> {
     await db.delete(pmScheduleKitModels).where(eq(pmScheduleKitModels.id, id));
+  }
+
+  // PM Schedule Checklists
+  async getPmScheduleChecklists(pmScheduleId: number): Promise<PmScheduleChecklist[]> {
+    return db.select().from(pmScheduleChecklists).where(eq(pmScheduleChecklists.pmScheduleId, pmScheduleId));
+  }
+
+  async addPmScheduleChecklist(data: InsertPmScheduleChecklist): Promise<PmScheduleChecklist> {
+    const [result] = await db.insert(pmScheduleChecklists).values(data).returning();
+    return result;
+  }
+
+  async deletePmScheduleChecklist(id: number): Promise<void> {
+    await db.delete(pmScheduleChecklists).where(eq(pmScheduleChecklists.id, id));
+  }
+
+  async getPmScheduleByVmrsCode(vmrsCodeId: number, orgId?: number): Promise<PmSchedule | undefined> {
+    const conditions = [eq(pmSchedules.vmrsCodeId, vmrsCodeId)];
+    if (orgId) conditions.push(eq(pmSchedules.orgId, orgId));
+    const [result] = await db.select().from(pmSchedules).where(and(...conditions));
+    return result;
   }
 
   // PM Asset Instances
