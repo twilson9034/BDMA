@@ -122,7 +122,11 @@ export default function BulkImportPage() {
 
   const { data: importJobs = [], refetch } = useQuery<ImportJob[]>({
     queryKey: ["/api/import-jobs"],
-    refetchInterval: 5000,
+    refetchInterval: (query) => {
+      const jobs = query.state.data as ImportJob[] | undefined;
+      const hasActiveJob = jobs?.some(j => j.status === "pending" || j.status === "processing");
+      return hasActiveJob ? 5000 : false;
+    },
   });
   
   const { data: selectedJobDetails } = useQuery<ImportJob>({

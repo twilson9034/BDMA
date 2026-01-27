@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Bell, Check, CheckCheck, X, AlertCircle, Wrench, Package, Truck, Activity, Clock } from "lucide-react";
+import { useEventSource } from "@/hooks/use-event-source";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -53,9 +54,10 @@ const getPriorityColor = (priority: string) => {
 export function NotificationBell() {
   const [open, setOpen] = useState(false);
 
+  useEventSource("notifications");
+
   const { data: countData } = useQuery<{ count: number }>({
     queryKey: ["/api/notifications/unread-count"],
-    refetchInterval: 30000,
   });
 
   const { data: notifications, isLoading } = useQuery<Notification[]>({

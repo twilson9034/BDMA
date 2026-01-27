@@ -40,6 +40,7 @@ import { tenantMiddleware, getUserOrgMemberships, getOrgId } from "./tenant";
 import { organizations, orgMemberships, insertOrganizationSchema, insertOrgMembershipSchema, updateOrganizationSchema, updateOrgMemberRoleSchema, setParentOrgSchema, updateCorporateAdminSchema, tires, insertTireSchema, conversations, messages, insertConversationSchema, insertMessageSchema, savedReports, insertSavedReportSchema, gpsLocations, insertGpsLocationSchema, tireReplacementSettings, insertTireReplacementSettingSchema, publicAssetTokens, insertPublicAssetTokenSchema, insertPmScheduleModelSchema, insertPmScheduleKitModelSchema } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, or, isNull } from "drizzle-orm";
+import { appEvents } from "./events";
 import { users, oosRulesVersions, oosInspections, oosSources, insertOosInspectionSchema } from "@shared/schema";
 
 function requireAuth(req: Request, res: Response, next: NextFunction) {
@@ -158,6 +159,40 @@ export async function registerRoutes(
     } else {
       res.json(null);
     }
+  });
+
+  // Server-Sent Events endpoint for real-time updates
+  app.get("/api/events", requireAuth, tenantMiddleware(), (req, res) => {
+    const orgId = req.tenant?.orgId;
+    if (!orgId) {
+      return res.status(403).json({ error: "No organization context" });
+    }
+
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      "Connection": "keep-alive",
+      "X-Accel-Buffering": "no",
+    });
+
+    res.write(`data: ${JSON.stringify({ type: "connected", timestamp: Date.now() })}\n\n`);
+
+    const clientId = `${orgId}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    appEvents.addClient(clientId, orgId, res);
+
+    const heartbeat = setInterval(() => {
+      try {
+        res.write(`: heartbeat\n\n`);
+      } catch (e) {
+        clearInterval(heartbeat);
+        appEvents.removeClient(clientId);
+      }
+    }, 30000);
+
+    req.on("close", () => {
+      clearInterval(heartbeat);
+      appEvents.removeClient(clientId);
+    });
   });
 
   // Organization management endpoints
@@ -1101,6 +1136,8 @@ export async function registerRoutes(
       const orgId = getOrgId(req);
       const validated = insertAssetSchema.parse(req.body);
       const asset = await storage.createAsset({ ...validated, orgId });
+      if (orgId) appEvents.broadcast("assets", orgId);
+      if (orgId) appEvents.broadcast("dashboard", orgId);
       res.status(201).json(asset);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -1123,6 +1160,8 @@ export async function registerRoutes(
       
       const updated = await storage.updateAsset(parseInt(req.params.id), data);
       if (!updated) return res.status(404).json({ error: "Asset not found" });
+      if (updated.orgId) appEvents.broadcast("assets", updated.orgId);
+      if (updated.orgId) appEvents.broadcast("dashboard", updated.orgId);
       res.json(updated);
     } catch (error) {
       console.error("Failed to update asset:", error);
@@ -1905,6 +1944,8 @@ export async function registerRoutes(
         title: req.body.title || autoTitle,
       });
       const wo = await storage.createWorkOrder({ ...validated, orgId });
+      if (orgId) appEvents.broadcast("workorders", orgId);
+      if (orgId) appEvents.broadcast("dashboard", orgId);
       res.status(201).json(wo);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -1918,6 +1959,8 @@ export async function registerRoutes(
     try {
       const updated = await storage.updateWorkOrder(parseInt(req.params.id), req.body);
       if (!updated) return res.status(404).json({ error: "Work order not found" });
+      if (updated.orgId) appEvents.broadcast("workorders", updated.orgId);
+      if (updated.orgId) appEvents.broadcast("dashboard", updated.orgId);
       res.json(updated);
     } catch (error) {
       res.status(500).json({ error: "Failed to update work order" });
@@ -3011,6 +3054,7 @@ export async function registerRoutes(
       });
       
       const notification = await storage.createNotification({ ...validated, orgId });
+      if (orgId) appEvents.broadcast("notifications", orgId);
       res.status(201).json(notification);
     } catch (error) {
       if (error instanceof z.ZodError) {
