@@ -1,5 +1,6 @@
 import { eq, desc, sql, and, or, lt, lte, isNull, isNotNull, inArray } from "drizzle-orm";
 import { db } from "./db";
+import { dataCache, cacheKey } from "./cache";
 import {
   users,
   locations,
@@ -886,11 +887,13 @@ export class DatabaseStorage implements IStorage {
 
   async createLocation(location: InsertLocation): Promise<Location> {
     const [created] = await db.insert(locations).values(location).returning();
+    if (created.orgId) dataCache.invalidate(cacheKey("locations", created.orgId));
     return created;
   }
 
   async updateLocation(id: number, location: Partial<InsertLocation>): Promise<Location | undefined> {
     const [updated] = await db.update(locations).set({ ...location, updatedAt: new Date() }).where(eq(locations.id, id)).returning();
+    if (updated?.orgId) dataCache.invalidate(cacheKey("locations", updated.orgId));
     return updated;
   }
 
@@ -1177,11 +1180,13 @@ export class DatabaseStorage implements IStorage {
 
   async createVendor(vendor: InsertVendor): Promise<Vendor> {
     const [created] = await db.insert(vendors).values(vendor).returning();
+    if (created.orgId) dataCache.invalidate(cacheKey("vendors", created.orgId));
     return created;
   }
 
   async updateVendor(id: number, vendor: Partial<InsertVendor>): Promise<Vendor | undefined> {
     const [updated] = await db.update(vendors).set({ ...vendor, updatedAt: new Date() }).where(eq(vendors.id, id)).returning();
+    if (updated?.orgId) dataCache.invalidate(cacheKey("vendors", updated.orgId));
     return updated;
   }
 
@@ -1357,11 +1362,13 @@ export class DatabaseStorage implements IStorage {
 
   async createPmSchedule(schedule: InsertPmSchedule): Promise<PmSchedule> {
     const [created] = await db.insert(pmSchedules).values(schedule).returning();
+    if (created.orgId) dataCache.invalidate(cacheKey("pmSchedules", created.orgId));
     return created;
   }
 
   async updatePmSchedule(id: number, schedule: Partial<InsertPmSchedule>): Promise<PmSchedule | undefined> {
     const [updated] = await db.update(pmSchedules).set({ ...schedule, updatedAt: new Date() }).where(eq(pmSchedules.id, id)).returning();
+    if (updated?.orgId) dataCache.invalidate(cacheKey("pmSchedules", updated.orgId));
     return updated;
   }
 
@@ -3012,15 +3019,33 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getLocationsByOrg(orgId: number): Promise<Location[]> {
-    return db.select().from(locations).where(eq(locations.orgId, orgId)).orderBy(locations.name);
+    const key = cacheKey("locations", orgId);
+    const cached = dataCache.get<Location[]>(key);
+    if (cached) return cached;
+    
+    const result = await db.select().from(locations).where(eq(locations.orgId, orgId)).orderBy(locations.name);
+    dataCache.set(key, result, 10 * 60 * 1000); // Cache for 10 minutes
+    return result;
   }
 
   async getVendorsByOrg(orgId: number): Promise<Vendor[]> {
-    return db.select().from(vendors).where(eq(vendors.orgId, orgId)).orderBy(vendors.name);
+    const key = cacheKey("vendors", orgId);
+    const cached = dataCache.get<Vendor[]>(key);
+    if (cached) return cached;
+    
+    const result = await db.select().from(vendors).where(eq(vendors.orgId, orgId)).orderBy(vendors.name);
+    dataCache.set(key, result, 10 * 60 * 1000); // Cache for 10 minutes
+    return result;
   }
 
   async getPmSchedulesByOrg(orgId: number): Promise<PmSchedule[]> {
-    return db.select().from(pmSchedules).where(eq(pmSchedules.orgId, orgId)).orderBy(pmSchedules.name);
+    const key = cacheKey("pmSchedules", orgId);
+    const cached = dataCache.get<PmSchedule[]>(key);
+    if (cached) return cached;
+    
+    const result = await db.select().from(pmSchedules).where(eq(pmSchedules.orgId, orgId)).orderBy(pmSchedules.name);
+    dataCache.set(key, result, 10 * 60 * 1000); // Cache for 10 minutes
+    return result;
   }
 
   async getRequisitionsByOrg(orgId: number): Promise<PurchaseRequisition[]> {
