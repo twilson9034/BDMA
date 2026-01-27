@@ -23,6 +23,7 @@ Preferred communication style: Simple, everyday language.
 - **Database Interaction**: Drizzle ORM
 - **Authentication**: Replit Auth (OpenID Connect)
 - **API Design**: RESTful endpoints
+- **Real-time Updates**: Server-Sent Events (SSE) via `/api/events` endpoint
 - **Build**: esbuild
 
 ### Shared Code
@@ -40,7 +41,7 @@ Centralized database schema definitions, TypeScript types, and Zod validation sc
 - **Checklists**: Reusable templates with AI-powered generation.
 - **Data Handling**: Bulk data import with error reporting, barcode/QR scanning, and part creation from PO lines.
 - **User & Team Management**: Multi-user labor tracking with rates, technician management, and role-based access control.
-- **Notifications**: In-app notification center with priority levels and real-time updates.
+- **Notifications**: In-app notification center with priority levels and real-time updates via Server-Sent Events (SSE).
 - **Reporting & Dashboards**: Enhanced dashboards with KPI metrics, customizable widgets, and saved reports.
 - **Specialized Modules**: Tire management with tire-specific fields and VMRS auto-assignment for code suggestions.
 - **Out-of-Service (OOS) Compliance**: Rules-based inspection engine for CVSA compliance checking, with configurable rules and integration into checklists.
