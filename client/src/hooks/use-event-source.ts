@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef } from "react";
 import { queryClient } from "@/lib/queryClient";
 
 type EventType = 
@@ -22,6 +22,9 @@ type EventHandler = (event: SSEMessage) => void;
 const eventHandlers = new Map<EventType, Set<EventHandler>>();
 let eventSource: EventSource | null = null;
 let connectionAttempts = 0;
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let isConnecting = false;
+const MAX_RECONNECT_ATTEMPTS = 5;
 const MAX_RECONNECT_DELAY = 30000;
 
 function getReconnectDelay(): number {
@@ -30,10 +33,19 @@ function getReconnectDelay(): number {
 
 function connect(): void {
   if (eventSource?.readyState === EventSource.OPEN) return;
+  if (eventSource?.readyState === EventSource.CONNECTING) return;
+  if (isConnecting) return;
   
+  if (connectionAttempts >= MAX_RECONNECT_ATTEMPTS) {
+    console.log("[SSE] Max reconnection attempts reached, stopping");
+    return;
+  }
+  
+  isConnecting = true;
   eventSource = new EventSource("/api/events", { withCredentials: true });
   
   eventSource.onopen = () => {
+    isConnecting = false;
     connectionAttempts = 0;
     console.log("[SSE] Connected");
   };
@@ -56,11 +68,18 @@ function connect(): void {
   };
   
   eventSource.onerror = () => {
-    console.log("[SSE] Connection error, reconnecting...");
+    isConnecting = false;
     eventSource?.close();
     eventSource = null;
     connectionAttempts++;
-    setTimeout(connect, getReconnectDelay());
+    
+    if (connectionAttempts < MAX_RECONNECT_ATTEMPTS) {
+      const delay = getReconnectDelay();
+      console.log(`[SSE] Connection error, reconnecting in ${delay}ms (attempt ${connectionAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
+      reconnectTimer = setTimeout(connect, delay);
+    } else {
+      console.log("[SSE] Max reconnection attempts reached");
+    }
   };
 }
 
@@ -98,8 +117,19 @@ function invalidateQueriesForEvent(eventType: EventType): void {
 }
 
 function disconnect(): void {
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
   eventSource?.close();
   eventSource = null;
+  isConnecting = false;
+}
+
+function resetConnection(): void {
+  connectionAttempts = 0;
+  disconnect();
+  connect();
 }
 
 function subscribe(eventType: EventType, handler: EventHandler): () => void {
@@ -153,3 +183,5 @@ export function useSSEConnection(): void {
     return () => {};
   }, []);
 }
+
+export { resetConnection };

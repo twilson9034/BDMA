@@ -162,12 +162,9 @@ export async function registerRoutes(
   });
 
   // Server-Sent Events endpoint for real-time updates
-  app.get("/api/events", requireAuth, tenantMiddleware(), (req, res) => {
+  app.get("/api/events", requireAuth, tenantMiddleware({ required: false }), (req, res) => {
     const orgId = req.tenant?.orgId;
-    if (!orgId) {
-      return res.status(403).json({ error: "No organization context" });
-    }
-
+    
     res.writeHead(200, {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
@@ -177,21 +174,25 @@ export async function registerRoutes(
 
     res.write(`data: ${JSON.stringify({ type: "connected", timestamp: Date.now() })}\n\n`);
 
-    const clientId = `${orgId}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    appEvents.addClient(clientId, orgId, res);
+    const userId = (req.user as any)?.claims?.sub || "anonymous";
+    const clientId = `${orgId || "no-org"}-${userId}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    
+    if (orgId) {
+      appEvents.addClient(clientId, orgId, res);
+    }
 
     const heartbeat = setInterval(() => {
       try {
         res.write(`: heartbeat\n\n`);
       } catch (e) {
         clearInterval(heartbeat);
-        appEvents.removeClient(clientId);
+        if (orgId) appEvents.removeClient(clientId);
       }
     }, 30000);
 
     req.on("close", () => {
       clearInterval(heartbeat);
-      appEvents.removeClient(clientId);
+      if (orgId) appEvents.removeClient(clientId);
     });
   });
 
