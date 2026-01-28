@@ -330,6 +330,10 @@ export interface IStorage {
   getNextWorkOrderLineNumber(workOrderId: number): Promise<number>;
   requestPartForLine(lineId: number, partId: number, quantity: number): Promise<void>;
   
+  // Work Order Transactions (parts usage, labor)
+  getWorkOrderTransactions(workOrderId: number): Promise<WorkOrderTransaction[]>;
+  createWorkOrderTransaction(transaction: InsertWorkOrderTransaction): Promise<WorkOrderTransaction>;
+  
   // PM Schedules
   getPmSchedules(): Promise<PmSchedule[]>;
   getPmSchedule(id: number): Promise<PmSchedule | undefined>;
@@ -1348,6 +1352,16 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(workOrderLines.lineNumber))
       .limit(1);
     return lines.length > 0 ? lines[0].lineNumber + 1 : 1;
+  }
+
+  // Work Order Transactions (parts usage, labor)
+  async getWorkOrderTransactions(workOrderId: number): Promise<WorkOrderTransaction[]> {
+    return db.select().from(workOrderTransactions).where(eq(workOrderTransactions.workOrderId, workOrderId)).orderBy(workOrderTransactions.createdAt);
+  }
+
+  async createWorkOrderTransaction(transaction: InsertWorkOrderTransaction): Promise<WorkOrderTransaction> {
+    const [created] = await db.insert(workOrderTransactions).values(transaction).returning();
+    return created;
   }
 
   // PM Schedules

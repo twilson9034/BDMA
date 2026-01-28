@@ -840,7 +840,7 @@ export async function registerRoutes(
       const existingVendors = await storage.getVendorsByOrg(orgId);
       const existingLocations = await storage.getLocationsByOrg(orgId);
 
-      const results = { workOrders: 0, workOrderLines: 0, dvirs: 0, predictions: 0, purchaseOrders: 0, purchaseOrderLines: 0 };
+      const results = { workOrders: 0, workOrderLines: 0, partsUsed: 0, laborEntries: 0, dvirs: 0, predictions: 0, purchaseOrders: 0, purchaseOrderLines: 0 };
       const now = new Date();
 
       // Technician names for labor tracking
@@ -928,8 +928,10 @@ export async function registerRoutes(
         for (let j = 0; j < lineCount; j++) {
           const vmrs = vmrsCodes[Math.floor(Math.random() * vmrsCodes.length)];
           const lineStatus = status === "completed" ? "completed" : lineStatuses[Math.floor(Math.random() * lineStatuses.length)];
+          const laborHrs = (Math.random() * 2 + 0.25);
+          const laborRate = 75;
           
-          await storage.createWorkOrderLine({
+          const line = await storage.createWorkOrderLine({
             workOrderId: wo.id,
             lineNumber: j + 1,
             description: vmrs.title,
@@ -939,13 +941,56 @@ export async function registerRoutes(
             complaint: j === 0 ? `Customer reported issue with ${vmrs.title.toLowerCase()}` : null,
             cause: lineStatus === "completed" ? "Normal wear and tear" : null,
             correction: lineStatus === "completed" ? `Completed ${vmrs.title.toLowerCase()} as per manufacturer specifications` : null,
-            laborHours: lineStatus === "completed" ? String((Math.random() * 2 + 0.25).toFixed(2)) : null,
-            laborRate: "75.00",
-            laborCost: lineStatus === "completed" ? String((Math.random() * 150 + 25).toFixed(2)) : null,
+            laborHours: lineStatus === "completed" ? String(laborHrs.toFixed(2)) : null,
+            laborRate: String(laborRate.toFixed(2)),
+            laborCost: lineStatus === "completed" ? String((laborHrs * laborRate).toFixed(2)) : null,
             partsCost: existingParts.length > 0 && Math.random() > 0.5 ? String((Math.random() * 200 + 10).toFixed(2)) : null,
             totalCost: lineStatus === "completed" ? String((Math.random() * 300 + 50).toFixed(2)) : null,
           });
           results.workOrderLines++;
+
+          // Add parts usage transactions for completed lines (70% chance)
+          if (lineStatus === "completed" && existingParts.length > 0 && Math.random() > 0.3) {
+            const partsToUse = Math.floor(Math.random() * 3) + 1; // 1-3 parts per line
+            for (let k = 0; k < partsToUse; k++) {
+              const part = existingParts[Math.floor(Math.random() * existingParts.length)];
+              const qty = Math.floor(Math.random() * 3) + 1;
+              const unitCost = Number(part.unitCost) || (Math.random() * 50 + 5);
+              
+              await storage.createWorkOrderTransaction({
+                workOrderId: wo.id,
+                workOrderLineId: line.id,
+                type: "part_consumption",
+                partId: part.id,
+                quantity: String(qty),
+                unitCost: String(unitCost.toFixed(4)),
+                totalCost: String((qty * unitCost).toFixed(2)),
+                description: `Used ${qty} x ${part.name} (${part.partNumber})`,
+                performedById: technician.id,
+              });
+              results.partsUsed++;
+            }
+          }
+
+          // Add labor entry for in-progress or completed lines
+          if ((lineStatus === "completed" || lineStatus === "in_progress") && Math.random() > 0.4) {
+            const laborStartTime = new Date(startDate.getTime() + Math.random() * 4 * 60 * 60 * 1000);
+            const laborEndTime = lineStatus === "completed" 
+              ? new Date(laborStartTime.getTime() + laborHrs * 60 * 60 * 1000)
+              : null;
+            
+            await storage.createLaborEntry({
+              workOrderId: wo.id,
+              workOrderLineId: line.id,
+              userId: technician.id,
+              status: lineStatus === "completed" ? "completed" : "running",
+              startTime: laborStartTime,
+              endTime: laborEndTime,
+              hourlyRate: String(laborRate.toFixed(2)),
+              notes: `Labor for ${vmrs.title}`,
+            });
+            results.laborEntries++;
+          }
         }
       }
 
@@ -1077,7 +1122,7 @@ export async function registerRoutes(
       }
 
       const summary = [
-        `${results.workOrders} work orders (${results.workOrderLines} lines)`,
+        `${results.workOrders} work orders (${results.workOrderLines} lines, ${results.partsUsed} parts used, ${results.laborEntries} labor entries)`,
         `${results.dvirs} DVIRs`,
         `${results.predictions} predictions`,
         results.purchaseOrders > 0 ? `${results.purchaseOrders} purchase orders (${results.purchaseOrderLines} lines)` : null,
