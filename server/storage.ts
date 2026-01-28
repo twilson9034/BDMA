@@ -3320,7 +3320,11 @@ export class DatabaseStorage implements IStorage {
       const [partCount] = await db.select({ count: sql<number>`count(*)::int` }).from(parts).where(eq(parts.orgId, orgId));
       const [dvirCount] = await db.select({ count: sql<number>`count(*)::int` }).from(dvirs).where(eq(dvirs.orgId, orgId));
       const [pmCount] = await db.select({ count: sql<number>`count(*)::int` }).from(pmSchedules).where(eq(pmSchedules.orgId, orgId));
-      const [docCount] = await db.select({ count: sql<number>`count(*)::int` }).from(documents).where(eq(documents.orgId, orgId));
+      // Count documents through assets (assetDocuments doesn't have orgId directly)
+      const [docCount] = await db.select({ count: sql<number>`count(*)::int` })
+        .from(assetDocuments)
+        .innerJoin(assets, eq(assetDocuments.assetId, assets.id))
+        .where(eq(assets.orgId, orgId));
       
       return {
         assets: assetCount?.count || 0,
@@ -3336,7 +3340,7 @@ export class DatabaseStorage implements IStorage {
       const [partCount] = await db.select({ count: sql<number>`count(*)::int` }).from(parts);
       const [dvirCount] = await db.select({ count: sql<number>`count(*)::int` }).from(dvirs);
       const [pmCount] = await db.select({ count: sql<number>`count(*)::int` }).from(pmSchedules);
-      const [docCount] = await db.select({ count: sql<number>`count(*)::int` }).from(documents);
+      const [docCount] = await db.select({ count: sql<number>`count(*)::int` }).from(assetDocuments);
       
       return {
         assets: assetCount?.count || 0,
