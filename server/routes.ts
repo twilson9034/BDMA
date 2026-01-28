@@ -810,11 +810,12 @@ export async function registerRoutes(
     }
   });
 
-  // Seed test data endpoint
+  // Seed test data endpoint - comprehensive CMMS simulation
   const seedTestDataSchema = z.object({
-    workOrders: z.number().min(0).max(100).default(20),
-    dvirs: z.number().min(0).max(100).default(15),
-    predictions: z.number().min(0).max(50).default(10),
+    workOrders: z.number().min(0).max(100).default(30),
+    dvirs: z.number().min(0).max(100).default(25),
+    predictions: z.number().min(0).max(50).default(15),
+    purchaseOrders: z.number().min(0).max(50).default(10),
   });
 
   app.post("/api/admin/seed-test-data", requireAuth, tenantMiddleware({ required: true }), async (req, res) => {
@@ -828,28 +829,58 @@ export async function registerRoutes(
       if (!parsed.success) {
         return res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() });
       }
-      const { workOrders: woCount, dvirs: dvirCount, predictions: predCount } = parsed.data;
+      const { workOrders: woCount, dvirs: dvirCount, predictions: predCount, purchaseOrders: poCount } = parsed.data;
 
-      // Get existing assets for the org to link test data
+      // Get existing data for the org to link test data
       const existingAssets = await storage.getAssets(orgId);
       if (existingAssets.length === 0) {
         return res.status(400).json({ error: "No assets found. Create some assets first." });
       }
+      const existingParts = await storage.getPartsByOrg(orgId);
+      const existingVendors = await storage.getVendorsByOrg(orgId);
+      const existingLocations = await storage.getLocationsByOrg(orgId);
 
-      const results = { workOrders: 0, dvirs: 0, predictions: 0 };
+      const results = { workOrders: 0, workOrderLines: 0, dvirs: 0, predictions: 0, purchaseOrders: 0, purchaseOrderLines: 0 };
       const now = new Date();
+
+      // Technician names for labor tracking
+      const technicians = [
+        { id: "tech-001", name: "John Smith" },
+        { id: "tech-002", name: "Maria Garcia" },
+        { id: "tech-003", name: "David Lee" },
+        { id: "tech-004", name: "Sarah Johnson" },
+        { id: "tech-005", name: "Mike Brown" },
+      ];
 
       // Work Order types and priorities
       const woTypes = ["corrective", "preventive", "inspection", "emergency"] as const;
       const woPriorities = ["low", "medium", "high", "critical"] as const;
       const woStatuses = ["open", "in_progress", "on_hold", "completed"] as const;
+      const lineStatuses = ["pending", "in_progress", "completed"] as const;
 
-      // Generate work orders with varying dates (past 90 days)
+      // VMRS codes for work order lines (common maintenance tasks)
+      const vmrsCodes = [
+        { code: "013-001-001", title: "Engine Oil Change" },
+        { code: "013-002-001", title: "Oil Filter Replacement" },
+        { code: "042-001-001", title: "Brake Pad Inspection" },
+        { code: "042-002-001", title: "Brake Adjustment" },
+        { code: "017-001-001", title: "Air Filter Service" },
+        { code: "041-001-001", title: "Tire Rotation" },
+        { code: "041-002-001", title: "Tire Pressure Check" },
+        { code: "015-001-001", title: "Coolant Flush" },
+        { code: "044-001-001", title: "Steering Inspection" },
+        { code: "032-001-001", title: "Battery Service" },
+        { code: "043-001-001", title: "Suspension Check" },
+        { code: "045-001-001", title: "Electrical Diagnostic" },
+      ];
+
+      // Generate work orders with lines (past 90 days)
       for (let i = 0; i < woCount; i++) {
         const daysAgo = Math.floor(Math.random() * 90);
         const asset = existingAssets[Math.floor(Math.random() * existingAssets.length)];
         const startDate = new Date(now.getTime() - daysAgo * 24 * 60 * 60 * 1000);
         const status = woStatuses[Math.floor(Math.random() * woStatuses.length)];
+        const technician = technicians[Math.floor(Math.random() * technicians.length)];
         
         const titles = [
           "Engine oil change and filter replacement",
@@ -867,22 +898,55 @@ export async function registerRoutes(
           "Steering system check",
           "Exhaust system inspection",
           "HVAC system service",
+          "DOT annual inspection",
+          "Pre-trip inspection follow-up",
+          "Emergency road call repair",
         ];
 
-        await storage.createWorkOrder({
+        const wo = await storage.createWorkOrder({
           orgId,
           assetId: asset.id,
-          workOrderNumber: `WO-TEST-${Date.now()}-${i}`,
+          locationId: existingLocations.length > 0 ? existingLocations[Math.floor(Math.random() * existingLocations.length)].id : null,
+          assignedToId: technician.id,
+          workOrderNumber: `WO-${now.getFullYear()}-${String(i + 1000).slice(-4)}`,
           title: titles[Math.floor(Math.random() * titles.length)],
-          description: `Test work order generated for ${asset.name}`,
+          description: `Maintenance work order for ${asset.name} - ${asset.assetNumber || 'N/A'}`,
           type: woTypes[Math.floor(Math.random() * woTypes.length)],
           priority: woPriorities[Math.floor(Math.random() * woPriorities.length)],
           status,
-          startDate, // Use varying start dates for realistic date spread
+          startDate,
           dueDate: status === "completed" ? null : new Date(startDate.getTime() + (Math.random() * 30 + 7) * 24 * 60 * 60 * 1000),
           completedDate: status === "completed" ? new Date(startDate.getTime() + Math.random() * 7 * 24 * 60 * 60 * 1000) : null,
+          estimatedHours: String((Math.random() * 4 + 0.5).toFixed(1)),
+          actualHours: status === "completed" ? String((Math.random() * 5 + 0.5).toFixed(1)) : null,
+          meterReading: asset.currentMeterReading ? String(Number(asset.currentMeterReading) + Math.floor(Math.random() * 1000)) : null,
         });
         results.workOrders++;
+
+        // Generate 1-4 work order lines per work order
+        const lineCount = Math.floor(Math.random() * 4) + 1;
+        for (let j = 0; j < lineCount; j++) {
+          const vmrs = vmrsCodes[Math.floor(Math.random() * vmrsCodes.length)];
+          const lineStatus = status === "completed" ? "completed" : lineStatuses[Math.floor(Math.random() * lineStatuses.length)];
+          
+          await storage.createWorkOrderLine({
+            workOrderId: wo.id,
+            lineNumber: j + 1,
+            description: vmrs.title,
+            status: lineStatus,
+            vmrsCode: vmrs.code,
+            vmrsTitle: vmrs.title,
+            complaint: j === 0 ? `Customer reported issue with ${vmrs.title.toLowerCase()}` : null,
+            cause: lineStatus === "completed" ? "Normal wear and tear" : null,
+            correction: lineStatus === "completed" ? `Completed ${vmrs.title.toLowerCase()} as per manufacturer specifications` : null,
+            laborHours: lineStatus === "completed" ? String((Math.random() * 2 + 0.25).toFixed(2)) : null,
+            laborRate: "75.00",
+            laborCost: lineStatus === "completed" ? String((Math.random() * 150 + 25).toFixed(2)) : null,
+            partsCost: existingParts.length > 0 && Math.random() > 0.5 ? String((Math.random() * 200 + 10).toFixed(2)) : null,
+            totalCost: lineStatus === "completed" ? String((Math.random() * 300 + 50).toFixed(2)) : null,
+          });
+          results.workOrderLines++;
+        }
       }
 
       // Generate DVIRs with varying dates (past 60 days)
@@ -960,9 +1024,68 @@ export async function registerRoutes(
         results.predictions++;
       }
 
+      // Generate purchase orders if vendors exist
+      if (existingVendors.length > 0 && existingParts.length > 0 && poCount > 0) {
+        const poStatuses = ["draft", "submitted", "approved", "ordered", "partially_received", "received", "cancelled"] as const;
+        
+        for (let i = 0; i < poCount; i++) {
+          const daysAgo = Math.floor(Math.random() * 60);
+          const vendor = existingVendors[Math.floor(Math.random() * existingVendors.length)];
+          const orderDate = new Date(now.getTime() - daysAgo * 24 * 60 * 60 * 1000);
+          const status = poStatuses[Math.floor(Math.random() * poStatuses.length)];
+          
+          const po = await storage.createPurchaseOrder({
+            orgId,
+            poNumber: `PO-${now.getFullYear()}-${String(i + 1000).slice(-4)}`,
+            vendorId: vendor.id,
+            status,
+            orderDate,
+            expectedDeliveryDate: new Date(orderDate.getTime() + (Math.random() * 14 + 3) * 24 * 60 * 60 * 1000),
+            notes: `Purchase order for maintenance supplies from ${vendor.name}`,
+          });
+          results.purchaseOrders++;
+
+          // Add 1-5 lines per PO
+          const lineCount = Math.floor(Math.random() * 5) + 1;
+          let totalAmount = 0;
+          
+          for (let j = 0; j < lineCount; j++) {
+            const part = existingParts[Math.floor(Math.random() * existingParts.length)];
+            const qty = Math.floor(Math.random() * 10) + 1;
+            const unitCost = Number(part.unitCost) || (Math.random() * 100 + 10);
+            const lineCost = qty * unitCost;
+            totalAmount += lineCost;
+            
+            const qtyReceived = status === "received" ? qty : 
+                               status === "partially_received" ? Math.floor(qty * Math.random()) : 0;
+            
+            await storage.createPurchaseOrderLine({
+              poId: po.id,
+              partId: part.id,
+              description: `${part.name} - ${part.partNumber}`,
+              quantityOrdered: String(qty),
+              quantityReceived: String(qtyReceived),
+              unitCost: String(unitCost.toFixed(4)),
+              totalCost: String(lineCost.toFixed(2)),
+            });
+            results.purchaseOrderLines++;
+          }
+          
+          // Update PO total
+          await storage.updatePurchaseOrder(po.id, { totalAmount: String(totalAmount.toFixed(2)) });
+        }
+      }
+
+      const summary = [
+        `${results.workOrders} work orders (${results.workOrderLines} lines)`,
+        `${results.dvirs} DVIRs`,
+        `${results.predictions} predictions`,
+        results.purchaseOrders > 0 ? `${results.purchaseOrders} purchase orders (${results.purchaseOrderLines} lines)` : null,
+      ].filter(Boolean).join(", ");
+
       res.json({ 
         success: true, 
-        message: `Generated ${results.workOrders} work orders, ${results.dvirs} DVIRs, and ${results.predictions} predictions`,
+        message: `Generated ${summary}`,
         results 
       });
     } catch (error) {

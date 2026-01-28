@@ -81,9 +81,10 @@ export default function AdminTools() {
   });
   
   const [generatorConfig, setGeneratorConfig] = useState({
-    workOrders: 20,
-    dvirs: 15,
-    predictions: 10,
+    workOrders: 30,
+    dvirs: 25,
+    predictions: 15,
+    purchaseOrders: 10,
   });
 
   const seedDataMutation = useMutation({
@@ -96,6 +97,7 @@ export default function AdminTools() {
       queryClient.invalidateQueries({ queryKey: ["/api/work-orders"] });
       queryClient.invalidateQueries({ queryKey: ["/api/dvirs"] });
       queryClient.invalidateQueries({ queryKey: ["/api/predictions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
       toast({ 
         title: "Test Data Generated", 
         description: data.message || "Sample data has been added to your organization.",
@@ -225,6 +227,18 @@ export default function AdminTools() {
                   value={generatorConfig.predictions}
                   onChange={(e) => setGeneratorConfig({ ...generatorConfig, predictions: parseInt(e.target.value) || 0 })}
                   data-testid="input-predictions-count"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="po-count" data-testid="label-po-count">Purchase Orders</Label>
+                <Input 
+                  id="po-count"
+                  type="number" 
+                  min="0"
+                  max="50"
+                  value={generatorConfig.purchaseOrders}
+                  onChange={(e) => setGeneratorConfig({ ...generatorConfig, purchaseOrders: parseInt(e.target.value) || 0 })}
+                  data-testid="input-po-count"
                 />
               </div>
             </div>
