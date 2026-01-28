@@ -54,68 +54,22 @@ export default function Predictions() {
     return asset ? { name: asset.name, number: asset.assetNumber } : null;
   };
 
-  const mockPredictions: PredictionWithAsset[] = [
-    {
-      id: 1,
-      assetId: 1,
-      assetName: "Freightliner Cascadia",
-      assetNumber: "TRK-1024",
-      predictionType: "component_failure",
-      prediction: "Brake system wear detected - estimated 2000 miles remaining",
-      confidence: "0.87",
-      recommendedAction: "Schedule brake inspection within next 7 days",
-      estimatedCost: "450.00",
-      dueDate: new Date("2024-01-22"),
-      acknowledged: false,
-      createdAt: new Date("2024-01-15"),
-    },
-    {
-      id: 2,
-      assetId: 2,
-      assetName: "Ford Transit 350",
-      assetNumber: "VAN-3012",
-      predictionType: "maintenance_optimization",
-      prediction: "Oil change interval can be extended by 500 miles based on usage pattern",
-      confidence: "0.92",
-      recommendedAction: "Adjust PM schedule from 5000 to 5500 miles",
-      estimatedCost: null,
-      dueDate: null,
-      acknowledged: true,
-      createdAt: new Date("2024-01-14"),
-    },
-    {
-      id: 3,
-      assetId: 4,
-      assetName: "Caterpillar GP25N",
-      assetNumber: "LIFT-001",
-      predictionType: "component_failure",
-      prediction: "Battery showing signs of degradation - expect failure within 30 days",
-      confidence: "0.78",
-      recommendedAction: "Order replacement battery and schedule installation",
-      estimatedCost: "250.00",
-      dueDate: new Date("2024-02-15"),
-      acknowledged: false,
-      createdAt: new Date("2024-01-15"),
-    },
-    {
-      id: 4,
-      assetId: 3,
-      assetName: "Blue Bird Vision",
-      assetNumber: "BUS-5001",
-      predictionType: "fuel_efficiency",
-      prediction: "Fuel efficiency decreased by 8% over last month",
-      confidence: "0.95",
-      recommendedAction: "Check air filter and tire pressure",
-      estimatedCost: "75.00",
-      dueDate: new Date("2024-01-20"),
-      acknowledged: false,
-      createdAt: new Date("2024-01-15"),
-    },
-  ];
-
-  const displayPredictions = predictions?.length ? predictions : mockPredictions;
+  // Enrich predictions with asset info
+  const displayPredictions = (predictions || []).map(p => {
+    const assetInfo = getAssetInfo(p.assetId);
+    return {
+      ...p,
+      assetName: assetInfo?.name || "Unknown Asset",
+      assetNumber: assetInfo?.number || "N/A",
+    };
+  });
   const unacknowledged = displayPredictions.filter((p) => !p.acknowledged);
   const highConfidence = displayPredictions.filter((p) => Number(p.confidence) >= 0.85);
+  
+  // Calculate estimated savings from all predictions with estimated costs
+  const totalEstimatedSavings = displayPredictions
+    .filter(p => p.estimatedCost)
+    .reduce((sum, p) => sum + Number(p.estimatedCost || 0), 0);
 
   const getTypeColor = (type: string) => {
     switch (type) {
@@ -174,8 +128,8 @@ export default function Predictions() {
           <CardContent className="pt-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Est. Savings</p>
-                <p className="text-2xl font-bold">$12,450</p>
+                <p className="text-sm text-muted-foreground">Est. Costs</p>
+                <p className="text-2xl font-bold">${totalEstimatedSavings.toLocaleString()}</p>
               </div>
               <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
                 <TrendingUp className="h-5 w-5 text-primary" />

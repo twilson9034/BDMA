@@ -810,6 +810,167 @@ export async function registerRoutes(
     }
   });
 
+  // Seed test data endpoint
+  const seedTestDataSchema = z.object({
+    workOrders: z.number().min(0).max(100).default(20),
+    dvirs: z.number().min(0).max(100).default(15),
+    predictions: z.number().min(0).max(50).default(10),
+  });
+
+  app.post("/api/admin/seed-test-data", requireAuth, tenantMiddleware({ required: true }), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      if (!orgId) {
+        return res.status(403).json({ error: "Organization context required" });
+      }
+
+      const parsed = seedTestDataSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() });
+      }
+      const { workOrders: woCount, dvirs: dvirCount, predictions: predCount } = parsed.data;
+
+      // Get existing assets for the org to link test data
+      const existingAssets = await storage.getAssets(orgId);
+      if (existingAssets.length === 0) {
+        return res.status(400).json({ error: "No assets found. Create some assets first." });
+      }
+
+      const results = { workOrders: 0, dvirs: 0, predictions: 0 };
+      const now = new Date();
+
+      // Work Order types and priorities
+      const woTypes = ["corrective", "preventive", "inspection", "emergency"] as const;
+      const woPriorities = ["low", "medium", "high", "critical"] as const;
+      const woStatuses = ["open", "in_progress", "on_hold", "completed"] as const;
+
+      // Generate work orders with varying dates (past 90 days)
+      for (let i = 0; i < woCount; i++) {
+        const daysAgo = Math.floor(Math.random() * 90);
+        const asset = existingAssets[Math.floor(Math.random() * existingAssets.length)];
+        const startDate = new Date(now.getTime() - daysAgo * 24 * 60 * 60 * 1000);
+        const status = woStatuses[Math.floor(Math.random() * woStatuses.length)];
+        
+        const titles = [
+          "Engine oil change and filter replacement",
+          "Brake inspection and adjustment",
+          "Tire rotation and pressure check",
+          "Transmission fluid service",
+          "Cooling system flush",
+          "Air filter replacement",
+          "Battery load test and cleaning",
+          "Suspension inspection",
+          "Fuel system cleaning",
+          "Electrical system diagnostic",
+          "Hydraulic system service",
+          "Drive belt inspection",
+          "Steering system check",
+          "Exhaust system inspection",
+          "HVAC system service",
+        ];
+
+        await storage.createWorkOrder({
+          orgId,
+          assetId: asset.id,
+          workOrderNumber: `WO-TEST-${Date.now()}-${i}`,
+          title: titles[Math.floor(Math.random() * titles.length)],
+          description: `Test work order generated for ${asset.name}`,
+          type: woTypes[Math.floor(Math.random() * woTypes.length)],
+          priority: woPriorities[Math.floor(Math.random() * woPriorities.length)],
+          status,
+          startDate, // Use varying start dates for realistic date spread
+          dueDate: status === "completed" ? null : new Date(startDate.getTime() + (Math.random() * 30 + 7) * 24 * 60 * 60 * 1000),
+          completedDate: status === "completed" ? new Date(startDate.getTime() + Math.random() * 7 * 24 * 60 * 60 * 1000) : null,
+        });
+        results.workOrders++;
+      }
+
+      // Generate DVIRs with varying dates (past 60 days)
+      const dvirStatuses = ["safe", "needs_repair", "out_of_service"] as const;
+      for (let i = 0; i < dvirCount; i++) {
+        const daysAgo = Math.floor(Math.random() * 60);
+        const asset = existingAssets[Math.floor(Math.random() * existingAssets.length)];
+        const inspectionDate = new Date(now.getTime() - daysAgo * 24 * 60 * 60 * 1000);
+        const status = dvirStatuses[Math.floor(Math.random() * dvirStatuses.length)];
+
+        const dvir = await storage.createDvir({
+          orgId,
+          assetId: asset.id,
+          inspectorName: ["John Smith", "Maria Garcia", "David Lee", "Sarah Johnson", "Mike Brown"][Math.floor(Math.random() * 5)],
+          inspectionDate,
+          status,
+          preTrip: Math.random() > 0.3,
+          meterReading: String(Math.floor(Math.random() * 50000 + 10000)),
+          notes: status === "safe" ? "All systems checked and functioning properly" : "Issues found during inspection",
+        });
+
+        // Add defects for non-safe DVIRs
+        if (status !== "safe") {
+          const defectCategories = ["Brakes", "Tires", "Lights", "Steering", "Horn", "Mirrors", "Wipers", "Exhaust"];
+          const defectCount = status === "out_of_service" ? Math.floor(Math.random() * 3) + 2 : 1;
+          
+          for (let j = 0; j < defectCount; j++) {
+            await storage.createDvirDefect({
+              dvirId: dvir.id,
+              category: defectCategories[Math.floor(Math.random() * defectCategories.length)],
+              description: "Defect identified during inspection requiring attention",
+              severity: status === "out_of_service" ? "critical" : (Math.random() > 0.5 ? "major" : "minor"),
+            });
+          }
+        }
+        results.dvirs++;
+      }
+
+      // Generate predictions with varying dates and types
+      const predTypes = ["component_failure", "maintenance_optimization", "fuel_efficiency", "safety_concern"] as const;
+      const predSeverities = ["low", "medium", "high", "critical"] as const;
+      
+      const predictionTemplates = [
+        { type: "component_failure", prediction: "Brake pad wear approaching minimum threshold", action: "Schedule brake pad replacement within 7 days", cost: "350" },
+        { type: "component_failure", prediction: "Battery showing signs of degradation", action: "Test and replace battery if needed", cost: "200" },
+        { type: "component_failure", prediction: "Drive belt showing wear patterns", action: "Inspect and replace drive belt", cost: "150" },
+        { type: "component_failure", prediction: "Transmission fluid degradation detected", action: "Schedule transmission service", cost: "450" },
+        { type: "maintenance_optimization", prediction: "Oil change interval can be extended based on usage", action: "Adjust PM schedule interval", cost: null },
+        { type: "maintenance_optimization", prediction: "Air filter replacement frequency too high for conditions", action: "Review air filter replacement schedule", cost: null },
+        { type: "fuel_efficiency", prediction: "Fuel efficiency decreased 12% over last month", action: "Check tire pressure and engine tuning", cost: "100" },
+        { type: "fuel_efficiency", prediction: "Idle time increased significantly", action: "Review driver training on idle reduction", cost: null },
+        { type: "safety_concern", prediction: "Tire tread depth approaching minimum safe level", action: "Schedule tire inspection and replacement", cost: "800" },
+        { type: "safety_concern", prediction: "Steering response time slower than baseline", action: "Inspect power steering system", cost: "300" },
+      ];
+
+      for (let i = 0; i < predCount; i++) {
+        const daysAgo = Math.floor(Math.random() * 30);
+        const asset = existingAssets[Math.floor(Math.random() * existingAssets.length)];
+        const template = predictionTemplates[Math.floor(Math.random() * predictionTemplates.length)];
+        const confidence = (0.65 + Math.random() * 0.30).toFixed(4);
+        
+        await storage.createPrediction({
+          orgId,
+          assetId: asset.id,
+          predictionType: template.type,
+          prediction: `${template.prediction} - ${asset.name}`,
+          confidence,
+          severity: predSeverities[Math.floor(Math.random() * predSeverities.length)],
+          reasoning: `Analysis based on ${Math.floor(Math.random() * 50 + 10)} data points from maintenance history, telematics, and similar assets`,
+          recommendedAction: template.action,
+          estimatedCost: template.cost,
+          dueDate: new Date(now.getTime() + (Math.random() * 30) * 24 * 60 * 60 * 1000),
+          acknowledged: Math.random() > 0.7,
+        });
+        results.predictions++;
+      }
+
+      res.json({ 
+        success: true, 
+        message: `Generated ${results.workOrders} work orders, ${results.dvirs} DVIRs, and ${results.predictions} predictions`,
+        results 
+      });
+    } catch (error) {
+      console.error("Seed test data error:", error);
+      res.status(500).json({ error: "Failed to seed test data" });
+    }
+  });
+
   // Locations (tenant-scoped)
   app.get("/api/locations", tenantMiddleware({ required: false }), async (req, res) => {
     const orgId = getOrgId(req);

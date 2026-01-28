@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { 
   Database, 
   Trash2, 
@@ -80,27 +81,55 @@ export default function AdminTools() {
   });
   
   const [generatorConfig, setGeneratorConfig] = useState({
-    assets: 10,
-    workOrders: 50,
-    parts: 100,
-    dvirs: 25,
+    workOrders: 20,
+    dvirs: 15,
+    predictions: 10,
+  });
+
+  const seedDataMutation = useMutation({
+    mutationFn: async (config: typeof generatorConfig) => {
+      const response = await apiRequest("POST", "/api/admin/seed-test-data", config);
+      return response.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/record-counts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/work-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dvirs"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/predictions"] });
+      toast({ 
+        title: "Test Data Generated", 
+        description: data.message || "Sample data has been added to your organization.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({ 
+        title: "Generation Failed", 
+        description: error.message,
+        variant: "destructive",
+      });
+    },
   });
 
   const handleGenerateTestData = async () => {
     setIsGenerating(true);
-    setGenerateProgress(0);
+    setGenerateProgress(10);
     
-    const steps = 4;
-    for (let i = 1; i <= steps; i++) {
-      await new Promise(resolve => setTimeout(resolve, 800));
-      setGenerateProgress((i / steps) * 100);
+    try {
+      // Show progress while making the API call
+      const progressInterval = setInterval(() => {
+        setGenerateProgress(prev => Math.min(prev + 15, 85));
+      }, 500);
+      
+      await seedDataMutation.mutateAsync(generatorConfig);
+      
+      clearInterval(progressInterval);
+      setGenerateProgress(100);
+    } finally {
+      setTimeout(() => {
+        setIsGenerating(false);
+        setGenerateProgress(0);
+      }, 500);
     }
-    
-    setIsGenerating(false);
-    toast({ 
-      title: "Test Data Generated", 
-      description: "Sample data has been added to your organization.",
-    });
   };
 
   const handlePurgeData = async () => {
@@ -158,35 +187,20 @@ export default function AdminTools() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="assets-count" data-testid="label-assets-count">Assets to Generate</Label>
-                <Input 
-                  id="assets-count"
-                  type="number" 
-                  value={generatorConfig.assets}
-                  onChange={(e) => setGeneratorConfig({ ...generatorConfig, assets: parseInt(e.target.value) || 0 })}
-                  data-testid="input-assets-count"
-                />
-              </div>
+            <p className="text-sm text-muted-foreground">
+              Generates test data linked to your existing assets. Work orders, DVIRs, and AI predictions will be created with varying dates for realistic testing.
+            </p>
+            <div className="grid gap-4 sm:grid-cols-3">
               <div className="space-y-2">
                 <Label htmlFor="wo-count" data-testid="label-wo-count">Work Orders</Label>
                 <Input 
                   id="wo-count"
                   type="number" 
+                  min="0"
+                  max="100"
                   value={generatorConfig.workOrders}
                   onChange={(e) => setGeneratorConfig({ ...generatorConfig, workOrders: parseInt(e.target.value) || 0 })}
                   data-testid="input-work-orders-count"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="parts-count" data-testid="label-parts-count">Parts/Inventory</Label>
-                <Input 
-                  id="parts-count"
-                  type="number" 
-                  value={generatorConfig.parts}
-                  onChange={(e) => setGeneratorConfig({ ...generatorConfig, parts: parseInt(e.target.value) || 0 })}
-                  data-testid="input-parts-count"
                 />
               </div>
               <div className="space-y-2">
@@ -194,9 +208,23 @@ export default function AdminTools() {
                 <Input 
                   id="dvirs-count"
                   type="number" 
+                  min="0"
+                  max="100"
                   value={generatorConfig.dvirs}
                   onChange={(e) => setGeneratorConfig({ ...generatorConfig, dvirs: parseInt(e.target.value) || 0 })}
                   data-testid="input-dvirs-count"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="predictions-count" data-testid="label-predictions-count">AI Predictions</Label>
+                <Input 
+                  id="predictions-count"
+                  type="number" 
+                  min="0"
+                  max="50"
+                  value={generatorConfig.predictions}
+                  onChange={(e) => setGeneratorConfig({ ...generatorConfig, predictions: parseInt(e.target.value) || 0 })}
+                  data-testid="input-predictions-count"
                 />
               </div>
             </div>
