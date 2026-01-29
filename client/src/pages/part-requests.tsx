@@ -41,9 +41,14 @@ export default function PartRequests() {
     queryKey: ["/api/work-orders"],
   });
 
-  const { data: partsData = [] } = useQuery<Part[]>({
+  const { data: partsResponse } = useQuery<{ data: Part[], total: number } | Part[]>({
     queryKey: ["/api/parts"],
   });
+  
+  // Handle both paginated response and direct array response
+  const partsData = Array.isArray(partsResponse) 
+    ? partsResponse 
+    : (partsResponse?.data ?? []);
 
   const updateMutation = useMutation({
     mutationFn: async (data: { id: number; status: string; notes?: string }) => {

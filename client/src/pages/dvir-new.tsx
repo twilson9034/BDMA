@@ -84,6 +84,7 @@ export default function DvirNew() {
   const [isCapturingGps, setIsCapturingGps] = useState(false);
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [unsafeOverride, setUnsafeOverride] = useState(false);
 
   const captureGpsLocation = () => {
     if (!navigator.geolocation) {
@@ -137,7 +138,9 @@ export default function DvirNew() {
 
   const createMutation = useMutation({
     mutationFn: async (data: DvirFormValues) => {
-      const status = defects.length === 0 ? "safe" 
+      // Use the calculated overallStatus which includes unsafeOverride
+      const status = unsafeOverride ? "unsafe"
+        : defects.length === 0 ? "safe" 
         : defects.some(d => d.severity === "critical") ? "unsafe" 
         : "defects_noted";
       
@@ -204,7 +207,9 @@ export default function DvirNew() {
     }
   };
 
-  const overallStatus = defects.length === 0 ? "safe" 
+  // Calculate overall status - unsafeOverride takes precedence
+  const overallStatus = unsafeOverride ? "unsafe"
+    : defects.length === 0 ? "safe" 
     : defects.some(d => d.severity === "critical") ? "unsafe" 
     : "defects_noted";
 
@@ -515,6 +520,23 @@ export default function DvirNew() {
                         {defects.length} defect{defects.length > 1 ? "s" : ""} reported
                       </p>
                     )}
+                  </div>
+                  
+                  <div className="flex items-center justify-between p-4 rounded-lg border border-border bg-red-500/5">
+                    <div className="space-y-0.5">
+                      <p className="text-sm font-medium flex items-center gap-2">
+                        <AlertTriangle className="h-4 w-4 text-red-500" />
+                        Mark as Unsafe
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Override status to "Do Not Operate"
+                      </p>
+                    </div>
+                    <Switch
+                      checked={unsafeOverride}
+                      onCheckedChange={setUnsafeOverride}
+                      data-testid="switch-unsafe-override"
+                    />
                   </div>
 
                   <Button 

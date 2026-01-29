@@ -1,15 +1,20 @@
+import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { Brain, AlertTriangle, Wrench, Clock, TrendingUp, CheckCircle2, X, Sparkles, Info } from "lucide-react";
+import { Brain, AlertTriangle, Wrench, Clock, TrendingUp, CheckCircle2, X, Sparkles, Info, MessageSquare, Calendar, Ban, CircleAlert, FileText } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/PageHeader";
 import { EmptyState } from "@/components/EmptyState";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import type { Prediction, Asset } from "@shared/schema";
+import type { Prediction, Asset, WorkOrder } from "@shared/schema";
 
 interface PredictionWithAsset extends Prediction {
   assetName?: string;
@@ -18,6 +23,11 @@ interface PredictionWithAsset extends Prediction {
 
 export default function Predictions() {
   const { toast } = useToast();
+  const [feedbackDialogOpen, setFeedbackDialogOpen] = useState(false);
+  const [selectedPrediction, setSelectedPrediction] = useState<PredictionWithAsset | null>(null);
+  const [feedbackType, setFeedbackType] = useState<string>("");
+  const [feedbackNotes, setFeedbackNotes] = useState("");
+  const [linkedWorkOrderId, setLinkedWorkOrderId] = useState<string>("");
   
   const { data: predictions, isLoading } = useQuery<PredictionWithAsset[]>({
     queryKey: ["/api/predictions"],
@@ -25,6 +35,10 @@ export default function Predictions() {
 
   const { data: assets } = useQuery<Asset[]>({
     queryKey: ["/api/assets"],
+  });
+
+  const { data: workOrders } = useQuery<WorkOrder[]>({
+    queryKey: ["/api/work-orders"],
   });
 
   const acknowledgeMutation = useMutation({
@@ -48,6 +62,60 @@ export default function Predictions() {
       toast({ title: "Prediction dismissed" });
     },
   });
+
+  const feedbackMutation = useMutation({
+    mutationFn: async ({ id, feedbackType, feedbackNotes, linkedWorkOrderId }: { 
+      id: number; 
+      feedbackType: string; 
+      feedbackNotes?: string; 
+      linkedWorkOrderId?: number;
+    }) => {
+      await apiRequest("PATCH", `/api/predictions/${id}/feedback`, { 
+        feedbackType, 
+        feedbackNotes, 
+        linkedWorkOrderId 
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/predictions"] });
+      toast({ title: "Feedback submitted", description: "Thank you for helping improve AI predictions" });
+      setFeedbackDialogOpen(false);
+      resetFeedbackForm();
+    },
+  });
+
+  const resetFeedbackForm = () => {
+    setSelectedPrediction(null);
+    setFeedbackType("");
+    setFeedbackNotes("");
+    setLinkedWorkOrderId("");
+  };
+
+  const openFeedbackDialog = (prediction: PredictionWithAsset) => {
+    setSelectedPrediction(prediction);
+    setFeedbackDialogOpen(true);
+  };
+
+  const submitFeedback = () => {
+    if (!selectedPrediction || !feedbackType) return;
+    feedbackMutation.mutate({
+      id: selectedPrediction.id,
+      feedbackType,
+      feedbackNotes: feedbackNotes || undefined,
+      linkedWorkOrderId: linkedWorkOrderId ? parseInt(linkedWorkOrderId) : undefined,
+    });
+  };
+
+  const getFeedbackLabel = (type: string) => {
+    switch (type) {
+      case "completed_repair": return "Completed Repair";
+      case "scheduled": return "Scheduled for Later";
+      case "not_needed": return "Not Needed";
+      case "false_positive": return "False Positive";
+      case "deferred": return "Deferred";
+      default: return type;
+    }
+  };
 
   const getAssetInfo = (assetId: number) => {
     const asset = assets?.find(a => a.id === assetId);
@@ -213,6 +281,11 @@ export default function Predictions() {
                             Due: {new Date(prediction.dueDate).toLocaleDateString()}
                           </span>
                         )}
+                        {prediction.feedbackType && (
+                          <Badge variant="outline" className="bg-blue-500/10 text-blue-600 border-blue-500/30">
+                            {getFeedbackLabel(prediction.feedbackType)}
+                          </Badge>
+                        )}
                       </div>
                       {!prediction.acknowledged && !prediction.dismissedAt && (
                         <div className="flex gap-2">
@@ -237,6 +310,17 @@ export default function Predictions() {
                           </Button>
                         </div>
                       )}
+                      {prediction.acknowledged && !prediction.feedbackType && (
+                        <Button 
+                          size="sm"
+                          variant="outline"
+                          onClick={() => openFeedbackDialog(prediction)}
+                          data-testid={`button-feedback-${prediction.id}`}
+                        >
+                          <MessageSquare className="h-4 w-4 mr-1" />
+                          Provide Feedback
+                        </Button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -245,6 +329,115 @@ export default function Predictions() {
           ))}
         </div>
       )}
+
+      <Dialog open={feedbackDialogOpen} onOpenChange={(open) => {
+        setFeedbackDialogOpen(open);
+        if (!open) resetFeedbackForm();
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Prediction Feedback</DialogTitle>
+            <DialogDescription>
+              Help improve AI predictions by sharing what action was taken
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            {selectedPrediction && (
+              <div className="p-3 bg-muted rounded-lg text-sm">
+                <p className="font-medium">{selectedPrediction.assetNumber} - {selectedPrediction.assetName}</p>
+                <p className="text-muted-foreground mt-1">{selectedPrediction.prediction}</p>
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label>What action was taken?</Label>
+              <Select value={feedbackType} onValueChange={setFeedbackType}>
+                <SelectTrigger data-testid="select-feedback-type">
+                  <SelectValue placeholder="Select feedback type..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="completed_repair">
+                    <div className="flex items-center gap-2">
+                      <Wrench className="h-4 w-4" />
+                      Completed Repair
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="scheduled">
+                    <div className="flex items-center gap-2">
+                      <Calendar className="h-4 w-4" />
+                      Scheduled for Later
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="not_needed">
+                    <div className="flex items-center gap-2">
+                      <Ban className="h-4 w-4" />
+                      Not Needed
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="false_positive">
+                    <div className="flex items-center gap-2">
+                      <CircleAlert className="h-4 w-4" />
+                      False Positive
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="deferred">
+                    <div className="flex items-center gap-2">
+                      <Clock className="h-4 w-4" />
+                      Deferred
+                    </div>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {(feedbackType === "completed_repair" || feedbackType === "scheduled") && (
+              <div className="space-y-2">
+                <Label>Link to Work Order (optional)</Label>
+                <Select value={linkedWorkOrderId} onValueChange={setLinkedWorkOrderId}>
+                  <SelectTrigger data-testid="select-linked-wo">
+                    <SelectValue placeholder="Select work order..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">None</SelectItem>
+                    {workOrders?.filter(wo => 
+                      wo.assetId === selectedPrediction?.assetId
+                    ).map((wo) => (
+                      <SelectItem key={wo.id} value={wo.id.toString()}>
+                        {wo.workOrderNumber} - {wo.title}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label>Additional Notes (optional)</Label>
+              <Textarea
+                value={feedbackNotes}
+                onChange={(e) => setFeedbackNotes(e.target.value)}
+                placeholder="Any additional context about this prediction..."
+                rows={3}
+                data-testid="input-feedback-notes"
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setFeedbackDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={submitFeedback} 
+              disabled={!feedbackType || feedbackMutation.isPending}
+              data-testid="button-submit-feedback"
+            >
+              Submit Feedback
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -1428,6 +1428,85 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/oos/sources", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      if (!orgId) return res.status(403).json({ error: "Organization context required" });
+      
+      const { title, sourceType, url, notes } = req.body;
+      const [source] = await db.insert(oosSources).values({
+        orgId,
+        title,
+        sourceType,
+        url: url || null,
+        notes: notes || null,
+      }).returning();
+      res.status(201).json(source);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create OOS source" });
+    }
+  });
+
+  app.patch("/api/oos/sources/:id", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      if (!orgId) return res.status(403).json({ error: "Organization context required" });
+      
+      const sourceId = parseInt(req.params.id);
+      const { title, sourceType, url, notes } = req.body;
+      
+      const [updated] = await db.update(oosSources)
+        .set({
+          title,
+          sourceType,
+          url: url || null,
+          notes: notes || null,
+        })
+        .where(and(eq(oosSources.id, sourceId), eq(oosSources.orgId, orgId)))
+        .returning();
+      
+      if (!updated) return res.status(404).json({ error: "Source not found" });
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update OOS source" });
+    }
+  });
+
+  app.delete("/api/oos/sources/:id", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      if (!orgId) return res.status(403).json({ error: "Organization context required" });
+      
+      const sourceId = parseInt(req.params.id);
+      await db.delete(oosSources)
+        .where(and(eq(oosSources.id, sourceId), eq(oosSources.orgId, orgId)));
+      
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete OOS source" });
+    }
+  });
+
+  app.patch("/api/oos/rules-versions/:id", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      if (!orgId) return res.status(403).json({ error: "Organization context required" });
+      
+      const versionId = parseInt(req.params.id);
+      const { isActive } = req.body;
+      
+      const [updated] = await db.update(oosRulesVersions)
+        .set({ isActive })
+        .where(and(eq(oosRulesVersions.id, versionId), eq(oosRulesVersions.orgId, orgId)))
+        .returning();
+      
+      if (!updated) return res.status(404).json({ error: "Version not found" });
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update OOS rules version" });
+    }
+  });
+
   // Assets (tenant-scoped)
   app.get("/api/assets", tenantMiddleware({ required: false }), async (req, res) => {
     const orgId = getOrgId(req);
@@ -4553,6 +4632,31 @@ export async function registerRoutes(
       res.json(updated);
     } catch (error) {
       res.status(500).json({ error: "Failed to dismiss prediction" });
+    }
+  });
+
+  // Prediction feedback - submit feedback after acknowledging
+  app.patch("/api/predictions/:id/feedback", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const prediction = await storage.getPrediction(parseInt(req.params.id));
+      if (!prediction) return res.status(404).json({ error: "Prediction not found" });
+      const orgId = getOrgId(req);
+      if (orgId && prediction.orgId !== orgId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      const userId = (req.user as any)?.claims?.sub;
+      const { feedbackType, feedbackNotes, linkedWorkOrderId } = req.body;
+      
+      const updated = await storage.updatePrediction(parseInt(req.params.id), {
+        feedbackType,
+        feedbackNotes: feedbackNotes || null,
+        feedbackAt: new Date(),
+        feedbackById: userId,
+        linkedWorkOrderId: linkedWorkOrderId || null,
+      });
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to submit prediction feedback" });
     }
   });
 

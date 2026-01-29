@@ -1532,6 +1532,9 @@ export type ReorderAlert = typeof reorderAlerts.$inferSelect;
 // ============================================================
 export const predictionSeverityEnum = ["low", "medium", "high", "critical"] as const;
 
+// Prediction feedback options for the AI learning loop
+export const predictionFeedbackTypeEnum = ["completed_repair", "scheduled", "not_needed", "false_positive", "deferred"] as const;
+
 export const predictions = pgTable("predictions", {
   id: serial("id").primaryKey(),
   orgId: integer("org_id").references(() => organizations.id),
@@ -1547,6 +1550,12 @@ export const predictions = pgTable("predictions", {
   dueDate: timestamp("due_date"),
   acknowledged: boolean("acknowledged").default(false),
   dismissedAt: timestamp("dismissed_at"),
+  // Feedback workflow fields
+  feedbackType: text("feedback_type").$type<typeof predictionFeedbackTypeEnum[number]>(),
+  feedbackNotes: text("feedback_notes"),
+  feedbackAt: timestamp("feedback_at"),
+  feedbackById: varchar("feedback_by_id"),
+  linkedWorkOrderId: integer("linked_work_order_id"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
