@@ -1428,12 +1428,24 @@ export async function registerRoutes(
     }
   });
 
+  const oosSourceSchema = z.object({
+    title: z.string().min(1, "Title is required"),
+    sourceType: z.enum(['regulation', 'company_policy', 'manufacturer']),
+    url: z.string().url().optional().nullable(),
+    notes: z.string().optional().nullable(),
+  });
+
   app.post("/api/oos/sources", requireAuth, tenantMiddleware(), async (req, res) => {
     try {
       const orgId = getOrgId(req);
       if (!orgId) return res.status(403).json({ error: "Organization context required" });
       
-      const { title, sourceType, url, notes } = req.body;
+      const parsed = oosSourceSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid source data", details: parsed.error.issues });
+      }
+      
+      const { title, sourceType, url, notes } = parsed.data;
       const [source] = await db.insert(oosSources).values({
         orgId,
         title,
@@ -1453,12 +1465,17 @@ export async function registerRoutes(
       if (!orgId) return res.status(403).json({ error: "Organization context required" });
       
       const sourceId = parseInt(req.params.id);
-      const { title, sourceType, url, notes } = req.body;
+      const parsed = oosSourceSchema.partial().safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid source data", details: parsed.error.issues });
+      }
+      
+      const { title, sourceType, url, notes } = parsed.data;
       
       const [updated] = await db.update(oosSources)
         .set({
-          title,
-          sourceType,
+          ...(title !== undefined && { title }),
+          ...(sourceType !== undefined && { sourceType }),
           url: url || null,
           notes: notes || null,
         })
@@ -4636,6 +4653,12 @@ export async function registerRoutes(
   });
 
   // Prediction feedback - submit feedback after acknowledging
+  const predictionFeedbackSchema = z.object({
+    feedbackType: z.enum(['completed_repair', 'scheduled', 'not_needed', 'false_positive', 'deferred']),
+    feedbackNotes: z.string().optional().nullable(),
+    linkedWorkOrderId: z.number().optional().nullable(),
+  });
+  
   app.patch("/api/predictions/:id/feedback", requireAuth, tenantMiddleware(), async (req, res) => {
     try {
       const prediction = await storage.getPrediction(parseInt(req.params.id));
@@ -4644,8 +4667,26 @@ export async function registerRoutes(
       if (orgId && prediction.orgId !== orgId) {
         return res.status(403).json({ error: "Access denied" });
       }
+      
+      // Validate input
+      const parsed = predictionFeedbackSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid feedback data", details: parsed.error.issues });
+      }
+      
+      const { feedbackType, feedbackNotes, linkedWorkOrderId } = parsed.data;
       const userId = (req.user as any)?.claims?.sub;
-      const { feedbackType, feedbackNotes, linkedWorkOrderId } = req.body;
+      
+      // Validate work order link if provided
+      if (linkedWorkOrderId) {
+        const workOrder = await storage.getWorkOrder(linkedWorkOrderId);
+        if (!workOrder) {
+          return res.status(400).json({ error: "Linked work order not found" });
+        }
+        if (orgId && workOrder.orgId !== orgId) {
+          return res.status(403).json({ error: "Cannot link to work order from another organization" });
+        }
+      }
       
       const updated = await storage.updatePrediction(parseInt(req.params.id), {
         feedbackType,
