@@ -50,6 +50,13 @@ Centralized database schema definitions, TypeScript types, and Zod validation sc
     - **Access Control**: Role-based access (owner/admin/manager/technician/viewer) and plan-based limitations.
     - **Hierarchy**: Support for parent-subsidiary organizations with `parentOrgId` and `isCorporateAdmin` for cross-org visibility.
     - **Implementation**: Tenant middleware for request context, organization switcher UI, and robust storage layer methods for managing organizations and memberships.
+- **Custom Roles Management**:
+    - **Custom Roles**: Organizations can create, edit, duplicate, and delete custom roles with granular permissions.
+    - **Permission Categories (10 total, 60 permissions)**: Assets, Work Orders, Inventory, Procurement, Scheduling, Inspections, Estimates, Reports, AI Features, and Administration.
+    - **System Roles**: 5 pre-built editable roles (Owner, Administrator, Manager, Technician, Viewer) can be seeded and customized.
+    - **View as Role**: Administrators can preview the app with different role permissions for testing access control.
+    - **API Endpoints**: `/api/custom-roles` for CRUD, `/api/custom-roles/seed` for seeding, `/api/custom-roles/view-as` for role impersonation.
+    - **Database**: `custom_roles` table with JSONB `permissions` field for flexible permission storage.
 
 ## External Dependencies
 
