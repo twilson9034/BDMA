@@ -1270,6 +1270,7 @@ export const workOrders = pgTable("work_orders", {
   actualCost: decimal("actual_cost", { precision: 12, scale: 2 }),
   meterReading: decimal("meter_reading", { precision: 12, scale: 2 }),
   pmScheduleId: integer("pm_schedule_id"),
+  predictionId: integer("prediction_id"),
   failureCode: text("failure_code"),
   rootCause: text("root_cause"),
   resolution: text("resolution"),
@@ -1824,6 +1825,8 @@ export const predictions = pgTable("predictions", {
   feedbackAt: timestamp("feedback_at"),
   feedbackById: varchar("feedback_by_id"),
   linkedWorkOrderId: integer("linked_work_order_id"),
+  deferredUntil: timestamp("deferred_until"),
+  deferredScheduleId: integer("deferred_schedule_id"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

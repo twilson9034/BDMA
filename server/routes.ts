@@ -4946,6 +4946,112 @@ export async function registerRoutes(
     }
   });
 
+  // Create work order from prediction - auto-links bidirectionally
+  app.post("/api/predictions/:id/create-work-order", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const prediction = await storage.getPrediction(parseInt(req.params.id));
+      if (!prediction) return res.status(404).json({ error: "Prediction not found" });
+      const orgId = getOrgId(req);
+      if (orgId && prediction.orgId !== orgId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const userId = (req.user as any)?.claims?.sub;
+      const asset = await storage.getAsset(prediction.assetId);
+      
+      // Generate work order number
+      const allWorkOrders = orgId ? await storage.getWorkOrdersByOrg(orgId) : await storage.getWorkOrders();
+      const woNumber = `WO-${String(allWorkOrders.length + 1).padStart(5, '0')}`;
+      
+      // Determine priority from severity
+      let priority: "low" | "medium" | "high" | "critical" = "medium";
+      if (prediction.severity === "critical") priority = "critical";
+      else if (prediction.severity === "high") priority = "high";
+      else if (prediction.severity === "low") priority = "low";
+
+      // Create work order linked to prediction
+      const workOrder = await storage.createWorkOrder({
+        orgId: orgId || undefined,
+        workOrderNumber: woNumber,
+        title: `AI Prediction: ${prediction.prediction}`,
+        description: `Created from AI prediction.\n\nPrediction: ${prediction.prediction}\n\nRecommended Action: ${prediction.recommendedAction || 'Review and repair as needed'}\n\nAI Reasoning: ${prediction.reasoning || 'N/A'}`,
+        type: "corrective",
+        status: "open",
+        priority,
+        assetId: prediction.assetId,
+        dueDate: prediction.dueDate || undefined,
+        estimatedCost: prediction.estimatedCost || undefined,
+        predictionId: prediction.id,
+        requestedById: userId,
+      });
+
+      // Update prediction with linked work order and feedback
+      await storage.updatePrediction(prediction.id, {
+        acknowledged: true,
+        feedbackType: "scheduled",
+        feedbackAt: new Date(),
+        feedbackById: userId,
+        linkedWorkOrderId: workOrder.id,
+      });
+
+      res.status(201).json({ workOrder, prediction: await storage.getPrediction(prediction.id) });
+    } catch (error) {
+      console.error("Failed to create work order from prediction:", error);
+      res.status(500).json({ error: "Failed to create work order from prediction" });
+    }
+  });
+
+  // Defer prediction - schedule for later by date or PM schedule
+  const deferPredictionSchema = z.object({
+    deferredUntil: z.string().optional().nullable(),
+    deferredScheduleId: z.number().optional().nullable(),
+    notes: z.string().optional().nullable(),
+  });
+
+  app.patch("/api/predictions/:id/defer", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const prediction = await storage.getPrediction(parseInt(req.params.id));
+      if (!prediction) return res.status(404).json({ error: "Prediction not found" });
+      const orgId = getOrgId(req);
+      if (orgId && prediction.orgId !== orgId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const parsed = deferPredictionSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid defer data", details: parsed.error.issues });
+      }
+
+      const { deferredUntil, deferredScheduleId, notes } = parsed.data;
+      const userId = (req.user as any)?.claims?.sub;
+
+      // Validate PM schedule if provided
+      if (deferredScheduleId) {
+        const schedule = await storage.getPmSchedule(deferredScheduleId);
+        if (!schedule) {
+          return res.status(400).json({ error: "PM schedule not found" });
+        }
+        if (orgId && schedule.orgId !== orgId) {
+          return res.status(403).json({ error: "Cannot defer to PM schedule from another organization" });
+        }
+      }
+
+      const updated = await storage.updatePrediction(parseInt(req.params.id), {
+        acknowledged: true,
+        feedbackType: "deferred",
+        feedbackNotes: notes || null,
+        feedbackAt: new Date(),
+        feedbackById: userId,
+        deferredUntil: deferredUntil ? new Date(deferredUntil) : null,
+        deferredScheduleId: deferredScheduleId || null,
+      });
+      res.json(updated);
+    } catch (error) {
+      console.error("Failed to defer prediction:", error);
+      res.status(500).json({ error: "Failed to defer prediction" });
+    }
+  });
+
   // ============================================================
   // BARCODE/QR SCANNING
   // ============================================================
