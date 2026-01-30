@@ -62,6 +62,7 @@ export const orgMemberships = pgTable("org_memberships", {
   userId: varchar("user_id").notNull(),
   orgId: integer("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
   role: text("role").default("technician").$type<typeof orgRoleEnum[number]>(),
+  customRoleId: integer("custom_role_id"), // Link to custom role for granular permissions
   primaryLocationId: integer("primary_location_id"), // Technician's primary/default location for filtering
   isCorporateAdmin: boolean("is_corporate_admin").default(false), // Can view/manage subsidiary organizations
   isActive: boolean("is_active").default(true),
@@ -101,6 +102,273 @@ export type UpdateMemberHourlyRate = z.infer<typeof updateMemberHourlyRateSchema
 export type SetParentOrg = z.infer<typeof setParentOrgSchema>;
 export type UpdateCorporateAdmin = z.infer<typeof updateCorporateAdminSchema>;
 export type OrgMembership = typeof orgMemberships.$inferSelect;
+
+// ============================================================
+// CUSTOM ROLES (Granular permissions per organization)
+// ============================================================
+export const customRoles = pgTable("custom_roles", {
+  id: serial("id").primaryKey(),
+  orgId: integer("org_id").references(() => organizations.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  description: text("description"),
+  color: text("color").default("#6366f1"), // Role badge color
+  isSystem: boolean("is_system").default(false), // System roles can't be deleted
+  isDefault: boolean("is_default").default(false), // Default role for new members
+  permissions: jsonb("permissions").notNull().$type<RolePermissions>(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_custom_roles_org").on(table.orgId),
+]);
+
+// Granular permissions structure
+export interface RolePermissions {
+  // Assets
+  assets: {
+    view: boolean;
+    create: boolean;
+    edit: boolean;
+    delete: boolean;
+    viewCost: boolean; // View cost/value info
+    manageDocuments: boolean;
+    manageImages: boolean;
+  };
+  // Work Orders
+  workOrders: {
+    view: boolean;
+    viewAll: boolean; // View all WOs vs only assigned
+    create: boolean;
+    edit: boolean;
+    delete: boolean;
+    assign: boolean;
+    complete: boolean;
+    approve: boolean; // Approve completed work
+    viewCost: boolean;
+  };
+  // Inventory/Parts
+  inventory: {
+    view: boolean;
+    create: boolean;
+    edit: boolean;
+    delete: boolean;
+    adjustQuantity: boolean;
+    viewCost: boolean;
+    managePricing: boolean;
+    manageVendors: boolean;
+  };
+  // Procurement
+  procurement: {
+    viewRequisitions: boolean;
+    createRequisitions: boolean;
+    approveRequisitions: boolean;
+    viewPurchaseOrders: boolean;
+    createPurchaseOrders: boolean;
+    approvePurchaseOrders: boolean;
+    receiveOrders: boolean;
+  };
+  // Scheduling & PM
+  scheduling: {
+    viewSchedules: boolean;
+    createSchedules: boolean;
+    editSchedules: boolean;
+    deleteSchedules: boolean;
+  };
+  // DVIRs & Inspections
+  inspections: {
+    view: boolean;
+    create: boolean;
+    edit: boolean;
+    delete: boolean;
+    overrideUnsafe: boolean; // Override unsafe status
+  };
+  // Estimates
+  estimates: {
+    view: boolean;
+    create: boolean;
+    edit: boolean;
+    delete: boolean;
+    approve: boolean;
+    viewCost: boolean;
+  };
+  // Reports & Analytics
+  reports: {
+    viewDashboard: boolean;
+    viewReports: boolean;
+    createReports: boolean;
+    exportData: boolean;
+  };
+  // AI & Predictions
+  ai: {
+    viewPredictions: boolean;
+    acknowledgePredictions: boolean;
+    dismissPredictions: boolean;
+    configureAI: boolean;
+  };
+  // Administration
+  admin: {
+    manageUsers: boolean;
+    manageRoles: boolean;
+    manageLocations: boolean;
+    manageOrganization: boolean;
+    viewAuditLog: boolean;
+    manageIntegrations: boolean;
+  };
+}
+
+// Default permission sets for standard roles
+export const DEFAULT_ROLE_PERMISSIONS: Record<string, RolePermissions> = {
+  owner: {
+    assets: { view: true, create: true, edit: true, delete: true, viewCost: true, manageDocuments: true, manageImages: true },
+    workOrders: { view: true, viewAll: true, create: true, edit: true, delete: true, assign: true, complete: true, approve: true, viewCost: true },
+    inventory: { view: true, create: true, edit: true, delete: true, adjustQuantity: true, viewCost: true, managePricing: true, manageVendors: true },
+    procurement: { viewRequisitions: true, createRequisitions: true, approveRequisitions: true, viewPurchaseOrders: true, createPurchaseOrders: true, approvePurchaseOrders: true, receiveOrders: true },
+    scheduling: { viewSchedules: true, createSchedules: true, editSchedules: true, deleteSchedules: true },
+    inspections: { view: true, create: true, edit: true, delete: true, overrideUnsafe: true },
+    estimates: { view: true, create: true, edit: true, delete: true, approve: true, viewCost: true },
+    reports: { viewDashboard: true, viewReports: true, createReports: true, exportData: true },
+    ai: { viewPredictions: true, acknowledgePredictions: true, dismissPredictions: true, configureAI: true },
+    admin: { manageUsers: true, manageRoles: true, manageLocations: true, manageOrganization: true, viewAuditLog: true, manageIntegrations: true },
+  },
+  admin: {
+    assets: { view: true, create: true, edit: true, delete: true, viewCost: true, manageDocuments: true, manageImages: true },
+    workOrders: { view: true, viewAll: true, create: true, edit: true, delete: true, assign: true, complete: true, approve: true, viewCost: true },
+    inventory: { view: true, create: true, edit: true, delete: true, adjustQuantity: true, viewCost: true, managePricing: true, manageVendors: true },
+    procurement: { viewRequisitions: true, createRequisitions: true, approveRequisitions: true, viewPurchaseOrders: true, createPurchaseOrders: true, approvePurchaseOrders: true, receiveOrders: true },
+    scheduling: { viewSchedules: true, createSchedules: true, editSchedules: true, deleteSchedules: true },
+    inspections: { view: true, create: true, edit: true, delete: true, overrideUnsafe: true },
+    estimates: { view: true, create: true, edit: true, delete: true, approve: true, viewCost: true },
+    reports: { viewDashboard: true, viewReports: true, createReports: true, exportData: true },
+    ai: { viewPredictions: true, acknowledgePredictions: true, dismissPredictions: true, configureAI: true },
+    admin: { manageUsers: true, manageRoles: true, manageLocations: true, manageOrganization: false, viewAuditLog: true, manageIntegrations: true },
+  },
+  manager: {
+    assets: { view: true, create: true, edit: true, delete: false, viewCost: true, manageDocuments: true, manageImages: true },
+    workOrders: { view: true, viewAll: true, create: true, edit: true, delete: false, assign: true, complete: true, approve: true, viewCost: true },
+    inventory: { view: true, create: true, edit: true, delete: false, adjustQuantity: true, viewCost: true, managePricing: false, manageVendors: true },
+    procurement: { viewRequisitions: true, createRequisitions: true, approveRequisitions: true, viewPurchaseOrders: true, createPurchaseOrders: true, approvePurchaseOrders: false, receiveOrders: true },
+    scheduling: { viewSchedules: true, createSchedules: true, editSchedules: true, deleteSchedules: false },
+    inspections: { view: true, create: true, edit: true, delete: false, overrideUnsafe: true },
+    estimates: { view: true, create: true, edit: true, delete: false, approve: true, viewCost: true },
+    reports: { viewDashboard: true, viewReports: true, createReports: true, exportData: true },
+    ai: { viewPredictions: true, acknowledgePredictions: true, dismissPredictions: true, configureAI: false },
+    admin: { manageUsers: false, manageRoles: false, manageLocations: true, manageOrganization: false, viewAuditLog: false, manageIntegrations: false },
+  },
+  technician: {
+    assets: { view: true, create: false, edit: false, delete: false, viewCost: false, manageDocuments: false, manageImages: true },
+    workOrders: { view: true, viewAll: false, create: true, edit: true, delete: false, assign: false, complete: true, approve: false, viewCost: false },
+    inventory: { view: true, create: false, edit: false, delete: false, adjustQuantity: true, viewCost: false, managePricing: false, manageVendors: false },
+    procurement: { viewRequisitions: true, createRequisitions: true, approveRequisitions: false, viewPurchaseOrders: true, createPurchaseOrders: false, approvePurchaseOrders: false, receiveOrders: true },
+    scheduling: { viewSchedules: true, createSchedules: false, editSchedules: false, deleteSchedules: false },
+    inspections: { view: true, create: true, edit: true, delete: false, overrideUnsafe: false },
+    estimates: { view: true, create: true, edit: true, delete: false, approve: false, viewCost: false },
+    reports: { viewDashboard: true, viewReports: false, createReports: false, exportData: false },
+    ai: { viewPredictions: true, acknowledgePredictions: true, dismissPredictions: false, configureAI: false },
+    admin: { manageUsers: false, manageRoles: false, manageLocations: false, manageOrganization: false, viewAuditLog: false, manageIntegrations: false },
+  },
+  viewer: {
+    assets: { view: true, create: false, edit: false, delete: false, viewCost: false, manageDocuments: false, manageImages: false },
+    workOrders: { view: true, viewAll: true, create: false, edit: false, delete: false, assign: false, complete: false, approve: false, viewCost: false },
+    inventory: { view: true, create: false, edit: false, delete: false, adjustQuantity: false, viewCost: false, managePricing: false, manageVendors: false },
+    procurement: { viewRequisitions: true, createRequisitions: false, approveRequisitions: false, viewPurchaseOrders: true, createPurchaseOrders: false, approvePurchaseOrders: false, receiveOrders: false },
+    scheduling: { viewSchedules: true, createSchedules: false, editSchedules: false, deleteSchedules: false },
+    inspections: { view: true, create: false, edit: false, delete: false, overrideUnsafe: false },
+    estimates: { view: true, create: false, edit: false, delete: false, approve: false, viewCost: false },
+    reports: { viewDashboard: true, viewReports: true, createReports: false, exportData: false },
+    ai: { viewPredictions: true, acknowledgePredictions: false, dismissPredictions: false, configureAI: false },
+    admin: { manageUsers: false, manageRoles: false, manageLocations: false, manageOrganization: false, viewAuditLog: false, manageIntegrations: false },
+  },
+};
+
+export const rolePermissionsSchema = z.object({
+  assets: z.object({
+    view: z.boolean(),
+    create: z.boolean(),
+    edit: z.boolean(),
+    delete: z.boolean(),
+    viewCost: z.boolean(),
+    manageDocuments: z.boolean(),
+    manageImages: z.boolean(),
+  }),
+  workOrders: z.object({
+    view: z.boolean(),
+    viewAll: z.boolean(),
+    create: z.boolean(),
+    edit: z.boolean(),
+    delete: z.boolean(),
+    assign: z.boolean(),
+    complete: z.boolean(),
+    approve: z.boolean(),
+    viewCost: z.boolean(),
+  }),
+  inventory: z.object({
+    view: z.boolean(),
+    create: z.boolean(),
+    edit: z.boolean(),
+    delete: z.boolean(),
+    adjustQuantity: z.boolean(),
+    viewCost: z.boolean(),
+    managePricing: z.boolean(),
+    manageVendors: z.boolean(),
+  }),
+  procurement: z.object({
+    viewRequisitions: z.boolean(),
+    createRequisitions: z.boolean(),
+    approveRequisitions: z.boolean(),
+    viewPurchaseOrders: z.boolean(),
+    createPurchaseOrders: z.boolean(),
+    approvePurchaseOrders: z.boolean(),
+    receiveOrders: z.boolean(),
+  }),
+  scheduling: z.object({
+    viewSchedules: z.boolean(),
+    createSchedules: z.boolean(),
+    editSchedules: z.boolean(),
+    deleteSchedules: z.boolean(),
+  }),
+  inspections: z.object({
+    view: z.boolean(),
+    create: z.boolean(),
+    edit: z.boolean(),
+    delete: z.boolean(),
+    overrideUnsafe: z.boolean(),
+  }),
+  estimates: z.object({
+    view: z.boolean(),
+    create: z.boolean(),
+    edit: z.boolean(),
+    delete: z.boolean(),
+    approve: z.boolean(),
+    viewCost: z.boolean(),
+  }),
+  reports: z.object({
+    viewDashboard: z.boolean(),
+    viewReports: z.boolean(),
+    createReports: z.boolean(),
+    exportData: z.boolean(),
+  }),
+  ai: z.object({
+    viewPredictions: z.boolean(),
+    acknowledgePredictions: z.boolean(),
+    dismissPredictions: z.boolean(),
+    configureAI: z.boolean(),
+  }),
+  admin: z.object({
+    manageUsers: z.boolean(),
+    manageRoles: z.boolean(),
+    manageLocations: z.boolean(),
+    manageOrganization: z.boolean(),
+    viewAuditLog: z.boolean(),
+    manageIntegrations: z.boolean(),
+  }),
+});
+
+export const insertCustomRoleSchema = createInsertSchema(customRoles).omit({ id: true, createdAt: true, updatedAt: true }).extend({
+  permissions: rolePermissionsSchema,
+});
+export const updateCustomRoleSchema = insertCustomRoleSchema.partial();
+export type InsertCustomRole = z.infer<typeof insertCustomRoleSchema>;
+export type UpdateCustomRole = z.infer<typeof updateCustomRoleSchema>;
+export type CustomRole = typeof customRoles.$inferSelect;
 
 // ============================================================
 // MEMBER LOCATION ASSIGNMENTS (for multi-location technicians)

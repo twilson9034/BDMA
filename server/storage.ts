@@ -238,6 +238,7 @@ export interface IStorage {
   hasCorporateAdminMembership(userId: string): Promise<boolean>;
   getAllOrganizations(): Promise<Organization[]>;
   isDevOfAnyOrg(userId: string): Promise<boolean>;
+  getMembershipByUserAndOrg(userId: string, orgId: number): Promise<OrgMembership | undefined>;
   
   // Locations
   getLocations(): Promise<Location[]>;
@@ -851,6 +852,13 @@ export class DatabaseStorage implements IStorage {
       .where(and(eq(orgMemberships.userId, userId), eq(orgMemberships.role, "dev")))
       .limit(1);
     return !!membership;
+  }
+
+  async getMembershipByUserAndOrg(userId: string, orgId: number): Promise<OrgMembership | undefined> {
+    const [membership] = await db.select()
+      .from(orgMemberships)
+      .where(and(eq(orgMemberships.userId, userId), eq(orgMemberships.orgId, orgId)));
+    return membership;
   }
 
   async updateMemberPrimaryLocation(memberId: number, primaryLocationId: number | null): Promise<OrgMembership | undefined> {

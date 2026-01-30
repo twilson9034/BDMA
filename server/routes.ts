@@ -37,7 +37,7 @@ import OpenAI from "openai";
 import { z } from "zod";
 import { setupAuth, registerAuthRoutes } from "./replit_integrations/auth";
 import { tenantMiddleware, getUserOrgMemberships, getOrgId } from "./tenant";
-import { organizations, orgMemberships, insertOrganizationSchema, insertOrgMembershipSchema, updateOrganizationSchema, updateOrgMemberRoleSchema, setParentOrgSchema, updateCorporateAdminSchema, tires, insertTireSchema, conversations, messages, insertConversationSchema, insertMessageSchema, savedReports, insertSavedReportSchema, gpsLocations, insertGpsLocationSchema, tireReplacementSettings, insertTireReplacementSettingSchema, publicAssetTokens, insertPublicAssetTokenSchema, insertPmScheduleModelSchema, insertPmScheduleKitModelSchema } from "@shared/schema";
+import { organizations, orgMemberships, insertOrganizationSchema, insertOrgMembershipSchema, updateOrganizationSchema, updateOrgMemberRoleSchema, setParentOrgSchema, updateCorporateAdminSchema, tires, insertTireSchema, conversations, messages, insertConversationSchema, insertMessageSchema, savedReports, insertSavedReportSchema, gpsLocations, insertGpsLocationSchema, tireReplacementSettings, insertTireReplacementSettingSchema, publicAssetTokens, insertPublicAssetTokenSchema, insertPmScheduleModelSchema, insertPmScheduleKitModelSchema, customRoles, insertCustomRoleSchema, updateCustomRoleSchema, DEFAULT_ROLE_PERMISSIONS } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, or, isNull } from "drizzle-orm";
 import { appEvents } from "./events";
@@ -716,6 +716,251 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Update corporate admin status error:", error);
       res.status(500).json({ error: "Failed to update corporate admin status" });
+    }
+  });
+
+  // ============================================================
+  // CUSTOM ROLES (Granular Permissions)
+  // ============================================================
+  
+  // Get all custom roles for the organization
+  app.get("/api/roles", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      if (!orgId) return res.status(403).json({ error: "Organization context required" });
+      
+      const roles = await db.select().from(customRoles).where(eq(customRoles.orgId, orgId));
+      res.json(roles);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch roles" });
+    }
+  });
+
+  // Get a single role
+  app.get("/api/roles/:id", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      if (!orgId) return res.status(403).json({ error: "Organization context required" });
+      
+      const [role] = await db.select().from(customRoles)
+        .where(and(eq(customRoles.id, parseInt(req.params.id)), eq(customRoles.orgId, orgId)));
+      
+      if (!role) return res.status(404).json({ error: "Role not found" });
+      res.json(role);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch role" });
+    }
+  });
+
+  // Create a new custom role
+  app.post("/api/roles", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      if (!orgId) return res.status(403).json({ error: "Organization context required" });
+      
+      const parsed = insertCustomRoleSchema.safeParse({ ...req.body, orgId });
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid role data", details: parsed.error.issues });
+      }
+      
+      const [role] = await db.insert(customRoles).values(parsed.data).returning();
+      res.status(201).json(role);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create role" });
+    }
+  });
+
+  // Update a custom role
+  app.patch("/api/roles/:id", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      if (!orgId) return res.status(403).json({ error: "Organization context required" });
+      
+      const roleId = parseInt(req.params.id);
+      const parsed = updateCustomRoleSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid role data", details: parsed.error.issues });
+      }
+      
+      const [updated] = await db.update(customRoles)
+        .set({ ...parsed.data, updatedAt: new Date() })
+        .where(and(eq(customRoles.id, roleId), eq(customRoles.orgId, orgId)))
+        .returning();
+      
+      if (!updated) return res.status(404).json({ error: "Role not found" });
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update role" });
+    }
+  });
+
+  // Delete a custom role
+  app.delete("/api/roles/:id", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      if (!orgId) return res.status(403).json({ error: "Organization context required" });
+      
+      const roleId = parseInt(req.params.id);
+      
+      // Check if role is a system role
+      const [role] = await db.select().from(customRoles)
+        .where(and(eq(customRoles.id, roleId), eq(customRoles.orgId, orgId)));
+      
+      if (!role) return res.status(404).json({ error: "Role not found" });
+      if (role.isSystem) return res.status(400).json({ error: "Cannot delete system roles" });
+      
+      await db.delete(customRoles)
+        .where(and(eq(customRoles.id, roleId), eq(customRoles.orgId, orgId)));
+      
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete role" });
+    }
+  });
+
+  // Seed standard roles for an organization
+  app.post("/api/roles/seed", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      if (!orgId) return res.status(403).json({ error: "Organization context required" });
+      
+      // Check if roles already exist
+      const existingRoles = await db.select().from(customRoles).where(eq(customRoles.orgId, orgId));
+      if (existingRoles.length > 0) {
+        return res.json({ message: "Roles already exist", roles: existingRoles });
+      }
+      
+      // Create standard roles
+      const standardRoles = [
+        { name: "Owner", description: "Full access to all features and settings", color: "#f59e0b", isSystem: true, permissions: DEFAULT_ROLE_PERMISSIONS.owner },
+        { name: "Administrator", description: "Full access except organization ownership", color: "#ef4444", isSystem: true, permissions: DEFAULT_ROLE_PERMISSIONS.admin },
+        { name: "Manager", description: "Manage day-to-day operations and staff", color: "#8b5cf6", isSystem: true, permissions: DEFAULT_ROLE_PERMISSIONS.manager },
+        { name: "Technician", description: "Perform maintenance and inspections", color: "#22c55e", isSystem: true, isDefault: true, permissions: DEFAULT_ROLE_PERMISSIONS.technician },
+        { name: "Viewer", description: "Read-only access to data", color: "#6b7280", isSystem: true, permissions: DEFAULT_ROLE_PERMISSIONS.viewer },
+      ];
+      
+      const createdRoles = await db.insert(customRoles)
+        .values(standardRoles.map(r => ({ ...r, orgId })))
+        .returning();
+      
+      res.status(201).json(createdRoles);
+    } catch (error) {
+      console.error("Seed roles error:", error);
+      res.status(500).json({ error: "Failed to seed roles" });
+    }
+  });
+
+  // Set view-as role for role preview (stores in session)
+  app.post("/api/roles/view-as/:roleId", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      if (!orgId) return res.status(403).json({ error: "Organization context required" });
+      
+      const roleId = parseInt(req.params.roleId);
+      
+      // Verify role exists and belongs to org
+      const [role] = await db.select().from(customRoles)
+        .where(and(eq(customRoles.id, roleId), eq(customRoles.orgId, orgId)));
+      
+      if (!role) return res.status(404).json({ error: "Role not found" });
+      
+      // Store in session
+      (req.session as any).viewAsRoleId = roleId;
+      (req.session as any).viewAsPermissions = role.permissions;
+      
+      res.json({ success: true, role });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to set view-as role" });
+    }
+  });
+
+  // Clear view-as role
+  app.delete("/api/roles/view-as", requireAuth, async (req, res) => {
+    try {
+      delete (req.session as any).viewAsRoleId;
+      delete (req.session as any).viewAsPermissions;
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to clear view-as role" });
+    }
+  });
+
+  // Get current view-as role
+  app.get("/api/roles/view-as", requireAuth, async (req, res) => {
+    try {
+      const viewAsRoleId = (req.session as any).viewAsRoleId;
+      const viewAsPermissions = (req.session as any).viewAsPermissions;
+      res.json({ viewAsRoleId, viewAsPermissions });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get view-as role" });
+    }
+  });
+
+  // Get current user's effective permissions (either from view-as or actual role)
+  app.get("/api/permissions/current", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      if (!orgId) return res.status(403).json({ error: "Organization context required" });
+      
+      // Check for view-as mode first
+      const viewAsPermissions = (req.session as any).viewAsPermissions;
+      if (viewAsPermissions) {
+        return res.json({ 
+          permissions: viewAsPermissions, 
+          isViewAs: true,
+          viewAsRoleId: (req.session as any).viewAsRoleId 
+        });
+      }
+      
+      // Get user's actual membership and role
+      const userId = (req.user as any)?.claims?.sub;
+      const membership = await storage.getMembershipByUserAndOrg(userId, orgId);
+      
+      if (!membership) {
+        return res.status(403).json({ error: "Not a member of this organization" });
+      }
+      
+      // If user has a custom role, use its permissions
+      if (membership.customRoleId) {
+        const [role] = await db.select().from(customRoles)
+          .where(eq(customRoles.id, membership.customRoleId));
+        if (role) {
+          return res.json({ permissions: role.permissions, isViewAs: false, role: membership.role });
+        }
+      }
+      
+      // Fall back to base role permissions
+      const baseRole = membership.role || 'technician';
+      const permissions = DEFAULT_ROLE_PERMISSIONS[baseRole] || DEFAULT_ROLE_PERMISSIONS.viewer;
+      
+      res.json({ permissions, isViewAs: false, role: baseRole });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get current permissions" });
+    }
+  });
+
+  // Assign a custom role to a member
+  app.patch("/api/organizations/current/members/:memberId/role", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      if (!orgId) return res.status(403).json({ error: "Organization context required" });
+      
+      const memberId = parseInt(req.params.memberId);
+      const { customRoleId, role } = req.body;
+      
+      const updateData: any = {};
+      if (customRoleId !== undefined) updateData.customRoleId = customRoleId;
+      if (role !== undefined) updateData.role = role;
+      
+      const [updated] = await db.update(orgMemberships)
+        .set(updateData)
+        .where(and(eq(orgMemberships.id, memberId), eq(orgMemberships.orgId, orgId)))
+        .returning();
+      
+      if (!updated) return res.status(404).json({ error: "Member not found" });
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update member role" });
     }
   });
 
