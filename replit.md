@@ -33,6 +33,9 @@ Centralized database schema definitions, TypeScript types, and Zod validation sc
 - **Asset Management**: Tracking with status, hierarchy, images, documents, lifecycle, and custom fields.
 - **Work Order Management**: Comprehensive task management, time tracking, parts consumption, status workflows, digital signatures, and batch operations.
 - **Predictive Maintenance**: AI-driven insights from telematics, fault codes, and historical data, including similar asset analysis and manual knowledge integration.
+    - **Create WO from Prediction**: One-click work order creation with automatic bidirectional linking and priority assignment based on severity.
+    - **Defer Predictions**: Schedule predictions to resurface at a future date or when a PM schedule triggers.
+    - **AI Feedback Loop**: Learns from work order notes when linked WOs are completed, classifying feedback type based on keyword matching.
 - **Inventory & Procurement**: Full parts management with reorder points, intelligent classification (SMART, ABC), cycle counting, purchase requisitions, orders, and workflow management.
 - **Scheduling & Inspections**: Interval-based PM schedules and Driver Vehicle Inspection Reports (DVIRs) with defect tracking and bulk QR code printing.
 - **Estimates**: Detailed maintenance cost estimates with approval workflows and conversion to work orders.
