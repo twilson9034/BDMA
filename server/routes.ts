@@ -724,7 +724,7 @@ export async function registerRoutes(
   // ============================================================
   
   // Get all custom roles for the organization
-  app.get("/api/roles", requireAuth, tenantMiddleware(), async (req, res) => {
+  app.get("/api/custom-roles", requireAuth, tenantMiddleware(), async (req, res) => {
     try {
       const orgId = getOrgId(req);
       if (!orgId) return res.status(403).json({ error: "Organization context required" });
@@ -737,7 +737,7 @@ export async function registerRoutes(
   });
 
   // Get a single role
-  app.get("/api/roles/:id", requireAuth, tenantMiddleware(), async (req, res) => {
+  app.get("/api/custom-roles/:id", requireAuth, tenantMiddleware(), async (req, res) => {
     try {
       const orgId = getOrgId(req);
       if (!orgId) return res.status(403).json({ error: "Organization context required" });
@@ -753,7 +753,7 @@ export async function registerRoutes(
   });
 
   // Create a new custom role
-  app.post("/api/roles", requireAuth, tenantMiddleware(), async (req, res) => {
+  app.post("/api/custom-roles", requireAuth, tenantMiddleware(), async (req, res) => {
     try {
       const orgId = getOrgId(req);
       if (!orgId) return res.status(403).json({ error: "Organization context required" });
@@ -771,7 +771,7 @@ export async function registerRoutes(
   });
 
   // Update a custom role
-  app.patch("/api/roles/:id", requireAuth, tenantMiddleware(), async (req, res) => {
+  app.patch("/api/custom-roles/:id", requireAuth, tenantMiddleware(), async (req, res) => {
     try {
       const orgId = getOrgId(req);
       if (!orgId) return res.status(403).json({ error: "Organization context required" });
@@ -795,7 +795,7 @@ export async function registerRoutes(
   });
 
   // Delete a custom role
-  app.delete("/api/roles/:id", requireAuth, tenantMiddleware(), async (req, res) => {
+  app.delete("/api/custom-roles/:id", requireAuth, tenantMiddleware(), async (req, res) => {
     try {
       const orgId = getOrgId(req);
       if (!orgId) return res.status(403).json({ error: "Organization context required" });
@@ -819,7 +819,7 @@ export async function registerRoutes(
   });
 
   // Seed standard roles for an organization
-  app.post("/api/roles/seed", requireAuth, tenantMiddleware(), async (req, res) => {
+  app.post("/api/custom-roles/seed", requireAuth, tenantMiddleware(), async (req, res) => {
     try {
       const orgId = getOrgId(req);
       if (!orgId) return res.status(403).json({ error: "Organization context required" });
@@ -851,7 +851,7 @@ export async function registerRoutes(
   });
 
   // Set view-as role for role preview (stores in session)
-  app.post("/api/roles/view-as/:roleId", requireAuth, tenantMiddleware(), async (req, res) => {
+  app.post("/api/custom-roles/view-as/:roleId", requireAuth, tenantMiddleware(), async (req, res) => {
     try {
       const orgId = getOrgId(req);
       if (!orgId) return res.status(403).json({ error: "Organization context required" });
@@ -875,7 +875,7 @@ export async function registerRoutes(
   });
 
   // Clear view-as role
-  app.delete("/api/roles/view-as", requireAuth, async (req, res) => {
+  app.delete("/api/custom-roles/view-as", requireAuth, async (req, res) => {
     try {
       delete (req.session as any).viewAsRoleId;
       delete (req.session as any).viewAsPermissions;
@@ -886,7 +886,7 @@ export async function registerRoutes(
   });
 
   // Get current view-as role
-  app.get("/api/roles/view-as", requireAuth, async (req, res) => {
+  app.get("/api/custom-roles/view-as", requireAuth, async (req, res) => {
     try {
       const viewAsRoleId = (req.session as any).viewAsRoleId;
       const viewAsPermissions = (req.session as any).viewAsPermissions;
