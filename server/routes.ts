@@ -2628,12 +2628,67 @@ export async function registerRoutes(
 
   app.patch("/api/work-orders/:id", requireAuth, async (req, res) => {
     try {
-      const updated = await storage.updateWorkOrder(parseInt(req.params.id), req.body);
+      const workOrderId = parseInt(req.params.id);
+      const existingWO = await storage.getWorkOrder(workOrderId);
+      if (!existingWO) return res.status(404).json({ error: "Work order not found" });
+      
+      const updated = await storage.updateWorkOrder(workOrderId, req.body);
       if (!updated) return res.status(404).json({ error: "Work order not found" });
+      
+      // AI Feedback Loop: When a WO linked to a prediction is completed, use notes as feedback
+      // Only update feedback when there's actual textual evidence to learn from
+      if (updated.predictionId && updated.status === "completed" && existingWO.status !== "completed") {
+        const prediction = await storage.getPrediction(updated.predictionId);
+        if (prediction && !prediction.feedbackType) {
+          const userId = (req.user as any)?.claims?.sub;
+          // Compile feedback from WO notes and resolution
+          const feedbackData: string[] = [];
+          if (updated.notes) feedbackData.push(`Notes: ${updated.notes}`);
+          if (updated.resolution) feedbackData.push(`Resolution: ${updated.resolution}`);
+          if (updated.rootCause) feedbackData.push(`Root Cause: ${updated.rootCause}`);
+          
+          // Only proceed with AI learning if there's actual textual evidence
+          if (feedbackData.length > 0) {
+            const notesLower = (updated.notes || "").toLowerCase();
+            const resolutionLower = (updated.resolution || "").toLowerCase();
+            const rootCauseLower = (updated.rootCause || "").toLowerCase();
+            const combinedText = `${notesLower} ${resolutionLower} ${rootCauseLower}`;
+            
+            // Determine feedback type based on WO outcome with keyword matching
+            let feedbackType: "completed_repair" | "not_needed" | "false_positive" | null = null;
+            
+            // Check for false positive indicators
+            if (combinedText.includes("no issue found") || combinedText.includes("false alarm") ||
+                combinedText.includes("not needed") || combinedText.includes("no problem") ||
+                combinedText.includes("unnecessary") || combinedText.includes("incorrect prediction")) {
+              feedbackType = "false_positive";
+            } 
+            // Check for confirmed repair indicators
+            else if (combinedText.includes("repaired") || combinedText.includes("replaced") ||
+                     combinedText.includes("fixed") || combinedText.includes("issue confirmed") ||
+                     combinedText.includes("problem found") || combinedText.includes("resolved") ||
+                     combinedText.includes("completed") || combinedText.includes("installed")) {
+              feedbackType = "completed_repair";
+            }
+            
+            // Only update prediction if we have a confident feedback classification
+            if (feedbackType) {
+              await storage.updatePrediction(updated.predictionId, {
+                feedbackType,
+                feedbackNotes: `[AI Learning from WO ${updated.workOrderNumber}] ${feedbackData.join("; ")}`,
+                feedbackAt: new Date(),
+                feedbackById: userId,
+              });
+            }
+          }
+        }
+      }
+      
       if (updated.orgId) appEvents.broadcast("workorders", updated.orgId);
       if (updated.orgId) appEvents.broadcast("dashboard", updated.orgId);
       res.json(updated);
     } catch (error) {
+      console.error("Failed to update work order:", error);
       res.status(500).json({ error: "Failed to update work order" });
     }
   });
@@ -4954,6 +5009,11 @@ export async function registerRoutes(
       const orgId = getOrgId(req);
       if (orgId && prediction.orgId !== orgId) {
         return res.status(403).json({ error: "Access denied" });
+      }
+      
+      // Prevent duplicate work orders from the same prediction
+      if (prediction.linkedWorkOrderId) {
+        return res.status(400).json({ error: "A work order already exists for this prediction" });
       }
 
       const userId = (req.user as any)?.claims?.sub;

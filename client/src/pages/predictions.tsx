@@ -387,7 +387,7 @@ export default function Predictions() {
                           </Link>
                         )}
                       </div>
-                      {!prediction.acknowledged && !prediction.dismissedAt && (
+                      {!prediction.acknowledged && !prediction.dismissedAt && !prediction.linkedWorkOrderId && (
                         <div className="flex gap-2 flex-wrap">
                           <Button 
                             size="sm" 
@@ -624,11 +624,9 @@ export default function Predictions() {
                     <SelectValue placeholder="Select PM schedule..." />
                   </SelectTrigger>
                   <SelectContent>
-                    {pmSchedules?.filter(pm => 
-                      pm.assetId === selectedPrediction?.assetId || !pm.assetId
-                    ).map((pm) => (
+                    {pmSchedules?.filter(pm => pm.isActive).map((pm) => (
                       <SelectItem key={pm.id} value={pm.id.toString()}>
-                        {pm.name} {pm.intervalMiles ? `(Every ${pm.intervalMiles} miles)` : pm.intervalHours ? `(Every ${pm.intervalHours} hours)` : pm.intervalDays ? `(Every ${pm.intervalDays} days)` : ''}
+                        {pm.name} ({pm.intervalType === "miles" ? `Every ${pm.intervalValue} miles` : pm.intervalType === "hours" ? `Every ${pm.intervalValue} hours` : pm.intervalType === "days" ? `Every ${pm.intervalValue} days` : `Every ${pm.intervalValue} ${pm.intervalType}`})
                       </SelectItem>
                     ))}
                     {(!pmSchedules || pmSchedules.length === 0) && (
