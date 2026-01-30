@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Link } from "wouter";
-import { Brain, AlertTriangle, Wrench, Clock, TrendingUp, CheckCircle2, X, Sparkles, Info, MessageSquare, Calendar, Ban, CircleAlert, FileText } from "lucide-react";
+import { Link, useLocation } from "wouter";
+import { Brain, AlertTriangle, Wrench, Clock, TrendingUp, CheckCircle2, X, Sparkles, Info, MessageSquare, Calendar, Ban, CircleAlert, FileText, Plus, CalendarClock } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/PageHeader";
@@ -12,9 +12,11 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import type { Prediction, Asset, WorkOrder } from "@shared/schema";
+import type { Prediction, Asset, WorkOrder, PmSchedule } from "@shared/schema";
 
 interface PredictionWithAsset extends Prediction {
   assetName?: string;
@@ -23,11 +25,17 @@ interface PredictionWithAsset extends Prediction {
 
 export default function Predictions() {
   const { toast } = useToast();
+  const [, navigate] = useLocation();
   const [feedbackDialogOpen, setFeedbackDialogOpen] = useState(false);
+  const [deferDialogOpen, setDeferDialogOpen] = useState(false);
   const [selectedPrediction, setSelectedPrediction] = useState<PredictionWithAsset | null>(null);
   const [feedbackType, setFeedbackType] = useState<string>("");
   const [feedbackNotes, setFeedbackNotes] = useState("");
   const [linkedWorkOrderId, setLinkedWorkOrderId] = useState<string>("");
+  const [deferType, setDeferType] = useState<"date" | "pm">("date");
+  const [deferDate, setDeferDate] = useState("");
+  const [deferScheduleId, setDeferScheduleId] = useState<string>("");
+  const [deferNotes, setDeferNotes] = useState("");
   
   const { data: predictions, isLoading } = useQuery<PredictionWithAsset[]>({
     queryKey: ["/api/predictions"],
@@ -39,6 +47,10 @@ export default function Predictions() {
 
   const { data: workOrders } = useQuery<WorkOrder[]>({
     queryKey: ["/api/work-orders"],
+  });
+
+  const { data: pmSchedules } = useQuery<PmSchedule[]>({
+    queryKey: ["/api/pm-schedules"],
   });
 
   const acknowledgeMutation = useMutation({
@@ -91,9 +103,83 @@ export default function Predictions() {
     setLinkedWorkOrderId("");
   };
 
+  const resetDeferForm = () => {
+    setSelectedPrediction(null);
+    setDeferType("date");
+    setDeferDate("");
+    setDeferScheduleId("");
+    setDeferNotes("");
+  };
+
+  const createWorkOrderMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const response = await apiRequest("POST", `/api/predictions/${id}/create-work-order`);
+      return response.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/predictions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/work-orders"] });
+      toast({ 
+        title: "Work Order Created", 
+        description: `Work order ${data.workOrder.workOrderNumber} created and linked to prediction` 
+      });
+      navigate(`/work-orders/${data.workOrder.id}`);
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to create work order", variant: "destructive" });
+    },
+  });
+
+  const deferMutation = useMutation({
+    mutationFn: async ({ id, deferredUntil, deferredScheduleId, notes }: { 
+      id: number; 
+      deferredUntil?: string; 
+      deferredScheduleId?: number;
+      notes?: string;
+    }) => {
+      await apiRequest("PATCH", `/api/predictions/${id}/defer`, { 
+        deferredUntil, 
+        deferredScheduleId,
+        notes,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/predictions"] });
+      toast({ title: "Prediction Deferred", description: "This prediction will be reviewed later" });
+      setDeferDialogOpen(false);
+      resetDeferForm();
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to defer prediction", variant: "destructive" });
+    },
+  });
+
   const openFeedbackDialog = (prediction: PredictionWithAsset) => {
     setSelectedPrediction(prediction);
     setFeedbackDialogOpen(true);
+  };
+
+  const openDeferDialog = (prediction: PredictionWithAsset) => {
+    setSelectedPrediction(prediction);
+    setDeferDialogOpen(true);
+  };
+
+  const submitDefer = () => {
+    if (!selectedPrediction) return;
+    if (deferType === "date" && !deferDate) {
+      toast({ title: "Error", description: "Please select a date", variant: "destructive" });
+      return;
+    }
+    if (deferType === "pm" && !deferScheduleId) {
+      toast({ title: "Error", description: "Please select a PM schedule", variant: "destructive" });
+      return;
+    }
+    deferMutation.mutate({
+      id: selectedPrediction.id,
+      deferredUntil: deferType === "date" ? deferDate : undefined,
+      deferredScheduleId: deferType === "pm" ? parseInt(deferScheduleId) : undefined,
+      notes: deferNotes || undefined,
+    });
   };
 
   const submitFeedback = () => {
@@ -270,8 +356,8 @@ export default function Predictions() {
                       </div>
                     )}
 
-                    <div className="flex items-center justify-between pt-2 border-t border-border">
-                      <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                    <div className="flex items-center justify-between pt-2 border-t border-border flex-wrap gap-2">
+                      <div className="flex items-center gap-4 text-sm text-muted-foreground flex-wrap">
                         {prediction.estimatedCost && (
                           <span>Est. Cost: ${Number(prediction.estimatedCost).toFixed(2)}</span>
                         )}
@@ -286,9 +372,32 @@ export default function Predictions() {
                             {getFeedbackLabel(prediction.feedbackType)}
                           </Badge>
                         )}
+                        {prediction.deferredUntil && (
+                          <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400">
+                            <CalendarClock className="h-3 w-3" />
+                            Deferred until: {new Date(prediction.deferredUntil).toLocaleDateString()}
+                          </span>
+                        )}
+                        {prediction.linkedWorkOrderId && (
+                          <Link href={`/work-orders/${prediction.linkedWorkOrderId}`}>
+                            <Badge variant="outline" className="bg-green-500/10 text-green-600 border-green-500/30 cursor-pointer">
+                              <FileText className="h-3 w-3 mr-1" />
+                              WO Linked
+                            </Badge>
+                          </Link>
+                        )}
                       </div>
                       {!prediction.acknowledged && !prediction.dismissedAt && (
-                        <div className="flex gap-2">
+                        <div className="flex gap-2 flex-wrap">
+                          <Button 
+                            size="sm" 
+                            variant="outline"
+                            onClick={() => openDeferDialog(prediction)}
+                            data-testid={`button-defer-${prediction.id}`}
+                          >
+                            <CalendarClock className="h-4 w-4 mr-1" />
+                            Defer
+                          </Button>
                           <Button 
                             size="sm" 
                             variant="outline"
@@ -301,6 +410,7 @@ export default function Predictions() {
                           </Button>
                           <Button 
                             size="sm"
+                            variant="outline"
                             onClick={() => acknowledgeMutation.mutate(prediction.id)}
                             disabled={acknowledgeMutation.isPending}
                             data-testid={`button-ack-${prediction.id}`}
@@ -308,18 +418,38 @@ export default function Predictions() {
                             <CheckCircle2 className="h-4 w-4 mr-1" />
                             Acknowledge
                           </Button>
+                          <Button 
+                            size="sm"
+                            onClick={() => createWorkOrderMutation.mutate(prediction.id)}
+                            disabled={createWorkOrderMutation.isPending}
+                            data-testid={`button-create-wo-${prediction.id}`}
+                          >
+                            <Plus className="h-4 w-4 mr-1" />
+                            Create WO
+                          </Button>
                         </div>
                       )}
-                      {prediction.acknowledged && !prediction.feedbackType && (
-                        <Button 
-                          size="sm"
-                          variant="outline"
-                          onClick={() => openFeedbackDialog(prediction)}
-                          data-testid={`button-feedback-${prediction.id}`}
-                        >
-                          <MessageSquare className="h-4 w-4 mr-1" />
-                          Provide Feedback
-                        </Button>
+                      {prediction.acknowledged && !prediction.feedbackType && !prediction.linkedWorkOrderId && (
+                        <div className="flex gap-2 flex-wrap">
+                          <Button 
+                            size="sm"
+                            variant="outline"
+                            onClick={() => openFeedbackDialog(prediction)}
+                            data-testid={`button-feedback-${prediction.id}`}
+                          >
+                            <MessageSquare className="h-4 w-4 mr-1" />
+                            Provide Feedback
+                          </Button>
+                          <Button 
+                            size="sm"
+                            onClick={() => createWorkOrderMutation.mutate(prediction.id)}
+                            disabled={createWorkOrderMutation.isPending}
+                            data-testid={`button-create-wo-ack-${prediction.id}`}
+                          >
+                            <Plus className="h-4 w-4 mr-1" />
+                            Create WO
+                          </Button>
+                        </div>
                       )}
                     </div>
                   </div>
@@ -434,6 +564,105 @@ export default function Predictions() {
               data-testid="button-submit-feedback"
             >
               Submit Feedback
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={deferDialogOpen} onOpenChange={(open) => {
+        setDeferDialogOpen(open);
+        if (!open) resetDeferForm();
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Defer Prediction</DialogTitle>
+            <DialogDescription>
+              Schedule this prediction for review at a later time
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            {selectedPrediction && (
+              <div className="p-3 bg-muted rounded-lg text-sm">
+                <p className="font-medium">{selectedPrediction.assetNumber} - {selectedPrediction.assetName}</p>
+                <p className="text-muted-foreground mt-1">{selectedPrediction.prediction}</p>
+              </div>
+            )}
+
+            <div className="space-y-3">
+              <Label>When to review?</Label>
+              <RadioGroup value={deferType} onValueChange={(v) => setDeferType(v as "date" | "pm")}>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="date" id="defer-date" data-testid="radio-defer-date" />
+                  <Label htmlFor="defer-date" className="font-normal">Specific Date</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="pm" id="defer-pm" data-testid="radio-defer-pm" />
+                  <Label htmlFor="defer-pm" className="font-normal">Next PM Schedule</Label>
+                </div>
+              </RadioGroup>
+            </div>
+
+            {deferType === "date" && (
+              <div className="space-y-2">
+                <Label>Defer Until Date</Label>
+                <Input
+                  type="date"
+                  value={deferDate}
+                  onChange={(e) => setDeferDate(e.target.value)}
+                  min={new Date().toISOString().split('T')[0]}
+                  data-testid="input-defer-date"
+                />
+              </div>
+            )}
+
+            {deferType === "pm" && (
+              <div className="space-y-2">
+                <Label>Defer Until PM Schedule</Label>
+                <Select value={deferScheduleId} onValueChange={setDeferScheduleId}>
+                  <SelectTrigger data-testid="select-defer-pm">
+                    <SelectValue placeholder="Select PM schedule..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {pmSchedules?.filter(pm => 
+                      pm.assetId === selectedPrediction?.assetId || !pm.assetId
+                    ).map((pm) => (
+                      <SelectItem key={pm.id} value={pm.id.toString()}>
+                        {pm.name} {pm.intervalMiles ? `(Every ${pm.intervalMiles} miles)` : pm.intervalHours ? `(Every ${pm.intervalHours} hours)` : pm.intervalDays ? `(Every ${pm.intervalDays} days)` : ''}
+                      </SelectItem>
+                    ))}
+                    {(!pmSchedules || pmSchedules.length === 0) && (
+                      <SelectItem value="" disabled>No PM schedules available</SelectItem>
+                    )}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">This prediction will be reviewed during the next scheduled PM</p>
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label>Notes (optional)</Label>
+              <Textarea
+                value={deferNotes}
+                onChange={(e) => setDeferNotes(e.target.value)}
+                placeholder="Reason for deferring..."
+                rows={2}
+                data-testid="input-defer-notes"
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeferDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={submitDefer} 
+              disabled={deferMutation.isPending || (deferType === "date" && !deferDate) || (deferType === "pm" && !deferScheduleId)}
+              data-testid="button-submit-defer"
+            >
+              <CalendarClock className="h-4 w-4 mr-1" />
+              Defer Prediction
             </Button>
           </DialogFooter>
         </DialogContent>
