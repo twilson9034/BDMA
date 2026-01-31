@@ -171,7 +171,7 @@ function RolesManagement({ canManageOrg }: { canManageOrg: boolean }) {
   });
 
   const seedRolesMutation = useMutation({
-    mutationFn: () => apiRequest("/api/custom-roles/seed", { method: "POST" }),
+    mutationFn: () => apiRequest("POST", "/api/custom-roles/seed"),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/custom-roles"] });
       toast({ title: "Standard roles created", description: "Default roles have been seeded successfully." });
@@ -183,7 +183,7 @@ function RolesManagement({ canManageOrg }: { canManageOrg: boolean }) {
 
   const createRoleMutation = useMutation({
     mutationFn: (data: { name: string; description?: string; permissions: RolePermissions }) =>
-      apiRequest("/api/custom-roles", { method: "POST", body: JSON.stringify(data), headers: { "Content-Type": "application/json" } }),
+      apiRequest("POST", "/api/custom-roles", data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/custom-roles"] });
       toast({ title: "Role created", description: "The new role has been created." });
@@ -197,7 +197,7 @@ function RolesManagement({ canManageOrg }: { canManageOrg: boolean }) {
 
   const updateRoleMutation = useMutation({
     mutationFn: ({ id, data }: { id: number; data: { name?: string; description?: string; permissions?: RolePermissions } }) =>
-      apiRequest(`/api/custom-roles/${id}`, { method: "PATCH", body: JSON.stringify(data), headers: { "Content-Type": "application/json" } }),
+      apiRequest("PATCH", `/api/custom-roles/${id}`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/custom-roles"] });
       toast({ title: "Role updated", description: "The role has been updated." });
@@ -210,7 +210,7 @@ function RolesManagement({ canManageOrg }: { canManageOrg: boolean }) {
   });
 
   const deleteRoleMutation = useMutation({
-    mutationFn: (id: number) => apiRequest(`/api/custom-roles/${id}`, { method: "DELETE" }),
+    mutationFn: (id: number) => apiRequest("DELETE", `/api/custom-roles/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/custom-roles"] });
       toast({ title: "Role deleted", description: "The role has been removed." });
@@ -566,7 +566,7 @@ function ViewAsRoleCard({ roles }: { roles: CustomRole[] }) {
 
   const setViewAsMutation = useMutation({
     mutationFn: (roleId: number) =>
-      apiRequest("/api/custom-roles/view-as", { method: "POST", body: JSON.stringify({ roleId }), headers: { "Content-Type": "application/json" } }),
+      apiRequest("POST", `/api/custom-roles/view-as/${roleId}`),
     onSuccess: () => {
       refetchViewAs();
       queryClient.invalidateQueries({ queryKey: ["/api/permissions"] });
@@ -578,7 +578,7 @@ function ViewAsRoleCard({ roles }: { roles: CustomRole[] }) {
   });
 
   const clearViewAsMutation = useMutation({
-    mutationFn: () => apiRequest("/api/custom-roles/view-as", { method: "DELETE" }),
+    mutationFn: () => apiRequest("DELETE", "/api/custom-roles/view-as"),
     onSuccess: () => {
       refetchViewAs();
       queryClient.invalidateQueries({ queryKey: ["/api/permissions"] });
