@@ -47,6 +47,7 @@ Centralized database schema definitions, TypeScript types, and Zod validation sc
     - **Work Order Checklists**: Attach checklist templates to work orders with Pass/Needs Repair/N/A status options per item.
     - **Checklist Item Notes**: Add notes to individual checklist items for detailed documentation.
     - **Auto-Create WO Lines**: "Needs Repair" items can automatically generate new work order lines with notes transferred.
+    - **AI VMRS Suggestion**: When creating WO lines from checklist items, the system suggests VMRS codes based on item text using keyword matching and OpenAI analysis. High-confidence matches (≥85%) are auto-applied; lower confidence shows a selection dialog. User selections are stored in `vmrs_text_feedback` table for continuous learning.
 - **Data Handling**: Bulk data import with error reporting, barcode/QR scanning, and part creation from PO lines.
 - **User & Team Management**: Multi-user labor tracking with rates, technician management, and role-based access control.
 - **Notifications**: In-app notification center with priority levels and real-time updates via Server-Sent Events (SSE).
