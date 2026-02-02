@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useRoute, useLocation } from "wouter";
-import { ArrowLeft, FileText, Download, ExternalLink, Calendar, Clock, Book, HardDrive, Sparkles, List, Car, Loader2, Link2, Pencil, Trash2, Eye } from "lucide-react";
+import { ArrowLeft, FileText, Download, ExternalLink, Calendar, Clock, Book, HardDrive, Sparkles, List, Car, Loader2, Link2, Pencil, Trash2, Eye, Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -42,6 +42,7 @@ export default function ManualDetail() {
     version: "",
   });
   const [selectedAssetId, setSelectedAssetId] = useState<string>("");
+  const [newVinPattern, setNewVinPattern] = useState("");
   const { toast } = useToast();
   
   const { data: assets } = useQuery<Asset[]>({
@@ -53,9 +54,19 @@ export default function ManualDetail() {
     enabled: !!params?.id,
   });
 
+  // Load AI extracted sections from database when manual loads
+  useEffect(() => {
+    if (manual?.aiExtractedSections) {
+      const sections = manual.aiExtractedSections as ExtractedSection[];
+      if (Array.isArray(sections) && sections.length > 0) {
+        setExtractedSections(sections);
+      }
+    }
+  }, [manual?.aiExtractedSections]);
+
   const handleAiExtraction = async () => {
     setIsExtracting(true);
-    // Simulate AI section extraction
+    // Simulate AI section extraction (in real app, this would call an AI API)
     await new Promise(resolve => setTimeout(resolve, 2000));
     
     const mockSections: ExtractedSection[] = [
@@ -67,11 +78,73 @@ export default function ManualDetail() {
     ];
     
     setExtractedSections(mockSections);
+    
+    // Save to database
+    try {
+      await apiRequest("PATCH", `/api/manuals/${params?.id}`, {
+        aiExtractedSections: mockSections,
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/manuals", params?.id] });
+      toast({
+        title: "AI Extraction Complete",
+        description: `Found ${mockSections.length} key sections. Saved to database.`,
+      });
+    } catch (err) {
+      toast({
+        title: "Extraction Complete",
+        description: `Found ${mockSections.length} sections but failed to save.`,
+        variant: "destructive",
+      });
+    }
+    
     setIsExtracting(false);
-    toast({
-      title: "AI Extraction Complete",
-      description: `Found ${mockSections.length} key sections in this manual.`,
-    });
+  };
+
+  const handleAddVinPattern = async () => {
+    if (!newVinPattern.trim()) return;
+    
+    const currentPatterns = manual?.vinPatterns || [];
+    const updatedPatterns = [...currentPatterns, newVinPattern.trim()];
+    
+    try {
+      await apiRequest("PATCH", `/api/manuals/${params?.id}`, {
+        vinPatterns: updatedPatterns,
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/manuals", params?.id] });
+      setNewVinPattern("");
+      toast({
+        title: "VIN Pattern Added",
+        description: `Pattern "${newVinPattern}" has been added.`,
+      });
+    } catch (err) {
+      toast({
+        title: "Error",
+        description: "Failed to add VIN pattern.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleRemoveVinPattern = async (patternToRemove: string) => {
+    const currentPatterns = manual?.vinPatterns || [];
+    const updatedPatterns = currentPatterns.filter(p => p !== patternToRemove);
+    
+    try {
+      await apiRequest("PATCH", `/api/manuals/${params?.id}`, {
+        vinPatterns: updatedPatterns,
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/manuals", params?.id] });
+      toast({
+        title: "VIN Pattern Removed",
+        description: `Pattern has been removed.`,
+      });
+    } catch (err) {
+      toast({
+        title: "Error",
+        description: "Failed to remove VIN pattern.",
+        variant: "destructive",
+      });
+    }
   };
 
   const updateMutation = useMutation({
@@ -535,30 +608,60 @@ export default function ManualDetail() {
             </CardContent>
           </Card>
 
+          {/* VIN Patterns Card */}
           <Card data-testid="card-vin-patterns">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Car className="h-5 w-5" />
                 VIN Patterns
               </CardTitle>
+              <CardDescription>
+                Add VIN patterns to auto-associate this manual with matching assets
+              </CardDescription>
             </CardHeader>
-            <CardContent>
-              {(displayManual as any).vinPatterns && (displayManual as any).vinPatterns.length > 0 ? (
-                <div className="space-y-2">
-                  {((displayManual as any).vinPatterns as string[]).map((pattern, index) => (
-                    <Badge key={index} variant="outline" className="mr-2" data-testid={`badge-vin-pattern-${index}`}>
+            <CardContent className="space-y-3">
+              <div className="flex gap-2">
+                <Input
+                  placeholder="e.g., 1FUJG*, 3FALF5*"
+                  value={newVinPattern}
+                  onChange={(e) => setNewVinPattern(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleAddVinPattern()}
+                  data-testid="input-vin-pattern"
+                />
+                <Button
+                  size="icon"
+                  onClick={handleAddVinPattern}
+                  disabled={!newVinPattern.trim()}
+                  data-testid="button-add-vin-pattern"
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </div>
+              
+              {displayManual?.vinPatterns && displayManual.vinPatterns.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {displayManual.vinPatterns.map((pattern, index) => (
+                    <Badge
+                      key={index}
+                      variant="secondary"
+                      className="flex items-center gap-1"
+                      data-testid={`badge-vin-pattern-${index}`}
+                    >
                       {pattern}
+                      <button
+                        onClick={() => handleRemoveVinPattern(pattern)}
+                        className="ml-1 hover:text-destructive"
+                        data-testid={`button-remove-pattern-${index}`}
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
                     </Badge>
                   ))}
-                  <p className="text-xs text-muted-foreground mt-2">
-                    Assets with VINs matching these patterns will be auto-associated.
-                  </p>
                 </div>
               ) : (
-                <div className="text-center text-muted-foreground py-4">
-                  <p className="text-sm">No VIN patterns configured</p>
-                  <p className="text-xs mt-1">Add patterns like "1FUJG*" to auto-link assets</p>
-                </div>
+                <p className="text-xs text-muted-foreground">
+                  No VIN patterns defined. Use wildcards (*) for partial matching.
+                </p>
               )}
             </CardContent>
           </Card>
