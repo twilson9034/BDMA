@@ -115,6 +115,12 @@ export default function WorkOrderDetail() {
   const [requestPartId, setRequestPartId] = useState("");
   const [requestPartQuantity, setRequestPartQuantity] = useState("1");
   
+  // Edit Line dialog state
+  const [editLineId, setEditLineId] = useState<number | null>(null);
+  const [editLineDescription, setEditLineDescription] = useState("");
+  const [editLineVmrsCodeId, setEditLineVmrsCodeId] = useState<string>("");
+  const [showEditLineDialog, setShowEditLineDialog] = useState(false);
+  
   // Close line confirmation dialog
   const [showCloseLineConfirm, setShowCloseLineConfirm] = useState<number | null>(null);
   
@@ -464,6 +470,43 @@ export default function WorkOrderDetail() {
       toast({ title: "Error", description: "Failed to delete line.", variant: "destructive" });
     },
   });
+
+  const editLineMutation = useMutation({
+    mutationFn: async ({ lineId, description, vmrsCode, vmrsTitle }: { lineId: number; description: string; vmrsCode: string | null; vmrsTitle: string | null }) => {
+      return apiRequest("PATCH", `/api/work-order-lines/${lineId}`, { description, vmrsCode, vmrsTitle });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/work-orders", workOrderId, "lines"] });
+      toast({ title: "Line Updated", description: "Work order line has been updated." });
+      setShowEditLineDialog(false);
+      setEditLineId(null);
+      setEditLineDescription("");
+      setEditLineVmrsCodeId("");
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to update line.", variant: "destructive" });
+    },
+  });
+
+  const openEditLineDialog = (line: WorkOrderLine) => {
+    setEditLineId(line.id);
+    setEditLineDescription(line.description);
+    // Find the VMRS code ID from the code string
+    const vmrsCodeMatch = vmrsCodes?.find(v => v.code === line.vmrsCode);
+    setEditLineVmrsCodeId(vmrsCodeMatch?.id.toString() || "");
+    setShowEditLineDialog(true);
+  };
+
+  const handleEditLine = () => {
+    if (!editLineId || !editLineDescription.trim()) return;
+    const selectedVmrs = vmrsCodes?.find(v => v.id.toString() === editLineVmrsCodeId);
+    editLineMutation.mutate({
+      lineId: editLineId,
+      description: editLineDescription,
+      vmrsCode: selectedVmrs?.code || null,
+      vmrsTitle: selectedVmrs?.title || null,
+    });
+  };
 
   const updateLineMutation = useMutation({
     mutationFn: async ({ lineId, data }: { lineId: number; data: Partial<{ notes: string; complaint: string; cause: string; correction: string }> }) => {
@@ -1129,8 +1172,18 @@ export default function WorkOrderDetail() {
                               size="icon"
                               variant="ghost"
                               className="h-8 w-8"
+                              onClick={() => openEditLineDialog(line)}
+                              data-testid={`button-edit-line-${line.id}`}
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-8 w-8"
                               onClick={() => deleteLineMutation.mutate(line.id)}
                               disabled={deleteLineMutation.isPending}
+                              data-testid={`button-delete-line-${line.id}`}
                             >
                               <Trash2 className="h-4 w-4 text-destructive" />
                             </Button>
@@ -1639,6 +1692,66 @@ export default function WorkOrderDetail() {
                 <Plus className="h-4 w-4 mr-2" />
               )}
               Add Line
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showEditLineDialog} onOpenChange={(open) => {
+        if (!open) {
+          setShowEditLineDialog(false);
+          setEditLineId(null);
+          setEditLineDescription("");
+          setEditLineVmrsCodeId("");
+        }
+      }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Edit Work Order Line</DialogTitle>
+            <DialogDescription>
+              Update the line description and VMRS code.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <label className="text-[10px] uppercase font-bold text-muted-foreground">Description *</label>
+              <Input
+                value={editLineDescription}
+                onChange={(e) => setEditLineDescription(e.target.value)}
+                placeholder="Enter line description..."
+                data-testid="input-edit-line-description"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-[10px] uppercase font-bold text-muted-foreground">VMRS Code</label>
+              <Select value={editLineVmrsCodeId} onValueChange={setEditLineVmrsCodeId}>
+                <SelectTrigger data-testid="select-edit-line-vmrs">
+                  <SelectValue placeholder="Select VMRS code..." />
+                </SelectTrigger>
+                <SelectContent className="max-h-[300px]">
+                  <SelectItem value="none">No VMRS Code</SelectItem>
+                  {vmrsCodes?.map((code) => (
+                    <SelectItem key={code.id} value={code.id.toString()}>
+                      <span className="font-mono text-xs">{code.code}</span> - {code.title}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowEditLineDialog(false)}>Cancel</Button>
+            <Button 
+              onClick={handleEditLine}
+              disabled={!editLineDescription.trim() || editLineMutation.isPending}
+              data-testid="button-confirm-edit-line"
+            >
+              {editLineMutation.isPending ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Save className="h-4 w-4 mr-2" />
+              )}
+              Save Changes
             </Button>
           </DialogFooter>
         </DialogContent>

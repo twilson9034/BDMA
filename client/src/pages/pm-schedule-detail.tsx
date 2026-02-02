@@ -634,8 +634,8 @@ export default function PmScheduleDetail() {
                       <FormItem>
                         <FormLabel>VMRS Code (Optional)</FormLabel>
                         <Select 
-                          value={field.value?.toString() || ""} 
-                          onValueChange={(v) => field.onChange(v ? parseInt(v) : null)} 
+                          value={field.value?.toString() || "none"} 
+                          onValueChange={(v) => field.onChange(v === "none" ? null : parseInt(v))} 
                           disabled={!isEditing}
                         >
                           <FormControl>
@@ -644,7 +644,7 @@ export default function PmScheduleDetail() {
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            <SelectItem value="">No VMRS Code</SelectItem>
+                            <SelectItem value="none">No VMRS Code</SelectItem>
                             {vmrsCodes.map((vmrs) => (
                               <SelectItem key={vmrs.id} value={vmrs.id.toString()}>
                                 {vmrs.code} - {vmrs.title}

@@ -188,7 +188,7 @@ export default function Predictions() {
       id: selectedPrediction.id,
       feedbackType,
       feedbackNotes: feedbackNotes || undefined,
-      linkedWorkOrderId: linkedWorkOrderId ? parseInt(linkedWorkOrderId) : undefined,
+      linkedWorkOrderId: linkedWorkOrderId && linkedWorkOrderId !== "none" ? parseInt(linkedWorkOrderId) : undefined,
     });
   };
 
@@ -529,7 +529,7 @@ export default function Predictions() {
                     <SelectValue placeholder="Select work order..." />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">None</SelectItem>
+                    <SelectItem value="none">None</SelectItem>
                     {workOrders?.filter(wo => 
                       wo.assetId === selectedPrediction?.assetId
                     ).map((wo) => (
@@ -630,7 +630,7 @@ export default function Predictions() {
                       </SelectItem>
                     ))}
                     {(!pmSchedules || pmSchedules.length === 0) && (
-                      <SelectItem value="" disabled>No PM schedules available</SelectItem>
+                      <SelectItem value="no-schedules" disabled>No PM schedules available</SelectItem>
                     )}
                   </SelectContent>
                 </Select>

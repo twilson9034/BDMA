@@ -390,7 +390,7 @@ function CreateRequestDialog({
       partNumber: partNumber || undefined,
       quantityRequested: quantity,
       urgency,
-      workOrderId: workOrderId ? parseInt(workOrderId) : undefined,
+      workOrderId: workOrderId && workOrderId !== "none" ? parseInt(workOrderId) : undefined,
       notes: notes || undefined,
     });
   };
@@ -492,7 +492,7 @@ function CreateRequestDialog({
                 <SelectValue placeholder="Select work order..." />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">None</SelectItem>
+                <SelectItem value="none">None</SelectItem>
                 {workOrders.filter(wo => wo.status !== "completed" && wo.status !== "cancelled").map((wo) => (
                   <SelectItem key={wo.id} value={wo.id.toString()}>
                     {wo.workOrderNumber} - {wo.title}
