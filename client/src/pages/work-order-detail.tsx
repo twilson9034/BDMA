@@ -130,6 +130,25 @@ export default function WorkOrderDetail() {
   const [viewChecklistDialog, setViewChecklistDialog] = useState<{ checklistId: number; lineId: number } | null>(null);
   const [editingItemNotes, setEditingItemNotes] = useState<{ itemId: number; notes: string } | null>(null);
   
+  // VMRS selection dialog for checklist items
+  interface VmrsSuggestion {
+    systemCode: string;
+    assemblyCode?: string;
+    title: string;
+    confidence: number;
+    explanation: string;
+    matchedKeywords: string[];
+    aiEnhanced?: boolean;
+  }
+  interface VmrsSelectDialog {
+    itemId: number;
+    itemText: string;
+    suggestions: VmrsSuggestion[];
+    isLoading: boolean;
+  }
+  const [vmrsSelectDialog, setVmrsSelectDialog] = useState<VmrsSelectDialog | null>(null);
+  const [selectedVmrsCode, setSelectedVmrsCode] = useState<string>("");
+  
   // Linked PM Schedule data for auto-population
   interface LinkedPmScheduleData {
     schedule: any;
@@ -540,19 +559,73 @@ export default function WorkOrderDetail() {
     },
   });
 
-  const createWoLineFromChecklistMutation = useMutation({
+  const suggestVmrsMutation = useMutation({
     mutationFn: async ({ itemId }: { itemId: number }) => {
-      return apiRequest("POST", `/api/work-order-checklist-items/${itemId}/create-line`, { workOrderId });
+      const response = await apiRequest("POST", `/api/work-order-checklist-items/${itemId}/suggest-vmrs`, {});
+      return response as {
+        text: string;
+        notes?: string;
+        suggestions: VmrsSuggestion[];
+        topSuggestion?: VmrsSuggestion;
+        needsUserConfirmation: boolean;
+      };
+    },
+  });
+
+  const createWoLineFromChecklistMutation = useMutation({
+    mutationFn: async ({ itemId, vmrsCode, vmrsTitle }: { itemId: number; vmrsCode?: string; vmrsTitle?: string }) => {
+      return apiRequest("POST", `/api/work-order-checklist-items/${itemId}/create-line`, { 
+        workOrderId,
+        vmrsCode,
+        vmrsTitle,
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/work-orders", workOrderId, "lines"] });
       queryClient.invalidateQueries({ queryKey: ["/api/work-orders", workOrderId, "checklists"] });
+      setVmrsSelectDialog(null);
+      setSelectedVmrsCode("");
       toast({ title: "Work Order Line Created", description: "A new line was created from the checklist item." });
     },
     onError: () => {
       toast({ title: "Error", description: "Failed to create work order line.", variant: "destructive" });
     },
   });
+  
+  const handleCreateWoLineWithVmrs = async (itemId: number, itemText: string) => {
+    setVmrsSelectDialog({ itemId, itemText, suggestions: [], isLoading: true });
+    
+    try {
+      const result = await suggestVmrsMutation.mutateAsync({ itemId });
+      
+      if (result.topSuggestion && result.topSuggestion.confidence >= 0.85) {
+        await createWoLineFromChecklistMutation.mutateAsync({
+          itemId,
+          vmrsCode: result.topSuggestion.systemCode,
+          vmrsTitle: result.topSuggestion.title,
+        });
+        setVmrsSelectDialog(null);
+      } else {
+        setVmrsSelectDialog({
+          itemId,
+          itemText,
+          suggestions: result.suggestions,
+          isLoading: false,
+        });
+        if (result.topSuggestion) {
+          setSelectedVmrsCode(result.topSuggestion.systemCode);
+        }
+      }
+    } catch (error) {
+      setVmrsSelectDialog({
+        itemId,
+        itemText,
+        suggestions: [],
+        isLoading: false,
+      });
+      toast({ title: "Error", description: "Failed to get VMRS suggestions.", variant: "destructive" });
+    }
+  };
 
   const getChecklistsForLine = (lineId: number) => {
     return workOrderChecklists?.filter(c => c.workOrderLineId === lineId) || [];
@@ -2076,17 +2149,21 @@ export default function WorkOrderDetail() {
                       </div>
                       
                       {/* Create WO Line button for needs_repair items */}
-                      {item.status === 'needs_repair' && (
+                      {item.status === 'needs_repair' && !item.createdWorkOrderLineId && (
                         <div className="pl-9 pt-1">
                           <Button
                             size="sm"
                             variant="outline"
                             className="h-7 text-xs border-destructive text-destructive hover:bg-destructive/10"
-                            onClick={() => createWoLineFromChecklistMutation.mutate({ itemId: item.id })}
-                            disabled={createWoLineFromChecklistMutation.isPending}
+                            onClick={() => handleCreateWoLineWithVmrs(item.id, item.itemText)}
+                            disabled={createWoLineFromChecklistMutation.isPending || suggestVmrsMutation.isPending}
                             data-testid={`button-create-wo-line-${item.id}`}
                           >
-                            <Plus className="h-3 w-3 mr-1" />
+                            {(suggestVmrsMutation.isPending && vmrsSelectDialog?.itemId === item.id) ? (
+                              <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                            ) : (
+                              <Plus className="h-3 w-3 mr-1" />
+                            )}
                             Create WO Line
                           </Button>
                         </div>
@@ -2102,6 +2179,123 @@ export default function WorkOrderDetail() {
               </>
             );
           })()}
+        </DialogContent>
+      </Dialog>
+
+      {/* VMRS Selection Dialog for checklist items */}
+      <Dialog open={vmrsSelectDialog !== null && !vmrsSelectDialog.isLoading} onOpenChange={(open) => {
+        if (!open) {
+          setVmrsSelectDialog(null);
+          setSelectedVmrsCode("");
+        }
+      }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="h-5 w-5 text-primary" />
+              Select VMRS Code
+            </DialogTitle>
+            <DialogDescription>
+              Choose the appropriate VMRS system code for this work order line
+            </DialogDescription>
+          </DialogHeader>
+          
+          {vmrsSelectDialog && (
+            <div className="space-y-4">
+              <div className="bg-muted/50 p-3 rounded-md">
+                <p className="text-sm font-medium">Checklist Item:</p>
+                <p className="text-sm text-muted-foreground">{vmrsSelectDialog.itemText}</p>
+              </div>
+              
+              {vmrsSelectDialog.suggestions.length > 0 ? (
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">AI Suggestions:</p>
+                  <div className="space-y-2 max-h-60 overflow-y-auto">
+                    {vmrsSelectDialog.suggestions.map((suggestion) => (
+                      <div
+                        key={suggestion.systemCode}
+                        className={`p-3 border rounded-md cursor-pointer transition-colors ${
+                          selectedVmrsCode === suggestion.systemCode
+                            ? "border-primary bg-primary/5"
+                            : "hover:bg-muted/50"
+                        }`}
+                        onClick={() => setSelectedVmrsCode(suggestion.systemCode)}
+                        data-testid={`vmrs-suggestion-${suggestion.systemCode}`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-sm font-medium">{suggestion.systemCode}</span>
+                            <span className="text-sm">{suggestion.title}</span>
+                            {suggestion.aiEnhanced && (
+                              <Badge variant="secondary" className="text-xs">
+                                <Sparkles className="h-3 w-3 mr-1" />
+                                AI
+                              </Badge>
+                            )}
+                          </div>
+                          <Badge variant={suggestion.confidence >= 0.8 ? "default" : "secondary"}>
+                            {Math.round(suggestion.confidence * 100)}%
+                          </Badge>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1">{suggestion.explanation}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-4">
+                  <p className="text-muted-foreground">No VMRS suggestions found. Please select manually.</p>
+                </div>
+              )}
+              
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Or enter VMRS code manually:</p>
+                <Input
+                  placeholder="e.g., 013 for Brakes"
+                  value={selectedVmrsCode}
+                  onChange={(e) => setSelectedVmrsCode(e.target.value)}
+                  data-testid="input-vmrs-code-manual"
+                />
+              </div>
+            </div>
+          )}
+          
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => {
+              setVmrsSelectDialog(null);
+              setSelectedVmrsCode("");
+            }}>
+              Cancel
+            </Button>
+            <Button variant="outline" onClick={() => {
+              if (vmrsSelectDialog) {
+                createWoLineFromChecklistMutation.mutate({
+                  itemId: vmrsSelectDialog.itemId,
+                });
+              }
+            }}>
+              Skip (No VMRS)
+            </Button>
+            <Button 
+              onClick={() => {
+                if (vmrsSelectDialog && selectedVmrsCode) {
+                  const suggestion = vmrsSelectDialog.suggestions.find(s => s.systemCode === selectedVmrsCode);
+                  createWoLineFromChecklistMutation.mutate({
+                    itemId: vmrsSelectDialog.itemId,
+                    vmrsCode: selectedVmrsCode,
+                    vmrsTitle: suggestion?.title,
+                  });
+                }
+              }}
+              disabled={!selectedVmrsCode || createWoLineFromChecklistMutation.isPending}
+              data-testid="button-confirm-vmrs"
+            >
+              {createWoLineFromChecklistMutation.isPending ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : null}
+              Create with VMRS
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
