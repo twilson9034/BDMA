@@ -562,7 +562,7 @@ export default function WorkOrderDetail() {
   const suggestVmrsMutation = useMutation({
     mutationFn: async ({ itemId }: { itemId: number }) => {
       const response = await apiRequest("POST", `/api/work-order-checklist-items/${itemId}/suggest-vmrs`, {});
-      return response as {
+      return response as unknown as {
         text: string;
         notes?: string;
         suggestions: VmrsSuggestion[];
@@ -2235,7 +2235,12 @@ export default function WorkOrderDetail() {
                 <p className="text-sm text-muted-foreground">{vmrsSelectDialog.itemText}</p>
               </div>
               
-              {vmrsSelectDialog.suggestions.length > 0 ? (
+              {!vmrsSelectDialog.suggestions ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                  <span className="ml-2 text-muted-foreground">Analyzing checklist item...</span>
+                </div>
+              ) : vmrsSelectDialog.suggestions.length > 0 ? (
                 <div className="space-y-2">
                   <p className="text-sm font-medium">AI Suggestions:</p>
                   <div className="space-y-2 max-h-60 overflow-y-auto">
