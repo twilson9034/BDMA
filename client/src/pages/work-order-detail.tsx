@@ -2302,7 +2302,8 @@ export default function WorkOrderDetail() {
             </Button>
             <Button variant="outline" onClick={() => {
               if (vmrsSelectDialog) {
-                const topSuggestion = vmrsSelectDialog.suggestions[0];
+                const suggestions = vmrsSelectDialog.suggestions || [];
+                const topSuggestion = suggestions[0];
                 createWoLineFromChecklistMutation.mutate({
                   itemId: vmrsSelectDialog.itemId,
                   wasAutoApplied: false,
@@ -2317,8 +2318,9 @@ export default function WorkOrderDetail() {
             <Button 
               onClick={() => {
                 if (vmrsSelectDialog && selectedVmrsCode) {
-                  const suggestion = vmrsSelectDialog.suggestions.find(s => s.systemCode === selectedVmrsCode);
-                  const topSuggestion = vmrsSelectDialog.suggestions[0];
+                  const suggestions = vmrsSelectDialog.suggestions || [];
+                  const suggestion = suggestions.find(s => s.systemCode === selectedVmrsCode);
+                  const topSuggestion = suggestions[0];
                   createWoLineFromChecklistMutation.mutate({
                     itemId: vmrsSelectDialog.itemId,
                     vmrsCode: selectedVmrsCode,
