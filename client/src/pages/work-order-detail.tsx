@@ -7,7 +7,7 @@ import {
   ArrowLeft, Save, Loader2, Edit, Trash2, Clock, 
   Calendar, User, Wrench, AlertTriangle, CheckCircle2, CheckCircle,
   Plus, X, Play, Square, Timer, Package, CalendarClock,
-  Sparkles, Lightbulb, PenLine, Search, ClipboardList, CircleDot, CircleCheck, CircleX, CircleMinus
+  Sparkles, Lightbulb, PenLine, Search, ClipboardList, CircleDot, CircleCheck, CircleX, CircleMinus, FileText
 } from "lucide-react";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
@@ -127,7 +127,8 @@ export default function WorkOrderDetail() {
   // Checklist state
   const [showAttachChecklistDialog, setShowAttachChecklistDialog] = useState<number | null>(null);
   const [selectedChecklistTemplateId, setSelectedChecklistTemplateId] = useState<string>("");
-  const [expandedChecklists, setExpandedChecklists] = useState<Record<number, boolean>>({});
+  const [viewChecklistDialog, setViewChecklistDialog] = useState<{ checklistId: number; lineId: number } | null>(null);
+  const [editingItemNotes, setEditingItemNotes] = useState<{ itemId: number; notes: string } | null>(null);
   
   // Linked PM Schedule data for auto-population
   interface LinkedPmScheduleData {
@@ -539,8 +540,27 @@ export default function WorkOrderDetail() {
     },
   });
 
+  const createWoLineFromChecklistMutation = useMutation({
+    mutationFn: async ({ itemId }: { itemId: number }) => {
+      return apiRequest("POST", `/api/work-order-checklist-items/${itemId}/create-line`, { workOrderId });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/work-orders", workOrderId, "lines"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/work-orders", workOrderId, "checklists"] });
+      toast({ title: "Work Order Line Created", description: "A new line was created from the checklist item." });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to create work order line.", variant: "destructive" });
+    },
+  });
+
   const getChecklistsForLine = (lineId: number) => {
     return workOrderChecklists?.filter(c => c.workOrderLineId === lineId) || [];
+  };
+
+  const getViewingChecklist = () => {
+    if (!viewChecklistDialog) return null;
+    return workOrderChecklists?.find(c => c.id === viewChecklistDialog.checklistId);
   };
 
   const openEditLineDialog = (line: WorkOrderLine) => {
@@ -1363,75 +1383,33 @@ export default function WorkOrderDetail() {
                               return <p className="text-sm text-muted-foreground italic">No checklists attached</p>;
                             }
                             return (
-                              <div className="space-y-3">
+                              <div className="flex flex-wrap gap-2">
                                 {lineChecklists.map((checklist) => {
                                   const template = checklistTemplates?.find(t => t.id === checklist.checklistTemplateId);
-                                  const isExpanded = expandedChecklists[checklist.id] ?? true;
                                   const completedCount = checklist.items?.filter(i => i.status !== 'pending').length || 0;
                                   const totalCount = checklist.items?.length || 0;
+                                  const needsRepairCount = checklist.items?.filter(i => i.status === 'needs_repair').length || 0;
                                   
                                   return (
-                                    <div key={checklist.id} className="bg-background/50 border border-border/30 rounded-lg p-3">
-                                      <div 
-                                        className="flex items-center justify-between cursor-pointer"
-                                        onClick={() => setExpandedChecklists(prev => ({ ...prev, [checklist.id]: !isExpanded }))}
-                                      >
-                                        <div className="flex items-center gap-2">
-                                          <ClipboardList className="h-4 w-4 text-primary" />
-                                          <span className="font-medium text-sm">{template?.name || "Checklist"}</span>
-                                          <Badge variant="outline" className="text-[10px]">
-                                            {completedCount}/{totalCount}
-                                          </Badge>
-                                        </div>
-                                        <Button size="icon" variant="ghost" className="h-6 w-6">
-                                          {isExpanded ? <X className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
-                                        </Button>
-                                      </div>
-                                      {isExpanded && checklist.items && (
-                                        <div className="mt-3 space-y-2">
-                                          {checklist.items.map((item) => (
-                                            <div key={item.id} className="flex items-center gap-2 py-1 border-b border-border/20 last:border-0">
-                                              <div className="flex-1 text-sm">{item.itemText}</div>
-                                              <div className="flex items-center gap-1">
-                                                <Button
-                                                  size="icon"
-                                                  variant={item.status === 'pass' ? 'default' : 'ghost'}
-                                                  className="h-7 w-7"
-                                                  onClick={() => updateChecklistItemMutation.mutate({ itemId: item.id, status: 'pass' })}
-                                                  disabled={updateChecklistItemMutation.isPending}
-                                                  data-testid={`button-checklist-pass-${item.id}`}
-                                                  title="Pass"
-                                                >
-                                                  <CircleCheck className="h-4 w-4 text-green-600" />
-                                                </Button>
-                                                <Button
-                                                  size="icon"
-                                                  variant={item.status === 'needs_repair' ? 'destructive' : 'ghost'}
-                                                  className="h-7 w-7"
-                                                  onClick={() => updateChecklistItemMutation.mutate({ itemId: item.id, status: 'needs_repair' })}
-                                                  disabled={updateChecklistItemMutation.isPending}
-                                                  data-testid={`button-checklist-repair-${item.id}`}
-                                                  title="Needs Repair"
-                                                >
-                                                  <CircleX className="h-4 w-4" />
-                                                </Button>
-                                                <Button
-                                                  size="icon"
-                                                  variant={item.status === 'na' ? 'secondary' : 'ghost'}
-                                                  className="h-7 w-7"
-                                                  onClick={() => updateChecklistItemMutation.mutate({ itemId: item.id, status: 'na' })}
-                                                  disabled={updateChecklistItemMutation.isPending}
-                                                  data-testid={`button-checklist-na-${item.id}`}
-                                                  title="N/A"
-                                                >
-                                                  <CircleMinus className="h-4 w-4 text-muted-foreground" />
-                                                </Button>
-                                              </div>
-                                            </div>
-                                          ))}
-                                        </div>
+                                    <Button
+                                      key={checklist.id}
+                                      variant="outline"
+                                      size="sm"
+                                      className="h-8"
+                                      onClick={() => setViewChecklistDialog({ checklistId: checklist.id, lineId: line.id })}
+                                      data-testid={`button-view-checklist-${checklist.id}`}
+                                    >
+                                      <ClipboardList className="h-4 w-4 mr-2 text-primary" />
+                                      <span>{template?.name || "Checklist"}</span>
+                                      <Badge variant="outline" className="ml-2 text-[10px]">
+                                        {completedCount}/{totalCount}
+                                      </Badge>
+                                      {needsRepairCount > 0 && (
+                                        <Badge variant="destructive" className="ml-1 text-[10px]">
+                                          {needsRepairCount} repair
+                                        </Badge>
                                       )}
-                                    </div>
+                                    </Button>
                                   );
                                 })}
                               </div>
@@ -1968,6 +1946,162 @@ export default function WorkOrderDetail() {
               Attach Checklist
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* View Checklist Dialog */}
+      <Dialog open={viewChecklistDialog !== null} onOpenChange={(open) => {
+        if (!open) {
+          setViewChecklistDialog(null);
+          setEditingItemNotes(null);
+        }
+      }}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          {(() => {
+            const checklist = getViewingChecklist();
+            if (!checklist) return null;
+            const template = checklistTemplates?.find(t => t.id === checklist.checklistTemplateId);
+            const completedCount = checklist.items?.filter(i => i.status !== 'pending').length || 0;
+            const totalCount = checklist.items?.length || 0;
+            
+            return (
+              <>
+                <DialogHeader>
+                  <DialogTitle className="flex items-center gap-2">
+                    <ClipboardList className="h-5 w-5 text-primary" />
+                    {template?.name || "Checklist"}
+                  </DialogTitle>
+                  <DialogDescription>
+                    Progress: {completedCount} of {totalCount} items completed
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-2 py-4">
+                  {checklist.items?.map((item, idx) => (
+                    <div key={item.id} className="border rounded-lg p-3 space-y-2">
+                      <div className="flex items-start gap-3">
+                        <span className="text-xs text-muted-foreground font-mono w-6">{idx + 1}.</span>
+                        <div className="flex-1">
+                          <p className="text-sm font-medium">{item.itemText}</p>
+                          {item.notes && editingItemNotes?.itemId !== item.id && (
+                            <p className="text-xs text-muted-foreground mt-1 italic">Note: {item.notes}</p>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            size="sm"
+                            variant={item.status === 'pass' ? 'default' : 'outline'}
+                            className="h-8 px-2"
+                            onClick={() => updateChecklistItemMutation.mutate({ itemId: item.id, status: 'pass' })}
+                            disabled={updateChecklistItemMutation.isPending}
+                            data-testid={`button-checklist-pass-${item.id}`}
+                          >
+                            <CircleCheck className="h-4 w-4 text-green-600" />
+                            <span className="ml-1 text-xs">Pass</span>
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant={item.status === 'needs_repair' ? 'destructive' : 'outline'}
+                            className="h-8 px-2"
+                            onClick={() => updateChecklistItemMutation.mutate({ itemId: item.id, status: 'needs_repair' })}
+                            disabled={updateChecklistItemMutation.isPending}
+                            data-testid={`button-checklist-repair-${item.id}`}
+                          >
+                            <CircleX className="h-4 w-4" />
+                            <span className="ml-1 text-xs">Repair</span>
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant={item.status === 'na' ? 'secondary' : 'outline'}
+                            className="h-8 px-2"
+                            onClick={() => updateChecklistItemMutation.mutate({ itemId: item.id, status: 'na' })}
+                            disabled={updateChecklistItemMutation.isPending}
+                            data-testid={`button-checklist-na-${item.id}`}
+                          >
+                            <CircleMinus className="h-4 w-4 text-muted-foreground" />
+                            <span className="ml-1 text-xs">N/A</span>
+                          </Button>
+                        </div>
+                      </div>
+                      
+                      {/* Notes section */}
+                      <div className="pl-9">
+                        {editingItemNotes?.itemId === item.id ? (
+                          <div className="flex gap-2">
+                            <Textarea
+                              placeholder="Add notes..."
+                              value={editingItemNotes.notes}
+                              onChange={(e) => setEditingItemNotes({ ...editingItemNotes, notes: e.target.value })}
+                              className="text-xs min-h-[60px]"
+                              data-testid={`textarea-checklist-notes-${item.id}`}
+                            />
+                            <div className="flex flex-col gap-1">
+                              <Button
+                                size="icon"
+                                variant="default"
+                                className="h-7 w-7"
+                                onClick={() => {
+                                  updateChecklistItemMutation.mutate({ 
+                                    itemId: item.id, 
+                                    status: item.status, 
+                                    notes: editingItemNotes.notes 
+                                  });
+                                  setEditingItemNotes(null);
+                                }}
+                                data-testid={`button-save-notes-${item.id}`}
+                              >
+                                <Save className="h-3 w-3" />
+                              </Button>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="h-7 w-7"
+                                onClick={() => setEditingItemNotes(null)}
+                              >
+                                <X className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          </div>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-6 text-xs text-muted-foreground"
+                            onClick={() => setEditingItemNotes({ itemId: item.id, notes: item.notes || '' })}
+                            data-testid={`button-add-notes-${item.id}`}
+                          >
+                            <FileText className="h-3 w-3 mr-1" />
+                            {item.notes ? 'Edit Notes' : 'Add Notes'}
+                          </Button>
+                        )}
+                      </div>
+                      
+                      {/* Create WO Line button for needs_repair items */}
+                      {item.status === 'needs_repair' && (
+                        <div className="pl-9 pt-1">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-xs border-destructive text-destructive hover:bg-destructive/10"
+                            onClick={() => createWoLineFromChecklistMutation.mutate({ itemId: item.id })}
+                            disabled={createWoLineFromChecklistMutation.isPending}
+                            data-testid={`button-create-wo-line-${item.id}`}
+                          >
+                            <Plus className="h-3 w-3 mr-1" />
+                            Create WO Line
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setViewChecklistDialog(null)}>
+                    Close
+                  </Button>
+                </DialogFooter>
+              </>
+            );
+          })()}
         </DialogContent>
       </Dialog>
 
