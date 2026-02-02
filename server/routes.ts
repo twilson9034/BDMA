@@ -3086,7 +3086,16 @@ export async function registerRoutes(
     try {
       const workOrderId = parseInt(req.params.workOrderId);
       const checklists = await storage.getWorkOrderChecklists(workOrderId);
-      res.json(checklists);
+      
+      // Fetch items for each checklist
+      const checklistsWithItems = await Promise.all(
+        checklists.map(async (checklist) => {
+          const items = await storage.getWorkOrderChecklistItems(checklist.id);
+          return { ...checklist, items };
+        })
+      );
+      
+      res.json(checklistsWithItems);
     } catch (error) {
       console.error("Error fetching work order checklists:", error);
       res.status(500).json({ error: "Failed to fetch checklists" });
