@@ -1,15 +1,20 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useRoute, useLocation } from "wouter";
-import { ArrowLeft, FileText, Download, ExternalLink, Calendar, Clock, Book, HardDrive, Sparkles, List, Car, Loader2 } from "lucide-react";
+import { ArrowLeft, FileText, Download, ExternalLink, Calendar, Clock, Book, HardDrive, Sparkles, List, Car, Loader2, Link2, Pencil, Trash2, Eye } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/PageHeader";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import type { Manual } from "@shared/schema";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import type { Manual, Asset } from "@shared/schema";
 
 interface ExtractedSection {
   title: string;
@@ -23,7 +28,25 @@ export default function ManualDetail() {
   const [isExtracting, setIsExtracting] = useState(false);
   const [extractedSections, setExtractedSections] = useState<ExtractedSection[]>([]);
   const [showPdfViewer, setShowPdfViewer] = useState(false);
+  const [showEditDialog, setShowEditDialog] = useState(false);
+  const [showLinkAssetDialog, setShowLinkAssetDialog] = useState(false);
+  const [showSectionDialog, setShowSectionDialog] = useState(false);
+  const [selectedSection, setSelectedSection] = useState<ExtractedSection | null>(null);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [editForm, setEditForm] = useState({
+    title: "",
+    description: "",
+    manufacturer: "",
+    model: "",
+    year: 0,
+    version: "",
+  });
+  const [selectedAssetId, setSelectedAssetId] = useState<string>("");
   const { toast } = useToast();
+  
+  const { data: assets } = useQuery<Asset[]>({
+    queryKey: ["/api/assets"],
+  });
 
   const { data: manual, isLoading, error } = useQuery<Manual>({
     queryKey: ["/api/manuals", params?.id],
@@ -49,6 +72,114 @@ export default function ManualDetail() {
       title: "AI Extraction Complete",
       description: `Found ${mockSections.length} key sections in this manual.`,
     });
+  };
+
+  const updateMutation = useMutation({
+    mutationFn: async (data: Partial<Manual>) => {
+      return apiRequest("PATCH", `/api/manuals/${params?.id}`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/manuals", params?.id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/manuals"] });
+      setShowEditDialog(false);
+      toast({
+        title: "Manual Updated",
+        description: "The manual has been updated successfully.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to update manual.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest("DELETE", `/api/manuals/${params?.id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/manuals"] });
+      toast({
+        title: "Manual Deleted",
+        description: "The manual has been deleted successfully.",
+      });
+      navigate("/manuals");
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to delete manual.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const linkAssetMutation = useMutation({
+    mutationFn: async (assetId: number) => {
+      return apiRequest("POST", `/api/asset-manuals`, {
+        assetId,
+        manualId: parseInt(params?.id || "0"),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/manuals", params?.id] });
+      setShowLinkAssetDialog(false);
+      setSelectedAssetId("");
+      toast({
+        title: "Asset Linked",
+        description: "The asset has been linked to this manual.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to link asset. It may already be linked.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleEditClick = () => {
+    if (displayManual) {
+      setEditForm({
+        title: displayManual.title || "",
+        description: displayManual.description || "",
+        manufacturer: displayManual.manufacturer || "",
+        model: displayManual.model || "",
+        year: displayManual.year || 0,
+        version: displayManual.version || "",
+      });
+      setShowEditDialog(true);
+    }
+  };
+
+  const handleSaveEdit = () => {
+    updateMutation.mutate(editForm);
+  };
+
+  const handleLinkAsset = () => {
+    if (selectedAssetId) {
+      linkAssetMutation.mutate(parseInt(selectedAssetId));
+    }
+  };
+
+  const handleSectionClick = (section: ExtractedSection) => {
+    setSelectedSection(section);
+    setShowSectionDialog(true);
+  };
+
+  const handleViewInPdf = () => {
+    if (selectedSection && displayManual?.fileUrl) {
+      setShowPdfViewer(true);
+      setShowSectionDialog(false);
+      toast({
+        title: "Navigating to section",
+        description: `Opening page ${selectedSection.page} - ${selectedSection.title}`,
+      });
+    }
   };
 
   const mockManuals: Manual[] = [
@@ -297,13 +428,21 @@ export default function ManualDetail() {
               ) : (
                 <div className="space-y-3">
                   {extractedSections.map((section, index) => (
-                    <div key={index} className="p-3 rounded-lg border hover-elevate" data-testid={`section-${index}`}>
+                    <button
+                      key={index}
+                      onClick={() => handleSectionClick(section)}
+                      className="w-full text-left p-3 rounded-lg border hover-elevate cursor-pointer"
+                      data-testid={`section-${index}`}
+                    >
                       <div className="flex items-center justify-between mb-1">
                         <span className="font-medium text-sm" data-testid={`text-section-title-${index}`}>{section.title}</span>
-                        <Badge variant="outline" data-testid={`badge-section-page-${index}`}>Page {section.page}</Badge>
+                        <div className="flex items-center gap-2">
+                          <Eye className="h-3 w-3 text-muted-foreground" />
+                          <Badge variant="outline" data-testid={`badge-section-page-${index}`}>Page {section.page}</Badge>
+                        </div>
                       </div>
                       <p className="text-xs text-muted-foreground" data-testid={`text-section-summary-${index}`}>{section.summary}</p>
-                    </div>
+                    </button>
                   ))}
                 </div>
               )}
@@ -408,19 +547,204 @@ export default function ManualDetail() {
               <CardTitle>Actions</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
-              <Button variant="outline" className="w-full" data-testid="button-link-asset">
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={() => setShowLinkAssetDialog(true)}
+                data-testid="button-link-asset"
+              >
+                <Link2 className="h-4 w-4 mr-2" />
                 Link to Asset
               </Button>
-              <Button variant="outline" className="w-full" data-testid="button-edit">
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={handleEditClick}
+                data-testid="button-edit"
+              >
+                <Pencil className="h-4 w-4 mr-2" />
                 Edit Details
               </Button>
-              <Button variant="destructive" className="w-full" data-testid="button-delete">
+              <Button
+                variant="destructive"
+                className="w-full"
+                onClick={() => setShowDeleteDialog(true)}
+                data-testid="button-delete"
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
                 Delete Manual
               </Button>
             </CardContent>
           </Card>
         </div>
       </div>
+
+      {/* Edit Dialog */}
+      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit Manual Details</DialogTitle>
+            <DialogDescription>Update the manual information below.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit-title">Title</Label>
+              <Input
+                id="edit-title"
+                value={editForm.title}
+                onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
+                data-testid="input-edit-title"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-description">Description</Label>
+              <Textarea
+                id="edit-description"
+                value={editForm.description}
+                onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                rows={3}
+                data-testid="input-edit-description"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-manufacturer">Manufacturer</Label>
+                <Input
+                  id="edit-manufacturer"
+                  value={editForm.manufacturer}
+                  onChange={(e) => setEditForm({ ...editForm, manufacturer: e.target.value })}
+                  data-testid="input-edit-manufacturer"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-model">Model</Label>
+                <Input
+                  id="edit-model"
+                  value={editForm.model}
+                  onChange={(e) => setEditForm({ ...editForm, model: e.target.value })}
+                  data-testid="input-edit-model"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-year">Year</Label>
+                <Input
+                  id="edit-year"
+                  type="number"
+                  value={editForm.year}
+                  onChange={(e) => setEditForm({ ...editForm, year: parseInt(e.target.value) || 0 })}
+                  data-testid="input-edit-year"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-version">Version</Label>
+                <Input
+                  id="edit-version"
+                  value={editForm.version}
+                  onChange={(e) => setEditForm({ ...editForm, version: e.target.value })}
+                  data-testid="input-edit-version"
+                />
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowEditDialog(false)}>Cancel</Button>
+            <Button onClick={handleSaveEdit} disabled={updateMutation.isPending} data-testid="button-save-edit">
+              {updateMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Link Asset Dialog */}
+      <Dialog open={showLinkAssetDialog} onOpenChange={setShowLinkAssetDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Link to Asset</DialogTitle>
+            <DialogDescription>Select an asset to link this manual to.</DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Label htmlFor="asset-select">Asset</Label>
+            <Select value={selectedAssetId} onValueChange={setSelectedAssetId}>
+              <SelectTrigger id="asset-select" data-testid="select-asset">
+                <SelectValue placeholder="Select an asset..." />
+              </SelectTrigger>
+              <SelectContent>
+                {assets?.map((asset) => (
+                  <SelectItem key={asset.id} value={asset.id.toString()}>
+                    {asset.name} ({asset.assetNumber})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowLinkAssetDialog(false)}>Cancel</Button>
+            <Button
+              onClick={handleLinkAsset}
+              disabled={!selectedAssetId || linkAssetMutation.isPending}
+              data-testid="button-confirm-link"
+            >
+              {linkAssetMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              Link Asset
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Section Detail Dialog */}
+      <Dialog open={showSectionDialog} onOpenChange={setShowSectionDialog}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Book className="h-5 w-5" />
+              {selectedSection?.title}
+            </DialogTitle>
+            <DialogDescription>Page {selectedSection?.page}</DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <p className="text-sm text-muted-foreground mb-4">{selectedSection?.summary}</p>
+            <div className="bg-muted rounded-lg p-4 text-center">
+              <FileText className="h-12 w-12 mx-auto mb-2 opacity-50" />
+              <p className="text-sm">This section starts on page {selectedSection?.page}</p>
+              <p className="text-xs text-muted-foreground mt-1">Click below to view in the PDF viewer</p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowSectionDialog(false)}>Close</Button>
+            <Button onClick={handleViewInPdf} data-testid="button-view-in-pdf">
+              <Eye className="h-4 w-4 mr-2" />
+              View in PDF
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Delete Manual</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this manual? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowDeleteDialog(false)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              onClick={() => deleteMutation.mutate()}
+              disabled={deleteMutation.isPending}
+              data-testid="button-confirm-delete"
+            >
+              {deleteMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
