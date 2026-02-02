@@ -373,13 +373,34 @@ export default function ManualDetail() {
               </Button>
             </CardHeader>
             <CardContent>
-              {showPdfViewer && displayManual.fileUrl ? (
-                <iframe
-                  src={displayManual.fileUrl}
-                  className="w-full h-[600px] border rounded-lg"
-                  title={displayManual.title}
-                  data-testid="iframe-pdf-viewer"
-                />
+              {showPdfViewer ? (
+                displayManual.fileUrl && displayManual.fileUrl.startsWith("http") ? (
+                  <iframe
+                    src={displayManual.fileUrl}
+                    className="w-full h-[600px] border rounded-lg"
+                    title={displayManual.title}
+                    data-testid="iframe-pdf-viewer"
+                  />
+                ) : (
+                  <div className="aspect-[16/10] bg-muted rounded-lg flex items-center justify-center">
+                    <div className="text-center text-muted-foreground">
+                      <FileText className="h-16 w-16 mx-auto mb-4 opacity-50" />
+                      <p className="text-sm font-medium">PDF Preview Not Available</p>
+                      <p className="text-xs mt-1">Upload a PDF file to enable preview</p>
+                      {displayManual.fileUrl && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="mt-4"
+                          onClick={() => window.open(displayManual.fileUrl!, "_blank")}
+                        >
+                          <ExternalLink className="h-4 w-4 mr-2" />
+                          Try Opening File
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                )
               ) : (
                 <div className="aspect-[16/10] bg-muted rounded-lg flex items-center justify-center">
                   <div className="text-center text-muted-foreground">

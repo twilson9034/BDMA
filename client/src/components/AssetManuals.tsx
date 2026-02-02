@@ -109,7 +109,7 @@ export function AssetManuals({ assetId, assetName }: AssetManualsProps) {
             </div>
           ) : (
             <p className="text-center py-8 text-muted-foreground">
-              No manuals linked to this asset. Add manuals in Asset Management to show them here.
+              No manuals linked to this asset. Link manuals from the Manuals page.
             </p>
           )}
         </CardContent>
