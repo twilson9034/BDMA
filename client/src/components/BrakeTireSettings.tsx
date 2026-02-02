@@ -40,8 +40,10 @@ interface BrakeSettingsData {
   settings: {
     id?: number;
     axleCount: number;
+    measurementMode: string;
     defaultMeasurementUnit: string;
     minBrakeThickness: string | null;
+    minStrokeMeasurement: string | null;
     notes: string | null;
   } | null;
   axles: BrakeAxle[];
@@ -70,6 +72,13 @@ const MEASUREMENT_UNITS = [
   { value: "32nds", label: "32nds of inch" },
   { value: "inches", label: "Inches" },
   { value: "mm", label: "Millimeters" },
+];
+
+const BRAKE_MEASUREMENT_MODES = [
+  { value: "stroke", label: "Stroke Measurement Only" },
+  { value: "pad_thickness", label: "Pad Thickness Only" },
+  { value: "both", label: "Both (Stroke & Pad)" },
+  { value: "na", label: "N/A (Not Applicable)" },
 ];
 
 const TIRE_CONFIGS = [
@@ -119,9 +128,11 @@ export function BrakeTireSettings({ assetId, assetType }: Props) {
   const { toast } = useToast();
   
   const [brakeAxleCount, setBrakeAxleCount] = useState(2);
+  const [brakeMeasurementMode, setBrakeMeasurementMode] = useState("both");
   const [brakeUnit, setBrakeUnit] = useState("32nds");
   const [brakeAxles, setBrakeAxles] = useState<BrakeAxle[]>([]);
   const [brakeMinThickness, setBrakeMinThickness] = useState("");
+  const [brakeMinStroke, setBrakeMinStroke] = useState("");
   
   const [tireAxleCount, setTireAxleCount] = useState(2);
   const [tireUnit, setTireUnit] = useState("32nds");
@@ -141,8 +152,10 @@ export function BrakeTireSettings({ assetId, assetType }: Props) {
   useEffect(() => {
     if (brakeData?.settings) {
       setBrakeAxleCount(brakeData.settings.axleCount);
+      setBrakeMeasurementMode(brakeData.settings.measurementMode || "both");
       setBrakeUnit(brakeData.settings.defaultMeasurementUnit || "32nds");
       setBrakeMinThickness(brakeData.settings.minBrakeThickness || "");
+      setBrakeMinStroke(brakeData.settings.minStrokeMeasurement || "");
       setBrakeAxles(brakeData.axles);
     } else if (!brakeLoading && brakeAxles.length === 0) {
       setBrakeAxles(generateDefaultAxles(2, 'brake') as BrakeAxle[]);
@@ -165,8 +178,10 @@ export function BrakeTireSettings({ assetId, assetType }: Props) {
       const res = await apiRequest("PUT", `/api/assets/${assetId}/brake-settings`, {
         settings: {
           axleCount: brakeAxleCount,
+          measurementMode: brakeMeasurementMode,
           defaultMeasurementUnit: brakeUnit,
           minBrakeThickness: brakeMinThickness || null,
+          minStrokeMeasurement: brakeMinStroke || null,
         },
         axles: brakeAxles.map((a, i) => ({ ...a, axlePosition: i + 1 })),
       });
@@ -276,30 +291,65 @@ export function BrakeTireSettings({ assetId, assetType }: Props) {
         <CardContent className="space-y-4">
           <div className="flex items-center gap-4">
             <div className="flex-1">
-              <Label>Default Measurement Unit</Label>
-              <Select value={brakeUnit} onValueChange={setBrakeUnit}>
-                <SelectTrigger data-testid="select-brake-unit">
+              <Label>Measurement Type</Label>
+              <Select value={brakeMeasurementMode} onValueChange={setBrakeMeasurementMode}>
+                <SelectTrigger data-testid="select-brake-measurement-mode">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {MEASUREMENT_UNITS.map(u => (
-                    <SelectItem key={u.value} value={u.value}>{u.label}</SelectItem>
+                  {BRAKE_MEASUREMENT_MODES.map(m => (
+                    <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
-            <div className="flex-1">
-              <Label>Min Brake Thickness</Label>
-              <Input
-                type="number"
-                step="0.001"
-                value={brakeMinThickness}
-                onChange={(e) => setBrakeMinThickness(e.target.value)}
-                placeholder="e.g., 4"
-                data-testid="input-brake-min-thickness"
-              />
-            </div>
+            {brakeMeasurementMode !== "na" && (
+              <div className="flex-1">
+                <Label>Default Measurement Unit</Label>
+                <Select value={brakeUnit} onValueChange={setBrakeUnit}>
+                  <SelectTrigger data-testid="select-brake-unit">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {MEASUREMENT_UNITS.map(u => (
+                      <SelectItem key={u.value} value={u.value}>{u.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </div>
+          
+          {brakeMeasurementMode !== "na" && (
+            <div className="flex items-center gap-4">
+              {(brakeMeasurementMode === "pad_thickness" || brakeMeasurementMode === "both") && (
+                <div className="flex-1">
+                  <Label>Min Pad Thickness</Label>
+                  <Input
+                    type="number"
+                    step="0.001"
+                    value={brakeMinThickness}
+                    onChange={(e) => setBrakeMinThickness(e.target.value)}
+                    placeholder="e.g., 4"
+                    data-testid="input-brake-min-thickness"
+                  />
+                </div>
+              )}
+              {(brakeMeasurementMode === "stroke" || brakeMeasurementMode === "both") && (
+                <div className="flex-1">
+                  <Label>Min Stroke Measurement</Label>
+                  <Input
+                    type="number"
+                    step="0.001"
+                    value={brakeMinStroke}
+                    onChange={(e) => setBrakeMinStroke(e.target.value)}
+                    placeholder="e.g., 1.5"
+                    data-testid="input-brake-min-stroke"
+                  />
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="flex items-center justify-between">
             <Label>Axles ({brakeAxles.length})</Label>

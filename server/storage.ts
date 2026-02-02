@@ -1,4 +1,4 @@
-import { eq, desc, sql, and, or, lt, lte, isNull, isNotNull, inArray } from "drizzle-orm";
+import { eq, desc, sql, and, or, lt, lte, gte, isNull, isNotNull, inArray } from "drizzle-orm";
 import { db } from "./db";
 import { dataCache, cacheKey } from "./cache";
 import {
@@ -34,6 +34,8 @@ import {
   faultCodes,
   checklistTemplates,
   checklistMakeModelAssignments,
+  workOrderChecklists,
+  workOrderChecklistItems,
   receivingTransactions,
   partRequests,
   partKits,
@@ -106,6 +108,10 @@ import {
   type ChecklistTemplate,
   type InsertChecklistMakeModelAssignment,
   type ChecklistMakeModelAssignment,
+  type InsertWorkOrderChecklist,
+  type WorkOrderChecklist,
+  type InsertWorkOrderChecklistItem,
+  type WorkOrderChecklistItem,
   type InsertReceivingTransaction,
   type ReceivingTransaction,
   type InsertPartRequest,
@@ -311,6 +317,7 @@ export interface IStorage {
   createPart(part: InsertPart): Promise<Part>;
   updatePart(id: number, part: Partial<InsertPart>): Promise<Part | undefined>;
   getPartsByOrgPaginated(orgId: number, options: { limit: number; offset: number; search?: string }): Promise<{ parts: Part[]; total: number }>;
+  recalculateMinMax(orgId: number, params: { leadTimeDays: number; safetyStockDays: number; lookbackDays: number }): Promise<{ partsAnalyzed: number; partsWithUsage: number; partsUpdated: number; updates: Array<{ partId: number; partNumber: string; oldReorderPoint: string; newReorderPoint: string; newMaxQuantity: string }> }>;
   
   // Work Orders
   getWorkOrders(): Promise<WorkOrder[]>;
@@ -551,6 +558,14 @@ export interface IStorage {
   createChecklistAssignment(assignment: InsertChecklistMakeModelAssignment): Promise<ChecklistMakeModelAssignment>;
   deleteChecklistAssignment(id: number): Promise<void>;
   deleteChecklistAssignmentsByTemplate(templateId: number): Promise<void>;
+  
+  // Work Order Checklists
+  getWorkOrderChecklists(workOrderId: number): Promise<WorkOrderChecklist[]>;
+  getWorkOrderChecklist(id: number): Promise<WorkOrderChecklist | undefined>;
+  getWorkOrderChecklistItems(checklistId: number): Promise<WorkOrderChecklistItem[]>;
+  createWorkOrderChecklist(workOrderId: number, templateId: number, workOrderLineId?: number): Promise<WorkOrderChecklist>;
+  updateChecklistItemStatus(itemId: number, status: string, notes?: string, completedById?: string): Promise<WorkOrderChecklistItem | undefined>;
+  createWorkOrderLineFromChecklistItem(itemId: number, workOrderId: number): Promise<WorkOrderLine>;
   
   // Import Jobs
   getImportJobs(): Promise<ImportJob[]>;
@@ -2359,6 +2374,96 @@ export class DatabaseStorage implements IStorage {
       .where(eq(checklistMakeModelAssignments.checklistTemplateId, templateId));
   }
 
+  // Work Order Checklists
+  async getWorkOrderChecklists(workOrderId: number): Promise<WorkOrderChecklist[]> {
+    return db.select().from(workOrderChecklists)
+      .where(eq(workOrderChecklists.workOrderId, workOrderId))
+      .orderBy(workOrderChecklists.id);
+  }
+
+  async getWorkOrderChecklist(id: number): Promise<WorkOrderChecklist | undefined> {
+    const [checklist] = await db.select().from(workOrderChecklists)
+      .where(eq(workOrderChecklists.id, id));
+    return checklist;
+  }
+
+  async getWorkOrderChecklistItems(checklistId: number): Promise<WorkOrderChecklistItem[]> {
+    return db.select().from(workOrderChecklistItems)
+      .where(eq(workOrderChecklistItems.workOrderChecklistId, checklistId))
+      .orderBy(workOrderChecklistItems.itemIndex);
+  }
+
+  async createWorkOrderChecklist(workOrderId: number, templateId: number, workOrderLineId?: number): Promise<WorkOrderChecklist> {
+    const template = await this.getChecklistTemplate(templateId);
+    if (!template) {
+      throw new Error(`Checklist template ${templateId} not found`);
+    }
+
+    const [checklist] = await db.insert(workOrderChecklists).values({
+      workOrderId,
+      checklistTemplateId: templateId,
+      workOrderLineId: workOrderLineId || null,
+    }).returning();
+
+    const items = template.items as string[] || [];
+    if (items.length > 0) {
+      await db.insert(workOrderChecklistItems).values(
+        items.map((itemText, index) => ({
+          workOrderChecklistId: checklist.id,
+          itemIndex: index,
+          itemText,
+          status: "pending" as const,
+        }))
+      );
+    }
+
+    return checklist;
+  }
+
+  async updateChecklistItemStatus(itemId: number, status: string, notes?: string, completedById?: string): Promise<WorkOrderChecklistItem | undefined> {
+    const updateData: Partial<WorkOrderChecklistItem> = { status: status as any };
+    if (notes !== undefined) {
+      updateData.notes = notes;
+    }
+    if (completedById !== undefined) {
+      updateData.completedById = completedById;
+    }
+    if (status !== "pending") {
+      updateData.completedAt = new Date();
+    }
+
+    const [updated] = await db.update(workOrderChecklistItems)
+      .set(updateData)
+      .where(eq(workOrderChecklistItems.id, itemId))
+      .returning();
+    return updated;
+  }
+
+  async createWorkOrderLineFromChecklistItem(itemId: number, workOrderId: number): Promise<WorkOrderLine> {
+    const [item] = await db.select().from(workOrderChecklistItems)
+      .where(eq(workOrderChecklistItems.id, itemId));
+    
+    if (!item) {
+      throw new Error(`Checklist item ${itemId} not found`);
+    }
+
+    const nextLineNumber = await this.getNextWorkOrderLineNumber(workOrderId);
+    
+    const [line] = await db.insert(workOrderLines).values({
+      workOrderId,
+      lineNumber: nextLineNumber,
+      description: item.itemText,
+      notes: item.notes || undefined,
+      status: "pending",
+    }).returning();
+
+    await db.update(workOrderChecklistItems)
+      .set({ createdWorkOrderLineId: line.id })
+      .where(eq(workOrderChecklistItems.id, itemId));
+
+    return line;
+  }
+
   // Import Jobs
   async getImportJobs(): Promise<ImportJob[]> {
     return db.select().from(importJobs).orderBy(sql`${importJobs.createdAt} DESC`);
@@ -3034,6 +3139,95 @@ export class DatabaseStorage implements IStorage {
     const partsResult = await db.select().from(parts).where(whereClause).orderBy(parts.partNumber).limit(limit).offset(offset);
     
     return { parts: partsResult, total };
+  }
+
+  async recalculateMinMax(orgId: number, params: { leadTimeDays: number; safetyStockDays: number; lookbackDays: number }): Promise<{ partsAnalyzed: number; partsWithUsage: number; partsUpdated: number; updates: Array<{ partId: number; partNumber: string; oldReorderPoint: string; newReorderPoint: string; newMaxQuantity: string }> }> {
+    const { leadTimeDays, safetyStockDays, lookbackDays } = params;
+    
+    // Get all parts for this org (tenant-scoped)
+    const orgParts = await db.select().from(parts).where(eq(parts.orgId, orgId));
+    
+    // Get usage history for the lookback period, joined with parts to ensure tenant isolation
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - lookbackDays);
+    
+    // Tenant-safe query: join partUsageHistory with parts filtered by orgId
+    const usageHistory = await db
+      .select({
+        partId: partUsageHistory.partId,
+        totalQuantity: sql<string>`COALESCE(SUM(${partUsageHistory.quantity}), '0')`,
+        usageCount: sql<number>`COUNT(*)`,
+      })
+      .from(partUsageHistory)
+      .innerJoin(parts, eq(partUsageHistory.partId, parts.id))
+      .where(
+        and(
+          gte(partUsageHistory.usedAt, cutoffDate),
+          isNotNull(partUsageHistory.partId),
+          eq(parts.orgId, orgId) // Tenant isolation via join
+        )
+      )
+      .groupBy(partUsageHistory.partId);
+    
+    const usageMap = new Map(usageHistory.map(u => [u.partId, u]));
+    
+    let updatedCount = 0;
+    const updates: { partId: number; partNumber: string; oldReorderPoint: string; newReorderPoint: string; newMaxQuantity: string }[] = [];
+    
+    for (const part of orgParts) {
+      const usage = usageMap.get(part.id);
+      if (!usage) continue;
+      
+      const totalUsed = parseFloat(usage.totalQuantity || "0");
+      if (totalUsed <= 0) continue;
+      
+      // Calculate average daily usage
+      const avgDailyUsage = totalUsed / lookbackDays;
+      
+      // Reorder point = (average daily usage * lead time) + safety stock
+      const safetyStock = avgDailyUsage * safetyStockDays;
+      const newReorderPoint = Math.ceil((avgDailyUsage * leadTimeDays) + safetyStock);
+      
+      // Max quantity = reorder point + (average daily usage * order cycle days)
+      // Using 30-day order cycle as default
+      const orderCycleDays = 30;
+      const newMaxQuantity = Math.ceil(newReorderPoint + (avgDailyUsage * orderCycleDays));
+      
+      // Reorder quantity = max quantity - reorder point
+      const newReorderQuantity = newMaxQuantity - newReorderPoint;
+      
+      // Only update if values have changed significantly (> 5% difference)
+      const oldReorderPoint = parseFloat(part.reorderPoint || "0");
+      const percentChange = oldReorderPoint > 0 
+        ? Math.abs(newReorderPoint - oldReorderPoint) / oldReorderPoint 
+        : 1;
+      
+      if (percentChange > 0.05 || oldReorderPoint === 0) {
+        await db.update(parts).set({
+          reorderPoint: newReorderPoint.toString(),
+          maxQuantity: newMaxQuantity.toString(),
+          reorderQuantity: newReorderQuantity.toString(),
+          updatedAt: new Date(),
+        }).where(eq(parts.id, part.id));
+        
+        updates.push({
+          partId: part.id,
+          partNumber: part.partNumber,
+          oldReorderPoint: part.reorderPoint || "0",
+          newReorderPoint: newReorderPoint.toString(),
+          newMaxQuantity: newMaxQuantity.toString(),
+        });
+        
+        updatedCount++;
+      }
+    }
+    
+    return {
+      partsAnalyzed: orgParts.length,
+      partsWithUsage: usageHistory.length,
+      partsUpdated: updatedCount,
+      updates,
+    };
   }
 
   async getWorkOrdersByOrg(orgId: number): Promise<WorkOrder[]> {

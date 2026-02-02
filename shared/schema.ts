@@ -716,13 +716,16 @@ export type AssetDocument = typeof assetDocuments.$inferSelect;
 // ============================================================
 export const brakeTypeEnum = ["drum", "disc", "air_disc", "hydraulic_disc", "electric"] as const;
 export const measurementUnitEnum = ["inches", "mm", "32nds"] as const;
+export const brakeMeasurementModeEnum = ["stroke", "pad_thickness", "both", "na"] as const;
 
 export const assetBrakeSettings = pgTable("asset_brake_settings", {
   id: serial("id").primaryKey(),
   assetId: integer("asset_id").notNull().references(() => assets.id, { onDelete: "cascade" }),
   axleCount: integer("axle_count").notNull().default(2),
+  measurementMode: text("measurement_mode").default("both").$type<typeof brakeMeasurementModeEnum[number]>(), // stroke, pad_thickness, both, or na
   defaultMeasurementUnit: text("default_measurement_unit").default("32nds").$type<typeof measurementUnitEnum[number]>(),
   minBrakeThickness: decimal("min_brake_thickness", { precision: 6, scale: 3 }), // Minimum acceptable brake thickness
+  minStrokeMeasurement: decimal("min_stroke_measurement", { precision: 6, scale: 3 }), // Minimum acceptable stroke measurement
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
@@ -2031,6 +2034,58 @@ export const checklistTemplatesRelations = relations(checklistTemplates, ({ many
 export const insertChecklistTemplateSchema = createInsertSchema(checklistTemplates).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertChecklistTemplate = z.infer<typeof insertChecklistTemplateSchema>;
 export type ChecklistTemplate = typeof checklistTemplates.$inferSelect;
+
+// ============================================================
+// WORK ORDER CHECKLISTS (Checklist instances on work orders)
+// ============================================================
+export const checklistItemStatusEnum = ["pending", "pass", "needs_repair", "na"] as const;
+
+export const workOrderChecklists = pgTable("work_order_checklists", {
+  id: serial("id").primaryKey(),
+  workOrderId: integer("work_order_id").notNull().references(() => workOrders.id, { onDelete: "cascade" }),
+  checklistTemplateId: integer("checklist_template_id").notNull().references(() => checklistTemplates.id),
+  workOrderLineId: integer("work_order_line_id").references(() => workOrderLines.id), // Optional link to a WO line
+  completedAt: timestamp("completed_at"),
+  completedById: varchar("completed_by_id"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_wo_checklists_wo").on(table.workOrderId),
+  index("idx_wo_checklists_template").on(table.checklistTemplateId),
+]);
+
+export const workOrderChecklistItems = pgTable("work_order_checklist_items", {
+  id: serial("id").primaryKey(),
+  workOrderChecklistId: integer("work_order_checklist_id").notNull().references(() => workOrderChecklists.id, { onDelete: "cascade" }),
+  itemIndex: integer("item_index").notNull(), // Position in original checklist
+  itemText: text("item_text").notNull(), // Copied from template for historical record
+  status: text("status").notNull().default("pending").$type<typeof checklistItemStatusEnum[number]>(),
+  notes: text("notes"), // Notes for this item
+  createdWorkOrderLineId: integer("created_work_order_line_id").references(() => workOrderLines.id), // WO line created from this item (for "needs_repair")
+  completedAt: timestamp("completed_at"),
+  completedById: varchar("completed_by_id"),
+}, (table) => [
+  index("idx_wo_checklist_items_checklist").on(table.workOrderChecklistId),
+]);
+
+export const workOrderChecklistsRelations = relations(workOrderChecklists, ({ one, many }) => ({
+  workOrder: one(workOrders, { fields: [workOrderChecklists.workOrderId], references: [workOrders.id] }),
+  checklistTemplate: one(checklistTemplates, { fields: [workOrderChecklists.checklistTemplateId], references: [checklistTemplates.id] }),
+  workOrderLine: one(workOrderLines, { fields: [workOrderChecklists.workOrderLineId], references: [workOrderLines.id] }),
+  items: many(workOrderChecklistItems),
+}));
+
+export const workOrderChecklistItemsRelations = relations(workOrderChecklistItems, ({ one }) => ({
+  workOrderChecklist: one(workOrderChecklists, { fields: [workOrderChecklistItems.workOrderChecklistId], references: [workOrderChecklists.id] }),
+  createdWorkOrderLine: one(workOrderLines, { fields: [workOrderChecklistItems.createdWorkOrderLineId], references: [workOrderLines.id] }),
+}));
+
+export const insertWorkOrderChecklistSchema = createInsertSchema(workOrderChecklists).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertWorkOrderChecklistItemSchema = createInsertSchema(workOrderChecklistItems).omit({ id: true });
+export type InsertWorkOrderChecklist = z.infer<typeof insertWorkOrderChecklistSchema>;
+export type InsertWorkOrderChecklistItem = z.infer<typeof insertWorkOrderChecklistItemSchema>;
+export type WorkOrderChecklist = typeof workOrderChecklists.$inferSelect;
+export type WorkOrderChecklistItem = typeof workOrderChecklistItems.$inferSelect;
 
 // ============================================================
 // CHECKLIST MAKE/MODEL ASSIGNMENTS (Bulk assignment to asset types)

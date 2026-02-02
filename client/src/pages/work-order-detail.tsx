@@ -5,9 +5,9 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation, useRoute } from "wouter";
 import { 
   ArrowLeft, Save, Loader2, Edit, Trash2, Clock, 
-  Calendar, User, Wrench, AlertTriangle, CheckCircle2,
+  Calendar, User, Wrench, AlertTriangle, CheckCircle2, CheckCircle,
   Plus, X, Play, Square, Timer, Package, CalendarClock,
-  Sparkles, Lightbulb, PenLine
+  Sparkles, Lightbulb, PenLine, Search
 } from "lucide-react";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
@@ -97,6 +97,7 @@ export default function WorkOrderDetail() {
   const [addItemDescription, setAddItemDescription] = useState("");
   const [addItemQuantity, setAddItemQuantity] = useState("1");
   const [addItemUnitCost, setAddItemUnitCost] = useState("");
+  const [partSearchQuery, setPartSearchQuery] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [suggestionsVmrs, setSuggestionsVmrs] = useState<string | null>(null);
   const [showSignatureDialog, setShowSignatureDialog] = useState(false);
@@ -497,6 +498,7 @@ export default function WorkOrderDetail() {
       setAddItemDescription("");
       setAddItemQuantity("1");
       setAddItemUnitCost("");
+      setPartSearchQuery("");
     },
     onError: () => {
       toast({ title: "Error", description: "Failed to add item.", variant: "destructive" });
@@ -1205,6 +1207,11 @@ export default function WorkOrderDetail() {
                                 setAddItemDescription("");
                                 setAddItemQuantity("1");
                                 setAddItemUnitCost("");
+                                setPartSearchQuery("");
+                                if (line.vmrsCode) {
+                                  setSuggestionsVmrs(line.vmrsCode);
+                                  setShowSuggestions(true);
+                                }
                               }}
                               data-testid={`button-add-part-${line.id}`}
                             >
@@ -1670,84 +1677,107 @@ export default function WorkOrderDetail() {
                 {(() => {
                   const line = workOrderLines?.find(l => l.id === showAddItemDialog);
                   const lineVmrs = line?.vmrsCode;
-                  if (lineVmrs) {
+                  if (lineVmrs && smartSuggestions?.historical && smartSuggestions.historical.length > 0) {
                     return (
                       <div className="space-y-2">
-                        <div className="flex items-center justify-between">
-                          <label className="text-[10px] uppercase font-bold text-muted-foreground flex items-center gap-1">
-                            <Sparkles className="h-3 w-3 text-primary" />
-                            Smart Suggestions
-                          </label>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-6 text-xs"
-                            onClick={() => {
-                              setSuggestionsVmrs(lineVmrs);
-                              setShowSuggestions(true);
-                            }}
-                            data-testid="button-get-suggestions"
-                          >
-                            <Lightbulb className="h-3 w-3 mr-1" />
-                            Get Suggestions
-                          </Button>
+                        <label className="text-[10px] uppercase font-bold text-muted-foreground flex items-center gap-1">
+                          <Sparkles className="h-3 w-3 text-primary" />
+                          High Probability Parts for {lineVmrs}
+                        </label>
+                        <div className="border rounded-lg overflow-hidden">
+                          <table className="w-full text-xs">
+                            <thead className="bg-muted/50">
+                              <tr>
+                                <th className="text-left p-2 font-medium">Part</th>
+                                <th className="text-right p-2 font-medium">In Stock</th>
+                                <th className="text-right p-2 font-medium">Usage</th>
+                                <th className="p-2"></th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {smartSuggestions.historical.map((suggestion) => {
+                                const partInInventory = parts?.find(p => p.id === suggestion.partId);
+                                const isSelected = addItemPartId === suggestion.partId.toString();
+                                return (
+                                  <tr 
+                                    key={suggestion.partId} 
+                                    className={`border-t hover-elevate cursor-pointer ${isSelected ? 'bg-primary/10' : ''}`}
+                                    onClick={() => setAddItemPartId(suggestion.partId.toString())}
+                                    data-testid={`row-suggestion-${suggestion.partId}`}
+                                  >
+                                    <td className="p-2">
+                                      <div className="font-medium">{suggestion.partNumber}</div>
+                                      <div className="text-muted-foreground">{suggestion.partName}</div>
+                                    </td>
+                                    <td className="text-right p-2">
+                                      {partInInventory ? partInInventory.quantityOnHand || 0 : '-'}
+                                    </td>
+                                    <td className="text-right p-2 text-muted-foreground">
+                                      {suggestion.usageCount}x
+                                    </td>
+                                    <td className="p-2 text-center">
+                                      {isSelected && <CheckCircle className="h-4 w-4 text-primary" />}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
                         </div>
-                        {showSuggestions && suggestionsVmrs === lineVmrs && (
-                          <div className="border rounded-lg p-2 bg-primary/5 space-y-1">
-                            {suggestionsLoading ? (
-                              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                                <Loader2 className="h-3 w-3 animate-spin" />
-                                Finding parts used for {lineVmrs}...
-                              </div>
-                            ) : smartSuggestions?.historical && smartSuggestions.historical.length > 0 ? (
-                              <>
-                                <p className="text-xs text-muted-foreground mb-2">
-                                  Parts commonly used for this VMRS code on similar vehicles:
-                                </p>
-                                {smartSuggestions.historical.map((suggestion) => {
-                                  const partInInventory = parts?.find(p => p.id === suggestion.partId);
-                                  return (
-                                    <button
-                                      key={suggestion.partId}
-                                      onClick={() => setAddItemPartId(suggestion.partId.toString())}
-                                      className="w-full text-left p-2 rounded bg-background hover-elevate text-xs flex items-center justify-between"
-                                      data-testid={`button-suggestion-${suggestion.partId}`}
-                                    >
-                                      <span className="font-medium">{suggestion.partNumber} - {suggestion.partName}</span>
-                                      <span className="text-muted-foreground">
-                                        {partInInventory ? `Qty: ${partInInventory.quantityOnHand || 0}` : ""}
-                                        {suggestion.usageCount > 1 ? ` (used ${suggestion.usageCount}x)` : ""}
-                                      </span>
-                                    </button>
-                                  );
-                                })}
-                              </>
-                            ) : (
-                              <p className="text-xs text-muted-foreground">
-                                No historical part usage found for this VMRS code. Select a part from the list below.
-                              </p>
-                            )}
-                          </div>
-                        )}
                       </div>
                     );
                   }
                   return null;
                 })()}
                 <div className="space-y-2">
-                  <label className="text-[10px] uppercase font-bold text-muted-foreground">Select Part</label>
-                  <Select value={addItemPartId} onValueChange={setAddItemPartId}>
-                    <SelectTrigger data-testid="select-inventory-part">
-                      <SelectValue placeholder="Select a part..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {parts?.map((part) => (
-                        <SelectItem key={part.id} value={part.id.toString()}>
-                          {part.partNumber} - {part.name} (Qty: {part.quantityOnHand || 0}, ${part.unitCost || 0})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <label className="text-[10px] uppercase font-bold text-muted-foreground">Search & Select Part</label>
+                  <Input
+                    placeholder="Search by part number or name..."
+                    value={partSearchQuery}
+                    onChange={(e) => setPartSearchQuery(e.target.value)}
+                    data-testid="input-part-search"
+                  />
+                  <div className="border rounded-lg max-h-48 overflow-y-auto">
+                    {parts?.filter(part => {
+                      if (!partSearchQuery) return true;
+                      const query = partSearchQuery.toLowerCase();
+                      return (
+                        part.partNumber?.toLowerCase().includes(query) ||
+                        part.name?.toLowerCase().includes(query) ||
+                        part.description?.toLowerCase().includes(query)
+                      );
+                    }).slice(0, 50).map((part) => {
+                      const isSelected = addItemPartId === part.id.toString();
+                      return (
+                        <div
+                          key={part.id}
+                          className={`p-2 text-sm cursor-pointer hover-elevate flex items-center justify-between border-b last:border-b-0 ${isSelected ? 'bg-primary/10' : ''}`}
+                          onClick={() => setAddItemPartId(part.id.toString())}
+                          data-testid={`part-option-${part.id}`}
+                        >
+                          <div>
+                            <span className="font-medium">{part.partNumber}</span> - {part.name}
+                            <div className="text-xs text-muted-foreground">
+                              Qty: {part.quantityOnHand || 0} | ${part.unitCost || 0}
+                            </div>
+                          </div>
+                          {isSelected && <CheckCircle className="h-4 w-4 text-primary" />}
+                        </div>
+                      );
+                    })}
+                    {parts?.filter(part => {
+                      if (!partSearchQuery) return true;
+                      const query = partSearchQuery.toLowerCase();
+                      return (
+                        part.partNumber?.toLowerCase().includes(query) ||
+                        part.name?.toLowerCase().includes(query)
+                      );
+                    }).length === 0 && (
+                      <div className="p-3 text-sm text-muted-foreground text-center">
+                        No parts found matching "{partSearchQuery}"
+                      </div>
+                    )}
+                  </div>
                   {addItemPartId && (() => {
                     const selectedPart = parts?.find(p => p.id.toString() === addItemPartId);
                     if (selectedPart && Number(selectedPart.quantityOnHand || 0) === 0) {

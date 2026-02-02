@@ -3081,6 +3081,99 @@ export async function registerRoutes(
     }
   });
 
+  // Work Order Checklists
+  app.get("/api/work-orders/:workOrderId/checklists", async (req, res) => {
+    try {
+      const workOrderId = parseInt(req.params.workOrderId);
+      const checklists = await storage.getWorkOrderChecklists(workOrderId);
+      res.json(checklists);
+    } catch (error) {
+      console.error("Error fetching work order checklists:", error);
+      res.status(500).json({ error: "Failed to fetch checklists" });
+    }
+  });
+
+  app.post("/api/work-orders/:workOrderId/checklists", requireAuth, async (req, res) => {
+    try {
+      const workOrderId = parseInt(req.params.workOrderId);
+      const { templateId, workOrderLineId } = req.body;
+      
+      if (!templateId) {
+        return res.status(400).json({ error: "templateId is required" });
+      }
+      
+      const checklist = await storage.createWorkOrderChecklist(
+        workOrderId,
+        parseInt(templateId),
+        workOrderLineId ? parseInt(workOrderLineId) : undefined
+      );
+      res.status(201).json(checklist);
+    } catch (error) {
+      console.error("Error creating work order checklist:", error);
+      res.status(500).json({ error: "Failed to create checklist" });
+    }
+  });
+
+  app.get("/api/work-orders/:workOrderId/checklists/:checklistId", async (req, res) => {
+    try {
+      const checklistId = parseInt(req.params.checklistId);
+      const checklist = await storage.getWorkOrderChecklist(checklistId);
+      
+      if (!checklist) {
+        return res.status(404).json({ error: "Checklist not found" });
+      }
+      
+      const items = await storage.getWorkOrderChecklistItems(checklistId);
+      res.json({ ...checklist, items });
+    } catch (error) {
+      console.error("Error fetching work order checklist:", error);
+      res.status(500).json({ error: "Failed to fetch checklist" });
+    }
+  });
+
+  app.patch("/api/work-order-checklist-items/:itemId", requireAuth, async (req, res) => {
+    try {
+      const itemId = parseInt(req.params.itemId);
+      const { status, notes } = req.body;
+      const userId = (req.user as any)?.claims?.sub;
+      
+      if (!status) {
+        return res.status(400).json({ error: "status is required" });
+      }
+      
+      const validStatuses = ["pending", "pass", "needs_repair", "na"];
+      if (!validStatuses.includes(status)) {
+        return res.status(400).json({ error: `Invalid status. Must be one of: ${validStatuses.join(", ")}` });
+      }
+      
+      const updated = await storage.updateChecklistItemStatus(itemId, status, notes, userId);
+      if (!updated) {
+        return res.status(404).json({ error: "Checklist item not found" });
+      }
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating checklist item:", error);
+      res.status(500).json({ error: "Failed to update checklist item" });
+    }
+  });
+
+  app.post("/api/work-order-checklist-items/:itemId/create-line", requireAuth, async (req, res) => {
+    try {
+      const itemId = parseInt(req.params.itemId);
+      const { workOrderId } = req.body;
+      
+      if (!workOrderId) {
+        return res.status(400).json({ error: "workOrderId is required" });
+      }
+      
+      const line = await storage.createWorkOrderLineFromChecklistItem(itemId, parseInt(workOrderId));
+      res.status(201).json(line);
+    } catch (error) {
+      console.error("Error creating work order line from checklist item:", error);
+      res.status(500).json({ error: "Failed to create work order line" });
+    }
+  });
+
   app.get("/api/predictions", async (_req, res) => {
     const results = await storage.getPredictions();
     res.json(results);
@@ -6434,6 +6527,41 @@ Example: [{"partNumber": "BP-001", "reason": "Standard brake pads for this model
     }
   });
 
+  // Recalculate Min/Max and reorder points based on usage patterns
+  const recalculateMinMaxSchema = z.object({
+    leadTimeDays: z.number().min(1).max(365).optional().default(14),
+    safetyStockDays: z.number().min(0).max(180).optional().default(7),
+    lookbackDays: z.number().min(7).max(365).optional().default(90),
+  });
+  
+  app.post("/api/parts/recalculate-minmax", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      if (!orgId) {
+        return res.status(403).json({ error: "Organization context required" });
+      }
+      
+      // Validate request body
+      const parseResult = recalculateMinMaxSchema.safeParse(req.body);
+      if (!parseResult.success) {
+        return res.status(400).json({ error: "Invalid parameters", details: parseResult.error.flatten() });
+      }
+      const { leadTimeDays, safetyStockDays, lookbackDays } = parseResult.data;
+      
+      // Use storage method for tenant-safe recalculation
+      const result = await storage.recalculateMinMax(orgId, { leadTimeDays, safetyStockDays, lookbackDays });
+      
+      res.json({
+        success: true,
+        ...result,
+        parameters: { leadTimeDays, safetyStockDays, lookbackDays },
+      });
+    } catch (error) {
+      console.error("Min/Max recalculation error:", error);
+      res.status(500).json({ error: "Failed to recalculate Min/Max values" });
+    }
+  });
+
   // ============================================================
   // PM DUES & COMPLETION
   // ============================================================
@@ -6632,85 +6760,6 @@ Example: [{"partNumber": "BP-001", "reason": "Standard brake pads for this model
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete public asset token" });
-    }
-  });
-
-  // ==============================================
-  // PUBLIC DVIR SUBMISSION (NO AUTH REQUIRED)
-  // ==============================================
-  app.get("/api/public/dvir/:token", async (req, res) => {
-    try {
-      const { token } = req.params;
-      const data = await storage.getAssetForPublicDvir(token);
-      if (!data) {
-        return res.status(404).json({ error: "Invalid or expired QR code" });
-      }
-      // Return asset info for the DVIR form
-      res.json({
-        asset: {
-          id: data.asset.id,
-          name: data.asset.name,
-          assetNumber: data.asset.assetNumber,
-          type: data.asset.type,
-          make: data.asset.make,
-          model: data.asset.model,
-          year: data.asset.year,
-        },
-        organization: {
-          id: data.org.id,
-          name: data.org.name,
-        },
-      });
-    } catch (error) {
-      res.status(500).json({ error: "Failed to fetch asset information" });
-    }
-  });
-
-  app.post("/api/public/dvir/:token", async (req, res) => {
-    try {
-      const { token } = req.params;
-      const tokenRecord = await storage.getPublicAssetTokenByToken(token);
-      if (!tokenRecord) {
-        return res.status(404).json({ error: "Invalid or expired QR code" });
-      }
-      
-      const { inspectorName, status, meterReading, preTrip, notes, signature, defects } = req.body;
-      
-      if (!inspectorName || !status) {
-        return res.status(400).json({ error: "Inspector name and status are required" });
-      }
-      
-      // Create the DVIR
-      const dvir = await storage.createDvir({
-        orgId: tokenRecord.orgId,
-        assetId: tokenRecord.assetId,
-        inspectorName,
-        inspectorId: null, // Anonymous submission
-        status,
-        meterReading: meterReading || null,
-        preTrip: preTrip ?? true,
-        notes: notes || null,
-        signature: signature || null,
-        isPublicSubmission: true,
-      });
-      
-      // Create defects if any
-      if (defects && Array.isArray(defects) && defects.length > 0) {
-        for (const defect of defects) {
-          await storage.createDvirDefect({
-            dvirId: dvir.id,
-            category: defect.category,
-            description: defect.description,
-            severity: defect.severity || "minor",
-            photoUrl: defect.photoUrl || null,
-          });
-        }
-      }
-      
-      res.status(201).json({ success: true, dvirId: dvir.id });
-    } catch (error) {
-      console.error("Public DVIR submission error:", error);
-      res.status(500).json({ error: "Failed to submit DVIR" });
     }
   });
 
