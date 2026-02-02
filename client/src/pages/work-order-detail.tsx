@@ -7,7 +7,7 @@ import {
   ArrowLeft, Save, Loader2, Edit, Trash2, Clock, 
   Calendar, User, Wrench, AlertTriangle, CheckCircle2, CheckCircle,
   Plus, X, Play, Square, Timer, Package, CalendarClock,
-  Sparkles, Lightbulb, PenLine, Search
+  Sparkles, Lightbulb, PenLine, Search, ClipboardList, CircleDot, CircleCheck, CircleX, CircleMinus
 } from "lucide-react";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
@@ -47,7 +47,7 @@ import { DeferredLines } from "@/components/DeferredLines";
 import { BrakeTireInspection } from "@/components/BrakeTireInspection";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import type { WorkOrder, Asset, WorkOrderLine, Part, VmrsCode, WorkOrderTransaction, Location } from "@shared/schema";
+import type { WorkOrder, Asset, WorkOrderLine, Part, VmrsCode, WorkOrderTransaction, Location, ChecklistTemplate, WorkOrderChecklist, WorkOrderChecklistItem } from "@shared/schema";
 
 const workOrderFormSchema = z.object({
   description: z.string().optional(),
@@ -123,6 +123,11 @@ export default function WorkOrderDetail() {
   
   // Close line confirmation dialog
   const [showCloseLineConfirm, setShowCloseLineConfirm] = useState<number | null>(null);
+  
+  // Checklist state
+  const [showAttachChecklistDialog, setShowAttachChecklistDialog] = useState<number | null>(null);
+  const [selectedChecklistTemplateId, setSelectedChecklistTemplateId] = useState<string>("");
+  const [expandedChecklists, setExpandedChecklists] = useState<Record<number, boolean>>({});
   
   // Linked PM Schedule data for auto-population
   interface LinkedPmScheduleData {
@@ -233,6 +238,21 @@ export default function WorkOrderDetail() {
 
   const { data: workOrderLines } = useQuery<WorkOrderLine[]>({
     queryKey: ["/api/work-orders", workOrderId, "lines"],
+    enabled: !!workOrderId,
+  });
+
+  // Checklist templates for attaching to lines
+  const { data: checklistTemplates } = useQuery<ChecklistTemplate[]>({
+    queryKey: ["/api/checklist-templates"],
+  });
+
+  // Work order checklists
+  interface WorkOrderChecklistWithItems extends WorkOrderChecklist {
+    items: WorkOrderChecklistItem[];
+    templateName?: string;
+  }
+  const { data: workOrderChecklists } = useQuery<WorkOrderChecklistWithItems[]>({
+    queryKey: ["/api/work-orders", workOrderId, "checklists"],
     enabled: !!workOrderId,
   });
 
@@ -487,6 +507,41 @@ export default function WorkOrderDetail() {
       toast({ title: "Error", description: "Failed to update line.", variant: "destructive" });
     },
   });
+
+  // Checklist mutations
+  const attachChecklistMutation = useMutation({
+    mutationFn: async ({ workOrderLineId, templateId }: { workOrderLineId: number; templateId: number }) => {
+      return apiRequest("POST", `/api/work-orders/${workOrderId}/checklists`, { 
+        templateId, 
+        workOrderLineId 
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/work-orders", workOrderId, "checklists"] });
+      toast({ title: "Checklist Attached", description: "Checklist has been added to this line." });
+      setShowAttachChecklistDialog(null);
+      setSelectedChecklistTemplateId("");
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to attach checklist.", variant: "destructive" });
+    },
+  });
+
+  const updateChecklistItemMutation = useMutation({
+    mutationFn: async ({ itemId, status, notes }: { itemId: number; status: string; notes?: string }) => {
+      return apiRequest("PATCH", `/api/work-order-checklist-items/${itemId}`, { status, notes });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/work-orders", workOrderId, "checklists"] });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to update checklist item.", variant: "destructive" });
+    },
+  });
+
+  const getChecklistsForLine = (lineId: number) => {
+    return workOrderChecklists?.filter(c => c.workOrderLineId === lineId) || [];
+  };
 
   const openEditLineDialog = (line: WorkOrderLine) => {
     setEditLineId(line.id);
@@ -1281,6 +1336,109 @@ export default function WorkOrderDetail() {
                           )}
                         </div>
 
+                        {/* Checklists Section */}
+                        <div className="space-y-2 pt-2 border-t border-border/30">
+                          <div className="flex items-center justify-between">
+                            <p className="text-[10px] uppercase font-bold text-muted-foreground flex items-center gap-1">
+                              <ClipboardList className="h-3 w-3" />
+                              Checklists
+                            </p>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 text-xs"
+                              onClick={() => {
+                                setShowAttachChecklistDialog(line.id);
+                                setSelectedChecklistTemplateId("");
+                              }}
+                              data-testid={`button-attach-checklist-${line.id}`}
+                            >
+                              <Plus className="h-3 w-3 mr-1" />
+                              Attach Checklist
+                            </Button>
+                          </div>
+                          {(() => {
+                            const lineChecklists = getChecklistsForLine(line.id);
+                            if (lineChecklists.length === 0) {
+                              return <p className="text-sm text-muted-foreground italic">No checklists attached</p>;
+                            }
+                            return (
+                              <div className="space-y-3">
+                                {lineChecklists.map((checklist) => {
+                                  const template = checklistTemplates?.find(t => t.id === checklist.checklistTemplateId);
+                                  const isExpanded = expandedChecklists[checklist.id] ?? true;
+                                  const completedCount = checklist.items?.filter(i => i.status !== 'pending').length || 0;
+                                  const totalCount = checklist.items?.length || 0;
+                                  
+                                  return (
+                                    <div key={checklist.id} className="bg-background/50 border border-border/30 rounded-lg p-3">
+                                      <div 
+                                        className="flex items-center justify-between cursor-pointer"
+                                        onClick={() => setExpandedChecklists(prev => ({ ...prev, [checklist.id]: !isExpanded }))}
+                                      >
+                                        <div className="flex items-center gap-2">
+                                          <ClipboardList className="h-4 w-4 text-primary" />
+                                          <span className="font-medium text-sm">{template?.name || "Checklist"}</span>
+                                          <Badge variant="outline" className="text-[10px]">
+                                            {completedCount}/{totalCount}
+                                          </Badge>
+                                        </div>
+                                        <Button size="icon" variant="ghost" className="h-6 w-6">
+                                          {isExpanded ? <X className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
+                                        </Button>
+                                      </div>
+                                      {isExpanded && checklist.items && (
+                                        <div className="mt-3 space-y-2">
+                                          {checklist.items.map((item) => (
+                                            <div key={item.id} className="flex items-center gap-2 py-1 border-b border-border/20 last:border-0">
+                                              <div className="flex-1 text-sm">{item.itemText}</div>
+                                              <div className="flex items-center gap-1">
+                                                <Button
+                                                  size="icon"
+                                                  variant={item.status === 'pass' ? 'default' : 'ghost'}
+                                                  className="h-7 w-7"
+                                                  onClick={() => updateChecklistItemMutation.mutate({ itemId: item.id, status: 'pass' })}
+                                                  disabled={updateChecklistItemMutation.isPending}
+                                                  data-testid={`button-checklist-pass-${item.id}`}
+                                                  title="Pass"
+                                                >
+                                                  <CircleCheck className="h-4 w-4 text-green-600" />
+                                                </Button>
+                                                <Button
+                                                  size="icon"
+                                                  variant={item.status === 'needs_repair' ? 'destructive' : 'ghost'}
+                                                  className="h-7 w-7"
+                                                  onClick={() => updateChecklistItemMutation.mutate({ itemId: item.id, status: 'needs_repair' })}
+                                                  disabled={updateChecklistItemMutation.isPending}
+                                                  data-testid={`button-checklist-repair-${item.id}`}
+                                                  title="Needs Repair"
+                                                >
+                                                  <CircleX className="h-4 w-4" />
+                                                </Button>
+                                                <Button
+                                                  size="icon"
+                                                  variant={item.status === 'na' ? 'secondary' : 'ghost'}
+                                                  className="h-7 w-7"
+                                                  onClick={() => updateChecklistItemMutation.mutate({ itemId: item.id, status: 'na' })}
+                                                  disabled={updateChecklistItemMutation.isPending}
+                                                  data-testid={`button-checklist-na-${item.id}`}
+                                                  title="N/A"
+                                                >
+                                                  <CircleMinus className="h-4 w-4 text-muted-foreground" />
+                                                </Button>
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            );
+                          })()}
+                        </div>
+
                         <div className="flex flex-wrap items-center gap-4 pt-2 border-t border-border/30">
                           <div className="flex items-center gap-4 text-sm">
                             <span className="flex items-center gap-1 font-medium">
@@ -1752,6 +1910,62 @@ export default function WorkOrderDetail() {
                 <Save className="h-4 w-4 mr-2" />
               )}
               Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Attach Checklist Dialog */}
+      <Dialog open={showAttachChecklistDialog !== null} onOpenChange={(open) => {
+        if (!open) {
+          setShowAttachChecklistDialog(null);
+          setSelectedChecklistTemplateId("");
+        }
+      }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Attach Checklist</DialogTitle>
+            <DialogDescription>
+              Select a checklist template to attach to this work order line.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <label className="text-[10px] uppercase font-bold text-muted-foreground">Checklist Template</label>
+              <Select value={selectedChecklistTemplateId} onValueChange={setSelectedChecklistTemplateId}>
+                <SelectTrigger data-testid="select-checklist-template">
+                  <SelectValue placeholder="Select a checklist template..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {checklistTemplates?.map((template) => (
+                    <SelectItem key={template.id} value={template.id.toString()}>
+                      {template.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAttachChecklistDialog(null)}>Cancel</Button>
+            <Button 
+              onClick={() => {
+                if (showAttachChecklistDialog && selectedChecklistTemplateId) {
+                  attachChecklistMutation.mutate({
+                    workOrderLineId: showAttachChecklistDialog,
+                    templateId: parseInt(selectedChecklistTemplateId),
+                  });
+                }
+              }}
+              disabled={!selectedChecklistTemplateId || attachChecklistMutation.isPending}
+              data-testid="button-confirm-attach-checklist"
+            >
+              {attachChecklistMutation.isPending ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <ClipboardList className="h-4 w-4 mr-2" />
+              )}
+              Attach Checklist
             </Button>
           </DialogFooter>
         </DialogContent>
