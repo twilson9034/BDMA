@@ -593,4 +593,38 @@ export async function seedVmrsDictionary(orgId: number | null = null): Promise<n
   return insertedCount;
 }
 
+export async function saveTextVmrsFeedback(
+  sourceText: string,
+  sourceNotes: string | undefined,
+  suggestedSystemCode: string | undefined,
+  suggestedTitle: string | undefined,
+  suggestedConfidence: number | undefined,
+  selectedSystemCode: string | undefined,
+  selectedTitle: string | undefined,
+  wasAutoApplied: boolean,
+  wasSkipped: boolean,
+  userId: string,
+  orgId?: number
+): Promise<void> {
+  try {
+    const { vmrsTextFeedback } = await import("@shared/schema");
+    await db.insert(vmrsTextFeedback).values({
+      orgId,
+      sourceText,
+      sourceNotes,
+      sourceType: "checklist_item",
+      suggestedSystemCode,
+      suggestedTitle,
+      suggestedConfidence: suggestedConfidence?.toFixed(2),
+      selectedSystemCode,
+      selectedTitle,
+      wasAutoApplied,
+      wasSkipped,
+      selectedByUserId: userId,
+    });
+  } catch (error) {
+    console.error("Error saving VMRS text feedback:", error);
+  }
+}
+
 export { STARTER_SYSTEM_RULES, SYSTEM_SAFETY_MAP };

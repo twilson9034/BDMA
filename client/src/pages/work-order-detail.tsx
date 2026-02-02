@@ -573,11 +573,31 @@ export default function WorkOrderDetail() {
   });
 
   const createWoLineFromChecklistMutation = useMutation({
-    mutationFn: async ({ itemId, vmrsCode, vmrsTitle }: { itemId: number; vmrsCode?: string; vmrsTitle?: string }) => {
+    mutationFn: async ({ 
+      itemId, 
+      vmrsCode, 
+      vmrsTitle,
+      wasAutoApplied,
+      suggestedSystemCode,
+      suggestedTitle,
+      suggestedConfidence,
+    }: { 
+      itemId: number; 
+      vmrsCode?: string; 
+      vmrsTitle?: string;
+      wasAutoApplied?: boolean;
+      suggestedSystemCode?: string;
+      suggestedTitle?: string;
+      suggestedConfidence?: number;
+    }) => {
       return apiRequest("POST", `/api/work-order-checklist-items/${itemId}/create-line`, { 
         workOrderId,
         vmrsCode,
         vmrsTitle,
+        wasAutoApplied,
+        suggestedSystemCode,
+        suggestedTitle,
+        suggestedConfidence,
       });
     },
     onSuccess: () => {
@@ -603,8 +623,16 @@ export default function WorkOrderDetail() {
           itemId,
           vmrsCode: result.topSuggestion.systemCode,
           vmrsTitle: result.topSuggestion.title,
+          wasAutoApplied: true,
+          suggestedSystemCode: result.topSuggestion.systemCode,
+          suggestedTitle: result.topSuggestion.title,
+          suggestedConfidence: result.topSuggestion.confidence,
         });
         setVmrsSelectDialog(null);
+        toast({ 
+          title: "Work Order Line Created", 
+          description: `Auto-assigned VMRS: ${result.topSuggestion.systemCode} - ${result.topSuggestion.title}` 
+        });
       } else {
         setVmrsSelectDialog({
           itemId,
@@ -2269,8 +2297,13 @@ export default function WorkOrderDetail() {
             </Button>
             <Button variant="outline" onClick={() => {
               if (vmrsSelectDialog) {
+                const topSuggestion = vmrsSelectDialog.suggestions[0];
                 createWoLineFromChecklistMutation.mutate({
                   itemId: vmrsSelectDialog.itemId,
+                  wasAutoApplied: false,
+                  suggestedSystemCode: topSuggestion?.systemCode,
+                  suggestedTitle: topSuggestion?.title,
+                  suggestedConfidence: topSuggestion?.confidence,
                 });
               }
             }}>
@@ -2280,10 +2313,15 @@ export default function WorkOrderDetail() {
               onClick={() => {
                 if (vmrsSelectDialog && selectedVmrsCode) {
                   const suggestion = vmrsSelectDialog.suggestions.find(s => s.systemCode === selectedVmrsCode);
+                  const topSuggestion = vmrsSelectDialog.suggestions[0];
                   createWoLineFromChecklistMutation.mutate({
                     itemId: vmrsSelectDialog.itemId,
                     vmrsCode: selectedVmrsCode,
-                    vmrsTitle: suggestion?.title,
+                    vmrsTitle: suggestion?.title || selectedVmrsCode,
+                    wasAutoApplied: false,
+                    suggestedSystemCode: topSuggestion?.systemCode,
+                    suggestedTitle: topSuggestion?.title,
+                    suggestedConfidence: topSuggestion?.confidence,
                   });
                 }
               }}

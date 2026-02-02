@@ -1112,6 +1112,33 @@ export type InsertVmrsMappingFeedback = z.infer<typeof insertVmrsMappingFeedback
 export type VmrsMappingFeedback = typeof vmrsMappingFeedback.$inferSelect;
 
 // ============================================================
+// VMRS TEXT FEEDBACK (learning from checklist/text-based VMRS selections)
+// ============================================================
+export const vmrsTextFeedback = pgTable("vmrs_text_feedback", {
+  id: serial("id").primaryKey(),
+  orgId: integer("org_id").references(() => organizations.id),
+  sourceText: text("source_text").notNull(),
+  sourceNotes: text("source_notes"),
+  sourceType: text("source_type").default("checklist_item"),
+  suggestedSystemCode: text("suggested_system_code"),
+  suggestedTitle: text("suggested_title"),
+  suggestedConfidence: decimal("suggested_confidence", { precision: 4, scale: 2 }),
+  selectedSystemCode: text("selected_system_code"),
+  selectedTitle: text("selected_title"),
+  wasAutoApplied: boolean("was_auto_applied").default(false),
+  wasSkipped: boolean("was_skipped").default(false),
+  selectedByUserId: text("selected_by_user_id"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_vmrs_text_feedback_org").on(table.orgId),
+  index("idx_vmrs_text_feedback_source").on(table.sourceText),
+]);
+
+export const insertVmrsTextFeedbackSchema = createInsertSchema(vmrsTextFeedback).omit({ id: true, createdAt: true });
+export type InsertVmrsTextFeedback = z.infer<typeof insertVmrsTextFeedbackSchema>;
+export type VmrsTextFeedback = typeof vmrsTextFeedback.$inferSelect;
+
+// ============================================================
 // SMART CLASSIFICATION SYSTEM
 // ============================================================
 export const classificationRunStatusEnum = ["pending", "running", "completed", "failed"] as const;

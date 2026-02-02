@@ -3188,11 +3188,13 @@ export async function registerRoutes(
   app.post("/api/work-order-checklist-items/:itemId/create-line", requireAuth, async (req, res) => {
     try {
       const itemId = parseInt(req.params.itemId);
-      const { workOrderId, vmrsCode, vmrsTitle } = req.body;
+      const { workOrderId, vmrsCode, vmrsTitle, wasAutoApplied, suggestedSystemCode, suggestedTitle, suggestedConfidence } = req.body;
       
       if (!workOrderId) {
         return res.status(400).json({ error: "workOrderId is required" });
       }
+      
+      const item = await storage.getWorkOrderChecklistItem(itemId);
       
       const line = await storage.createWorkOrderLineFromChecklistItem(
         itemId, 
@@ -3200,6 +3202,27 @@ export async function registerRoutes(
         vmrsCode || undefined,
         vmrsTitle || undefined
       );
+      
+      if (item) {
+        const { saveTextVmrsFeedback } = await import("./services/vmrsSuggestionService");
+        const userId = (req.user as any)?.claims?.sub || "unknown";
+        const orgId = getOrgId(req);
+        
+        await saveTextVmrsFeedback(
+          item.itemText,
+          item.notes || undefined,
+          suggestedSystemCode,
+          suggestedTitle,
+          suggestedConfidence ? parseFloat(suggestedConfidence) : undefined,
+          vmrsCode || undefined,
+          vmrsTitle || undefined,
+          wasAutoApplied === true,
+          !vmrsCode,
+          userId,
+          orgId || undefined
+        );
+      }
+      
       res.status(201).json(line);
     } catch (error) {
       console.error("Error creating work order line from checklist item:", error);
