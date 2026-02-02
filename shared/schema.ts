@@ -742,7 +742,8 @@ export const assetBrakeAxles = pgTable("asset_brake_axles", {
   leftBrakeType: text("left_brake_type").$type<typeof brakeTypeEnum[number]>(), // If different per side
   rightBrakeType: text("right_brake_type").$type<typeof brakeTypeEnum[number]>(),
   measurementUnit: text("measurement_unit").$type<typeof measurementUnitEnum[number]>(),
-  minThickness: decimal("min_thickness", { precision: 6, scale: 3 }), // Override per axle
+  minThickness: decimal("min_thickness", { precision: 6, scale: 3 }), // Override per axle for pad thickness
+  minStrokeMeasurement: decimal("min_stroke_measurement", { precision: 6, scale: 3 }), // Min stroke per axle
   notes: text("notes"),
 }, (table) => [
   index("idx_asset_brake_axles_settings").on(table.brakeSettingsId),

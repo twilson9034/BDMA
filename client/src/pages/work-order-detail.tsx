@@ -1926,7 +1926,7 @@ export default function WorkOrderDetail() {
                     .slice(0, 20)
                     .map((p: Part) => (
                       <SelectItem key={p.id} value={p.id.toString()}>
-                        {p.partNumber ? `${p.partNumber} - ` : ""}{p.name} (Qty: {p.quantity || 0})
+                        {p.partNumber ? `${p.partNumber} - ` : ""}{p.name} (Qty: {p.quantityOnHand || 0})
                       </SelectItem>
                     ))}
                 </SelectContent>
@@ -1950,7 +1950,7 @@ export default function WorkOrderDetail() {
             <Button
               onClick={() => {
                 if (showRequestPartDialog && requestPartId) {
-                  const currentLine = lines?.find((l: WorkOrderLine) => l.id === showRequestPartDialog);
+                  const currentLine = workOrderLines?.find((l: WorkOrderLine) => l.id === showRequestPartDialog);
                   if (currentLine?.partRequestStatus === 'none') {
                     requestPartMutation.mutate({
                       lineId: showRequestPartDialog,
@@ -1995,11 +1995,8 @@ export default function WorkOrderDetail() {
             <Button
               onClick={() => {
                 if (showCloseLineConfirm) {
-                  // Stop any running timer first
-                  if (activeTimers[showCloseLineConfirm]) {
-                    stopLineMutation.mutate(showCloseLineConfirm);
-                  }
-                  closeLineMutation.mutate(showCloseLineConfirm);
+                  // Stop any running timer first and complete
+                  stopTimerMutation.mutate({ lineId: showCloseLineConfirm, complete: true });
                   setShowCloseLineConfirm(null);
                 }
               }}

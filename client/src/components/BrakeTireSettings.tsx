@@ -21,6 +21,7 @@ interface BrakeAxle {
   brakeType: string | null;
   measurementUnit: string | null;
   minThickness: string | null;
+  minStrokeMeasurement: string | null;
 }
 
 interface TireAxle {
@@ -100,6 +101,7 @@ function generateDefaultAxles(count: number, type: 'brake' | 'tire'): BrakeAxle[
         brakeType: i === 1 ? "disc" : "drum",
         measurementUnit: "32nds",
         minThickness: null,
+        minStrokeMeasurement: null,
       });
     } else {
       axles.push({
@@ -226,6 +228,7 @@ export function BrakeTireSettings({ assetId, assetType }: Props) {
       brakeType: "drum",
       measurementUnit: brakeUnit,
       minThickness: null,
+      minStrokeMeasurement: null,
     }]);
     setBrakeAxleCount(brakeAxleCount + 1);
   };
@@ -390,6 +393,36 @@ export function BrakeTireSettings({ assetId, assetType }: Props) {
                     </Select>
                   </div>
                 </div>
+                {brakeMeasurementMode !== "na" && (
+                  <div className="flex gap-2">
+                    {(brakeMeasurementMode === "stroke" || brakeMeasurementMode === "both") && (
+                      <div className="flex-1">
+                        <Label className="text-xs">Min Stroke</Label>
+                        <Input
+                          type="number"
+                          step="0.001"
+                          value={axle.minStrokeMeasurement || ""}
+                          onChange={(e) => updateBrakeAxle(idx, 'minStrokeMeasurement', e.target.value || null)}
+                          placeholder="e.g., 1.5"
+                          data-testid={`input-brake-min-stroke-${idx}`}
+                        />
+                      </div>
+                    )}
+                    {(brakeMeasurementMode === "pad_thickness" || brakeMeasurementMode === "both") && (
+                      <div className="flex-1">
+                        <Label className="text-xs">Min Thickness</Label>
+                        <Input
+                          type="number"
+                          step="0.001"
+                          value={axle.minThickness || ""}
+                          onChange={(e) => updateBrakeAxle(idx, 'minThickness', e.target.value || null)}
+                          placeholder="e.g., 4"
+                          data-testid={`input-brake-min-thickness-${idx}`}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             ))}
           </div>

@@ -40,9 +40,12 @@ interface BrakeInspectionAxle {
   rightPadThickness: string | null;
   leftRotorThickness: string | null;
   rightRotorThickness: string | null;
+  leftStrokeMeasurement: string | null;
+  rightStrokeMeasurement: string | null;
   drumMeasurement: string | null;
   notes: string | null;
   passed: boolean;
+  minStrokeMeasurement?: string | null;
 }
 
 interface TireInspectionAxle {
@@ -111,14 +114,17 @@ export function BrakeTireInspection({ workOrderId, assetId }: Props) {
         rightPadThickness: null,
         leftRotorThickness: null,
         rightRotorThickness: null,
+        leftStrokeMeasurement: null,
+        rightStrokeMeasurement: null,
         drumMeasurement: null,
         notes: null,
         passed: true,
+        minStrokeMeasurement: a.minStrokeMeasurement || null,
       })));
     } else {
       setBrakeAxles([
-        { axlePosition: 1, axleLabel: "Steer", leftPadThickness: null, rightPadThickness: null, leftRotorThickness: null, rightRotorThickness: null, drumMeasurement: null, notes: null, passed: true },
-        { axlePosition: 2, axleLabel: "Drive 1", leftPadThickness: null, rightPadThickness: null, leftRotorThickness: null, rightRotorThickness: null, drumMeasurement: null, notes: null, passed: true },
+        { axlePosition: 1, axleLabel: "Steer", leftPadThickness: null, rightPadThickness: null, leftRotorThickness: null, rightRotorThickness: null, leftStrokeMeasurement: null, rightStrokeMeasurement: null, drumMeasurement: null, notes: null, passed: true },
+        { axlePosition: 2, axleLabel: "Drive 1", leftPadThickness: null, rightPadThickness: null, leftRotorThickness: null, rightRotorThickness: null, leftStrokeMeasurement: null, rightStrokeMeasurement: null, drumMeasurement: null, notes: null, passed: true },
       ]);
     }
   }, [brakeSettings]);
@@ -306,67 +312,115 @@ export function BrakeTireInspection({ workOrderId, assetId }: Props) {
               <DialogDescription>Enter brake measurements for each axle</DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
-              {brakeAxles.map((axle, idx) => (
-                <div key={idx} className="p-3 rounded-lg bg-muted/50 space-y-2">
-                  <div className="font-medium">{axle.axleLabel}</div>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                    <div>
-                      <Label className="text-xs">Left Pad</Label>
-                      <Input
-                        type="number"
-                        step="0.001"
-                        value={axle.leftPadThickness || ""}
-                        onChange={(e) => updateBrakeAxle(idx, 'leftPadThickness', e.target.value)}
-                        placeholder="Thickness"
-                        data-testid={`input-brake-left-pad-${idx}`}
-                      />
-                    </div>
-                    <div>
-                      <Label className="text-xs">Right Pad</Label>
-                      <Input
-                        type="number"
-                        step="0.001"
-                        value={axle.rightPadThickness || ""}
-                        onChange={(e) => updateBrakeAxle(idx, 'rightPadThickness', e.target.value)}
-                        placeholder="Thickness"
-                        data-testid={`input-brake-right-pad-${idx}`}
-                      />
-                    </div>
-                    <div>
-                      <Label className="text-xs">Left Rotor</Label>
-                      <Input
-                        type="number"
-                        step="0.001"
-                        value={axle.leftRotorThickness || ""}
-                        onChange={(e) => updateBrakeAxle(idx, 'leftRotorThickness', e.target.value)}
-                        placeholder="Thickness"
-                        data-testid={`input-brake-left-rotor-${idx}`}
-                      />
-                    </div>
-                    <div>
-                      <Label className="text-xs">Right Rotor</Label>
-                      <Input
-                        type="number"
-                        step="0.001"
-                        value={axle.rightRotorThickness || ""}
-                        onChange={(e) => updateBrakeAxle(idx, 'rightRotorThickness', e.target.value)}
-                        placeholder="Thickness"
-                        data-testid={`input-brake-right-rotor-${idx}`}
-                      />
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={axle.passed}
-                      onChange={(e) => updateBrakeAxle(idx, 'passed', e.target.checked)}
-                      className="rounded"
-                      data-testid={`checkbox-brake-passed-${idx}`}
-                    />
-                    <Label className="text-xs">Axle Passed</Label>
-                  </div>
+              {brakeSettings?.settings?.measurementMode === "na" ? (
+                <div className="text-center py-4 text-muted-foreground">
+                  Brake measurements are set to N/A for this asset. No measurements required.
                 </div>
-              ))}
+              ) : (
+                brakeAxles.map((axle, idx) => {
+                  const measurementMode = brakeSettings?.settings?.measurementMode || "both";
+                  const showPadThickness = measurementMode === "pad_thickness" || measurementMode === "both";
+                  const showStroke = measurementMode === "stroke" || measurementMode === "both";
+                  
+                  return (
+                    <div key={idx} className="p-3 rounded-lg bg-muted/50 space-y-2">
+                      <div className="font-medium flex items-center gap-2">
+                        {axle.axleLabel}
+                        {showStroke && axle.minStrokeMeasurement && (
+                          <Badge variant="outline" className="text-xs">Min Stroke: {axle.minStrokeMeasurement}</Badge>
+                        )}
+                      </div>
+                      
+                      {showStroke && (
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <Label className="text-xs">Left Stroke</Label>
+                            <Input
+                              type="number"
+                              step="0.001"
+                              value={axle.leftStrokeMeasurement || ""}
+                              onChange={(e) => updateBrakeAxle(idx, 'leftStrokeMeasurement', e.target.value)}
+                              placeholder="Stroke"
+                              data-testid={`input-brake-left-stroke-${idx}`}
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-xs">Right Stroke</Label>
+                            <Input
+                              type="number"
+                              step="0.001"
+                              value={axle.rightStrokeMeasurement || ""}
+                              onChange={(e) => updateBrakeAxle(idx, 'rightStrokeMeasurement', e.target.value)}
+                              placeholder="Stroke"
+                              data-testid={`input-brake-right-stroke-${idx}`}
+                            />
+                          </div>
+                        </div>
+                      )}
+                      
+                      {showPadThickness && (
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                          <div>
+                            <Label className="text-xs">Left Pad</Label>
+                            <Input
+                              type="number"
+                              step="0.001"
+                              value={axle.leftPadThickness || ""}
+                              onChange={(e) => updateBrakeAxle(idx, 'leftPadThickness', e.target.value)}
+                              placeholder="Thickness"
+                              data-testid={`input-brake-left-pad-${idx}`}
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-xs">Right Pad</Label>
+                            <Input
+                              type="number"
+                              step="0.001"
+                              value={axle.rightPadThickness || ""}
+                              onChange={(e) => updateBrakeAxle(idx, 'rightPadThickness', e.target.value)}
+                              placeholder="Thickness"
+                              data-testid={`input-brake-right-pad-${idx}`}
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-xs">Left Rotor</Label>
+                            <Input
+                              type="number"
+                              step="0.001"
+                              value={axle.leftRotorThickness || ""}
+                              onChange={(e) => updateBrakeAxle(idx, 'leftRotorThickness', e.target.value)}
+                              placeholder="Thickness"
+                              data-testid={`input-brake-left-rotor-${idx}`}
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-xs">Right Rotor</Label>
+                            <Input
+                              type="number"
+                              step="0.001"
+                              value={axle.rightRotorThickness || ""}
+                              onChange={(e) => updateBrakeAxle(idx, 'rightRotorThickness', e.target.value)}
+                              placeholder="Thickness"
+                              data-testid={`input-brake-right-rotor-${idx}`}
+                            />
+                          </div>
+                        </div>
+                      )}
+                      
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={axle.passed}
+                          onChange={(e) => updateBrakeAxle(idx, 'passed', e.target.checked)}
+                          className="rounded"
+                          data-testid={`checkbox-brake-passed-${idx}`}
+                        />
+                        <Label className="text-xs">Axle Passed</Label>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
               <div>
                 <Label>Notes</Label>
                 <Textarea

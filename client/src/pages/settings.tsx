@@ -863,6 +863,10 @@ export default function Settings() {
             <Settings2 className="h-4 w-4" />
             Tire Settings
           </TabsTrigger>
+          <TabsTrigger value="inventory" className="gap-2" data-testid="tab-inventory">
+            <Tags className="h-4 w-4" />
+            Inventory
+          </TabsTrigger>
           <TabsTrigger value="developer" className="gap-2" data-testid="tab-developer">
             <Code2 className="h-4 w-4" />
             Developer
@@ -1884,6 +1888,10 @@ export default function Settings() {
           <TireReplacementSettingsTab />
         </TabsContent>
 
+        <TabsContent value="inventory">
+          <InventorySettingsTab />
+        </TabsContent>
+
         <TabsContent value="developer">
           <div className="grid gap-6">
             <Card>
@@ -2013,6 +2021,133 @@ const positionLabels: Record<string, string> = {
   all_position: "All Position",
   spare: "Spare Tires",
 };
+
+function InventorySettingsTab() {
+  const { toast } = useToast();
+  const [leadTimeDays, setLeadTimeDays] = useState("7");
+  const [safetyStockDays, setSafetyStockDays] = useState("14");
+  const [lookbackDays, setLookbackDays] = useState("90");
+  const [lastResult, setLastResult] = useState<{ partsAnalyzed: number; partsWithUsage: number; partsUpdated: number } | null>(null);
+
+  const recalculateMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/parts/recalculate-minmax", {
+        leadTimeDays: parseInt(leadTimeDays) || 7,
+        safetyStockDays: parseInt(safetyStockDays) || 14,
+        lookbackDays: parseInt(lookbackDays) || 90,
+      });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      setLastResult({ partsAnalyzed: data.partsAnalyzed, partsWithUsage: data.partsWithUsage, partsUpdated: data.partsUpdated });
+      queryClient.invalidateQueries({ queryKey: ["/api/parts"] });
+      toast({ title: "Min/Max Recalculated", description: `Updated ${data.partsUpdated} parts based on usage patterns.` });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Recalculation Failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  return (
+    <div className="grid gap-6">
+      <Card data-testid="card-inventory-minmax">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Tags className="h-5 w-5" />
+            Automatic Min/Max Calculation
+          </CardTitle>
+          <CardDescription>
+            Recalculate reorder points and max quantities based on historical usage patterns
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div className="space-y-2">
+              <Label>Lead Time (Days)</Label>
+              <Input
+                type="number"
+                min="1"
+                max="365"
+                value={leadTimeDays}
+                onChange={(e) => setLeadTimeDays(e.target.value)}
+                placeholder="7"
+                data-testid="input-lead-time"
+              />
+              <p className="text-xs text-muted-foreground">Average time to receive parts from supplier</p>
+            </div>
+            <div className="space-y-2">
+              <Label>Safety Stock (Days)</Label>
+              <Input
+                type="number"
+                min="0"
+                max="365"
+                value={safetyStockDays}
+                onChange={(e) => setSafetyStockDays(e.target.value)}
+                placeholder="14"
+                data-testid="input-safety-stock"
+              />
+              <p className="text-xs text-muted-foreground">Extra days of stock to keep as buffer</p>
+            </div>
+            <div className="space-y-2">
+              <Label>Lookback Period (Days)</Label>
+              <Input
+                type="number"
+                min="30"
+                max="365"
+                value={lookbackDays}
+                onChange={(e) => setLookbackDays(e.target.value)}
+                placeholder="90"
+                data-testid="input-lookback-days"
+              />
+              <p className="text-xs text-muted-foreground">How far back to analyze usage history</p>
+            </div>
+          </div>
+          
+          {lastResult && (
+            <div className="rounded-lg bg-muted p-4">
+              <div className="grid grid-cols-3 gap-4 text-center">
+                <div>
+                  <div className="text-2xl font-bold">{lastResult.partsAnalyzed}</div>
+                  <div className="text-sm text-muted-foreground">Parts Analyzed</div>
+                </div>
+                <div>
+                  <div className="text-2xl font-bold">{lastResult.partsWithUsage}</div>
+                  <div className="text-sm text-muted-foreground">With Usage Data</div>
+                </div>
+                <div>
+                  <div className="text-2xl font-bold text-primary">{lastResult.partsUpdated}</div>
+                  <div className="text-sm text-muted-foreground">Parts Updated</div>
+                </div>
+              </div>
+            </div>
+          )}
+          
+          <Button 
+            onClick={() => recalculateMutation.mutate()} 
+            disabled={recalculateMutation.isPending}
+            className="w-full"
+            data-testid="button-recalculate-minmax"
+          >
+            {recalculateMutation.isPending ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Recalculating...
+              </>
+            ) : (
+              "Recalculate Min/Max"
+            )}
+          </Button>
+          
+          <p className="text-sm text-muted-foreground">
+            This will analyze part usage from the last {lookbackDays} days and calculate optimal reorder points 
+            and max quantities. The formula uses: Reorder Point = (Average Daily Usage × Lead Time Days) + 
+            (Average Daily Usage × Safety Stock Days).
+          </p>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
 
 function TireReplacementSettingsTab() {
   const { toast } = useToast();
