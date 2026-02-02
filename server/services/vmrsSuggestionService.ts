@@ -371,6 +371,199 @@ export async function rejectVmrsSuggestion(
   await db.insert(vmrsMappingFeedback).values([feedback as any]);
 }
 
+export interface TextVmrsSuggestion {
+  systemCode: string;
+  assemblyCode?: string;
+  title: string;
+  confidence: number;
+  explanation: string;
+  matchedKeywords: string[];
+  aiEnhanced?: boolean;
+}
+
+export interface TextSuggestionResult {
+  text: string;
+  notes?: string;
+  suggestions: TextVmrsSuggestion[];
+  topSuggestion?: TextVmrsSuggestion;
+  needsUserConfirmation: boolean;
+}
+
+export async function suggestVmrsForText(
+  text: string,
+  notes?: string,
+  orgId?: number
+): Promise<TextSuggestionResult> {
+  const searchText = [text, notes || ""].join(" ");
+  const tokens = normalizeText(searchText);
+  
+  const suggestions: TextVmrsSuggestion[] = [];
+  
+  if (orgId) {
+    const dictionaryEntries = await getDictionaryEntries(orgId);
+    
+    for (const entry of dictionaryEntries) {
+      const keywords = (entry.keywordsJson || []) as string[];
+      const titleTokens = normalizeText(entry.title);
+      const allKeywords = Array.from(new Set([...keywords.map(k => k.toLowerCase()), ...titleTokens]));
+      
+      const matchedKeywords: string[] = [];
+      for (const keyword of allKeywords) {
+        const keywordTokens = keyword.split(/\s+/);
+        if (keywordTokens.length === 1) {
+          if (tokens.includes(keyword)) {
+            matchedKeywords.push(keyword);
+          }
+        } else {
+          const searchStr = tokens.join(" ");
+          if (searchStr.includes(keyword)) {
+            matchedKeywords.push(keyword);
+          }
+        }
+      }
+      
+      if (matchedKeywords.length > 0) {
+        const confidence = calculateConfidence(matchedKeywords, allKeywords.length, 0.75, tokens);
+        suggestions.push({
+          systemCode: entry.systemCode,
+          assemblyCode: entry.assemblyCode || undefined,
+          title: entry.title,
+          confidence,
+          explanation: `Matched dictionary entry "${entry.title}" via keywords: ${matchedKeywords.join(", ")}`,
+          matchedKeywords,
+        });
+      }
+    }
+  }
+  
+  for (const rule of STARTER_SYSTEM_RULES) {
+    const matchedKeywords: string[] = [];
+    for (const keyword of rule.keywords) {
+      const keywordTokens = keyword.split(/\s+/);
+      if (keywordTokens.length === 1) {
+        if (tokens.includes(keyword)) {
+          matchedKeywords.push(keyword);
+        }
+      } else {
+        const searchStr = tokens.join(" ");
+        if (searchStr.includes(keyword)) {
+          matchedKeywords.push(keyword);
+        }
+      }
+    }
+    
+    if (matchedKeywords.length > 0) {
+      const existingSystemSuggestion = suggestions.find(s => s.systemCode === rule.systemCode && !s.assemblyCode);
+      if (!existingSystemSuggestion) {
+        const confidence = calculateConfidence(matchedKeywords, rule.keywords.length, rule.baseConfidence, tokens);
+        suggestions.push({
+          systemCode: rule.systemCode,
+          title: rule.title,
+          confidence,
+          explanation: `Matched system rule "${rule.title}" via keywords: ${matchedKeywords.join(", ")}`,
+          matchedKeywords,
+        });
+      }
+    }
+  }
+  
+  suggestions.sort((a, b) => b.confidence - a.confidence);
+  const topSuggestions = suggestions.slice(0, 5);
+  
+  const topSuggestion = topSuggestions[0];
+  const needsUserConfirmation = !topSuggestion || topSuggestion.confidence < 0.80;
+  
+  return {
+    text,
+    notes,
+    suggestions: topSuggestions,
+    topSuggestion,
+    needsUserConfirmation,
+  };
+}
+
+export async function suggestVmrsWithAI(
+  text: string,
+  notes?: string,
+  orgId?: number
+): Promise<TextSuggestionResult> {
+  const keywordResult = await suggestVmrsForText(text, notes, orgId);
+  
+  if (keywordResult.topSuggestion && keywordResult.topSuggestion.confidence >= 0.85) {
+    return keywordResult;
+  }
+  
+  try {
+    const OpenAI = (await import("openai")).default;
+    const openai = new OpenAI({
+      apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY || "dummy",
+      baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+    });
+    
+    const systemPrompt = `You are a fleet maintenance expert. Given a maintenance inspection item or complaint, identify the most appropriate VMRS (Vehicle Maintenance Reporting Standards) system code.
+
+Available VMRS System Codes:
+${STARTER_SYSTEM_RULES.map(r => `- ${r.systemCode}: ${r.title} (keywords: ${r.keywords.slice(0, 5).join(", ")})`).join("\n")}
+
+Respond with a JSON object containing:
+{
+  "systemCode": "the 3-digit VMRS system code",
+  "title": "the system title",
+  "confidence": 0.0-1.0 indicating your confidence,
+  "explanation": "why you chose this code"
+}
+
+If no clear match, use systemCode "000" with low confidence.`;
+
+    const userPrompt = `Inspection/Complaint: "${text}"${notes ? `\nNotes: "${notes}"` : ""}`;
+
+    const response = await openai.chat.completions.create({
+      model: "gpt-5-mini",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+      response_format: { type: "json_object" },
+      max_completion_tokens: 200,
+    });
+
+    const content = response.choices[0]?.message?.content;
+    if (content) {
+      const parsed = JSON.parse(content);
+      if (parsed.systemCode && parsed.systemCode !== "000") {
+        const aiSuggestion: TextVmrsSuggestion = {
+          systemCode: parsed.systemCode,
+          title: parsed.title || STARTER_SYSTEM_RULES.find(r => r.systemCode === parsed.systemCode)?.title || "Unknown",
+          confidence: Math.min(parsed.confidence || 0.75, 0.95),
+          explanation: parsed.explanation || "AI-suggested based on text analysis",
+          matchedKeywords: [],
+          aiEnhanced: true,
+        };
+        
+        const existingIndex = keywordResult.suggestions.findIndex(s => s.systemCode === aiSuggestion.systemCode);
+        if (existingIndex >= 0) {
+          keywordResult.suggestions[existingIndex].confidence = Math.max(
+            keywordResult.suggestions[existingIndex].confidence,
+            aiSuggestion.confidence
+          );
+          keywordResult.suggestions[existingIndex].aiEnhanced = true;
+          keywordResult.suggestions[existingIndex].explanation += ` (AI confirmed: ${aiSuggestion.explanation})`;
+        } else {
+          keywordResult.suggestions.unshift(aiSuggestion);
+        }
+        
+        keywordResult.suggestions.sort((a, b) => b.confidence - a.confidence);
+        keywordResult.topSuggestion = keywordResult.suggestions[0];
+        keywordResult.needsUserConfirmation = !keywordResult.topSuggestion || keywordResult.topSuggestion.confidence < 0.80;
+      }
+    }
+  } catch (error) {
+    console.error("Error getting AI VMRS suggestion:", error);
+  }
+  
+  return keywordResult;
+}
+
 export async function seedVmrsDictionary(orgId: number | null = null): Promise<number> {
   let insertedCount = 0;
   

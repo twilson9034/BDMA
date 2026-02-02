@@ -565,7 +565,8 @@ export interface IStorage {
   getWorkOrderChecklistItems(checklistId: number): Promise<WorkOrderChecklistItem[]>;
   createWorkOrderChecklist(workOrderId: number, templateId: number, workOrderLineId?: number): Promise<WorkOrderChecklist>;
   updateChecklistItemStatus(itemId: number, status: string, notes?: string, completedById?: string): Promise<WorkOrderChecklistItem | undefined>;
-  createWorkOrderLineFromChecklistItem(itemId: number, workOrderId: number): Promise<WorkOrderLine>;
+  createWorkOrderLineFromChecklistItem(itemId: number, workOrderId: number, vmrsCode?: string, vmrsTitle?: string): Promise<WorkOrderLine>;
+  getWorkOrderChecklistItem(itemId: number): Promise<WorkOrderChecklistItem | undefined>;
   
   // Import Jobs
   getImportJobs(): Promise<ImportJob[]>;
@@ -2439,7 +2440,12 @@ export class DatabaseStorage implements IStorage {
     return updated;
   }
 
-  async createWorkOrderLineFromChecklistItem(itemId: number, workOrderId: number): Promise<WorkOrderLine> {
+  async createWorkOrderLineFromChecklistItem(
+    itemId: number, 
+    workOrderId: number, 
+    vmrsCode?: string, 
+    vmrsTitle?: string
+  ): Promise<WorkOrderLine> {
     const [item] = await db.select().from(workOrderChecklistItems)
       .where(eq(workOrderChecklistItems.id, itemId));
     
@@ -2453,7 +2459,10 @@ export class DatabaseStorage implements IStorage {
       workOrderId,
       lineNumber: nextLineNumber,
       description: item.itemText,
+      complaint: item.itemText,
       notes: item.notes || undefined,
+      vmrsCode: vmrsCode || undefined,
+      vmrsTitle: vmrsTitle || undefined,
       status: "pending",
     }).returning();
 
@@ -2462,6 +2471,12 @@ export class DatabaseStorage implements IStorage {
       .where(eq(workOrderChecklistItems.id, itemId));
 
     return line;
+  }
+  
+  async getWorkOrderChecklistItem(itemId: number): Promise<WorkOrderChecklistItem | undefined> {
+    const [item] = await db.select().from(workOrderChecklistItems)
+      .where(eq(workOrderChecklistItems.id, itemId));
+    return item;
   }
 
   // Import Jobs

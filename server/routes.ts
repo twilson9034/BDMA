@@ -3166,16 +3166,40 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/work-order-checklist-items/:itemId/suggest-vmrs", requireAuth, async (req, res) => {
+    try {
+      const itemId = parseInt(req.params.itemId);
+      const { suggestVmrsWithAI } = await import("./services/vmrsSuggestionService");
+      
+      const item = await storage.getWorkOrderChecklistItem(itemId);
+      if (!item) {
+        return res.status(404).json({ error: "Checklist item not found" });
+      }
+      
+      const orgId = getOrgId(req);
+      const result = await suggestVmrsWithAI(item.itemText, item.notes || undefined, orgId || undefined);
+      res.json(result);
+    } catch (error) {
+      console.error("Error suggesting VMRS for checklist item:", error);
+      res.status(500).json({ error: "Failed to suggest VMRS code" });
+    }
+  });
+
   app.post("/api/work-order-checklist-items/:itemId/create-line", requireAuth, async (req, res) => {
     try {
       const itemId = parseInt(req.params.itemId);
-      const { workOrderId } = req.body;
+      const { workOrderId, vmrsCode, vmrsTitle } = req.body;
       
       if (!workOrderId) {
         return res.status(400).json({ error: "workOrderId is required" });
       }
       
-      const line = await storage.createWorkOrderLineFromChecklistItem(itemId, parseInt(workOrderId));
+      const line = await storage.createWorkOrderLineFromChecklistItem(
+        itemId, 
+        parseInt(workOrderId),
+        vmrsCode || undefined,
+        vmrsTitle || undefined
+      );
       res.status(201).json(line);
     } catch (error) {
       console.error("Error creating work order line from checklist item:", error);
