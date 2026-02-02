@@ -44,6 +44,7 @@ import VendorDetail from "@/pages/vendor-detail";
 import VendorNew from "@/pages/vendor-new";
 import Manuals from "@/pages/manuals";
 import ManualDetail from "@/pages/manual-detail";
+import ManualUpload from "@/pages/manual-upload";
 import Reports from "@/pages/reports";
 import ReportDetail from "@/pages/report-detail";
 import Feedback from "@/pages/feedback";
@@ -108,6 +109,7 @@ function AuthenticatedRouter() {
       <Route path="/vendors/new" component={VendorNew} />
       <Route path="/vendors/:id" component={VendorDetail} />
       <Route path="/manuals" component={Manuals} />
+      <Route path="/manuals/upload" component={ManualUpload} />
       <Route path="/manuals/:id" component={ManualDetail} />
       <Route path="/reports" component={Reports} />
       <Route path="/reports/:reportName" component={ReportDetail} />

@@ -1184,7 +1184,7 @@ export default function WorkOrderDetail() {
                   <p className="text-sm text-muted-foreground">Meter Reading</p>
                   <p className="font-medium">
                     {workOrder.meterReading != null 
-                      ? `${Number(workOrder.meterReading).toLocaleString()} ${linkedAsset?.meterUnit || "miles"}`
+                      ? `${Number(workOrder.meterReading).toLocaleString()} miles`
                       : "-"}
                   </p>
                 </div>

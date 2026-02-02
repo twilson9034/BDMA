@@ -1860,7 +1860,6 @@ export async function registerRoutes(
           laborHours: workOrderLines.laborHours,
           laborCost: workOrderLines.laborCost,
           partsCost: workOrderLines.partsCost,
-          totalCost: workOrderLines.totalCost,
           notes: workOrderLines.notes,
           createdAt: workOrderLines.createdAt,
           workOrderNumber: workOrders.workOrderNumber,
