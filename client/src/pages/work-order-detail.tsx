@@ -43,7 +43,9 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { PriorityBadge } from "@/components/PriorityBadge";
 import { SignatureCapture, SignatureDisplay } from "@/components/SignatureCapture";
 import { LaborTracker } from "@/components/LaborTracker";
+import { WorkOrderHistoryTabs } from "@/components/WorkOrderHistoryTabs";
 import { DeferredLines } from "@/components/DeferredLines";
+import { AssetManuals } from "@/components/AssetManuals";
 import { BrakeTireInspection } from "@/components/BrakeTireInspection";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -87,6 +89,8 @@ export default function WorkOrderDetail() {
   const [newLineCause, setNewLineCause] = useState("");
   const [newLineCorrection, setNewLineCorrection] = useState("");
   const [newLineNotes, setNewLineNotes] = useState("");
+  const [newLineRepairCode, setNewLineRepairCode] = useState("");
+  const [newLineRepairDescription, setNewLineRepairDescription] = useState("");
   const [newLinePartId, setNewLinePartId] = useState<string>("");
   const [newLineQuantity, setNewLineQuantity] = useState("1");
   const [newLinePartsCost, setNewLinePartsCost] = useState("");
@@ -407,6 +411,8 @@ export default function WorkOrderDetail() {
       description: string; 
       vmrsCode?: string;
       vmrsTitle?: string;
+      repairCode?: string;
+      repairDescription?: string;
       complaint?: string;
       cause?: string;
       correction?: string;
@@ -429,6 +435,8 @@ export default function WorkOrderDetail() {
       setNewLineCause("");
       setNewLineCorrection("");
       setNewLineNotes("");
+      setNewLineRepairCode("");
+      setNewLineRepairDescription("");
       setNewLinePartId("");
       setNewLineQuantity("1");
       setNewLinePartsCost("");
@@ -771,6 +779,8 @@ export default function WorkOrderDetail() {
       description: selectedVmrs.description || selectedVmrs.title,
       vmrsCode: selectedVmrs.code,
       vmrsTitle: selectedVmrs.title,
+      repairCode: newLineRepairCode || undefined,
+      repairDescription: newLineRepairDescription || undefined,
       complaint: newLineComplaint || undefined,
       cause: newLineCause || undefined,
       correction: newLineCorrection || undefined,
@@ -1119,6 +1129,18 @@ export default function WorkOrderDetail() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
+              {/* Status and Priority Badges */}
+              <div className="flex items-center gap-3 pb-2 border-b">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground">Status:</span>
+                  <StatusBadge status={workOrder.status} />
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground">Priority:</span>
+                  <PriorityBadge priority={workOrder.priority} />
+                </div>
+              </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <p className="text-sm text-muted-foreground">Work Order #</p>
@@ -1149,6 +1171,21 @@ export default function WorkOrderDetail() {
                   <p className="text-sm text-muted-foreground">Due Date</p>
                   <p className="font-medium">
                     {workOrder.dueDate ? new Date(workOrder.dueDate).toLocaleDateString() : "-"}
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-sm text-muted-foreground">Assigned To</p>
+                  <p className="font-medium">{workOrder.assignedToId || "Unassigned"}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Meter Reading</p>
+                  <p className="font-medium">
+                    {workOrder.meterReading != null 
+                      ? `${Number(workOrder.meterReading).toLocaleString()} ${linkedAsset?.meterUnit || "miles"}`
+                      : "-"}
                   </p>
                 </div>
               </div>
@@ -1236,8 +1273,11 @@ export default function WorkOrderDetail() {
             </CardContent>
           </Card>
 
-          {/* Labor Tracking Card */}
-          <LaborTracker workOrderId={workOrder.id} />
+          {/* History & Tracking Tabs */}
+          <WorkOrderHistoryTabs workOrderId={workOrder.id} assetId={workOrder.assetId} />
+
+          {/* Asset Manuals & Documentation */}
+          <AssetManuals assetId={workOrder.assetId} assetName={asset?.name} />
 
           {/* Deferred Lines Card */}
           <DeferredLines workOrderId={workOrder.id} />
@@ -1312,15 +1352,11 @@ export default function WorkOrderDetail() {
           )}
 
           <Card className="glass-card lg:col-span-2">
-            <CardHeader className="flex flex-row items-center justify-between gap-2">
+            <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2">
                 <Wrench className="h-5 w-5" />
                 Work Order Lines
               </CardTitle>
-              <Button size="sm" onClick={() => setShowAddLineDialog(true)} data-testid="button-add-line">
-                <Plus className="h-4 w-4 mr-2" />
-                Add Line
-              </Button>
             </CardHeader>
             <CardContent>
               {workOrderLines && workOrderLines.length > 0 ? (
@@ -1339,6 +1375,11 @@ export default function WorkOrderDetail() {
                             {line.vmrsTitle && (
                               <p className="text-sm text-muted-foreground mt-1">
                                 <span className="font-semibold">VMRS:</span> {line.vmrsTitle} ({line.vmrsCode})
+                              </p>
+                            )}
+                            {line.repairCode && (
+                              <p className="text-sm text-muted-foreground mt-1">
+                                <span className="font-semibold">Repair:</span> {line.repairCode}{line.repairDescription ? ` - ${line.repairDescription}` : ""}
                               </p>
                             )}
                           </div>
@@ -1692,6 +1733,13 @@ export default function WorkOrderDetail() {
               ) : (
                 <p className="text-muted-foreground text-center py-8">No work order lines yet. Add a line to track labor and parts.</p>
               )}
+              
+              <div className="mt-4 pt-4 border-t">
+                <Button onClick={() => setShowAddLineDialog(true)} data-testid="button-add-line">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Line
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </div>
@@ -1803,6 +1851,27 @@ export default function WorkOrderDetail() {
                 </CardContent>
               </Card>
             )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-[10px] uppercase font-bold text-muted-foreground">Repair Code</label>
+                <Input 
+                  placeholder="e.g., RC-001, BRAKE-001" 
+                  value={newLineRepairCode}
+                  onChange={(e) => setNewLineRepairCode(e.target.value)}
+                  data-testid="input-line-repair-code"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] uppercase font-bold text-muted-foreground">Repair Description</label>
+                <Input 
+                  placeholder="Brief description of repair type" 
+                  value={newLineRepairDescription}
+                  onChange={(e) => setNewLineRepairDescription(e.target.value)}
+                  data-testid="input-line-repair-description"
+                />
+              </div>
+            </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="space-y-2">

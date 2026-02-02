@@ -39,9 +39,9 @@ import { setupAuth, registerAuthRoutes } from "./replit_integrations/auth";
 import { tenantMiddleware, getUserOrgMemberships, getOrgId } from "./tenant";
 import { organizations, orgMemberships, insertOrganizationSchema, insertOrgMembershipSchema, updateOrganizationSchema, updateOrgMemberRoleSchema, setParentOrgSchema, updateCorporateAdminSchema, tires, insertTireSchema, conversations, messages, insertConversationSchema, insertMessageSchema, savedReports, insertSavedReportSchema, gpsLocations, insertGpsLocationSchema, tireReplacementSettings, insertTireReplacementSettingSchema, publicAssetTokens, insertPublicAssetTokenSchema, insertPmScheduleModelSchema, insertPmScheduleKitModelSchema, customRoles, insertCustomRoleSchema, updateCustomRoleSchema, DEFAULT_ROLE_PERMISSIONS } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, or, isNull } from "drizzle-orm";
+import { eq, and, or, isNull, inArray } from "drizzle-orm";
 import { appEvents } from "./events";
-import { users, oosRulesVersions, oosInspections, oosSources, insertOosInspectionSchema } from "@shared/schema";
+import { users, oosRulesVersions, oosInspections, oosSources, insertOosInspectionSchema, assetManuals, manuals, workOrders, workOrderLines } from "@shared/schema";
 
 function requireAuth(req: Request, res: Response, next: NextFunction) {
   if (!req.isAuthenticated || !req.isAuthenticated()) {
@@ -1800,6 +1800,88 @@ export async function registerRoutes(
       return res.status(403).json({ error: "Access denied" });
     }
     res.json(asset);
+  });
+
+  app.get("/api/assets/:id/manuals", requireAuth, tenantMiddleware({ required: true }), async (req, res) => {
+    try {
+      const assetId = parseInt(req.params.id);
+      const orgId = getOrgId(req);
+      
+      const asset = await storage.getAsset(assetId);
+      if (!asset) return res.status(404).json({ error: "Asset not found" });
+      
+      if (asset.orgId !== orgId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      
+      const assetManualLinks = await db.select().from(assetManuals).where(eq(assetManuals.assetId, assetId));
+      const manualIds = assetManualLinks.map(link => link.manualId);
+      
+      if (manualIds.length === 0) {
+        return res.json([]);
+      }
+      
+      const linkedManuals = await db.select().from(manuals).where(
+        and(
+          inArray(manuals.id, manualIds),
+          eq(manuals.orgId, orgId)
+        )
+      );
+      res.json(linkedManuals);
+    } catch (error) {
+      console.error("Error fetching asset manuals:", error);
+      res.status(500).json({ error: "Failed to fetch asset manuals" });
+    }
+  });
+
+  app.get("/api/assets/:id/repair-history", requireAuth, tenantMiddleware({ required: true }), async (req, res) => {
+    try {
+      const assetId = parseInt(req.params.id);
+      const orgId = getOrgId(req);
+      
+      const asset = await storage.getAsset(assetId);
+      if (!asset) return res.status(404).json({ error: "Asset not found" });
+      
+      if (asset.orgId !== orgId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      
+      const repairHistory = await db
+        .select({
+          id: workOrderLines.id,
+          workOrderId: workOrderLines.workOrderId,
+          lineNumber: workOrderLines.lineNumber,
+          description: workOrderLines.description,
+          vmrsCode: workOrderLines.vmrsCode,
+          vmrsTitle: workOrderLines.vmrsTitle,
+          status: workOrderLines.status,
+          repairCode: workOrderLines.repairCode,
+          repairDescription: workOrderLines.repairDescription,
+          laborHours: workOrderLines.laborHours,
+          laborCost: workOrderLines.laborCost,
+          partsCost: workOrderLines.partsCost,
+          totalCost: workOrderLines.totalCost,
+          notes: workOrderLines.notes,
+          createdAt: workOrderLines.createdAt,
+          workOrderNumber: workOrders.workOrderNumber,
+          workOrderDate: workOrders.createdAt,
+          workOrderStatus: workOrders.status,
+        })
+        .from(workOrderLines)
+        .innerJoin(workOrders, eq(workOrderLines.workOrderId, workOrders.id))
+        .where(
+          and(
+            eq(workOrders.assetId, assetId),
+            eq(workOrders.orgId, orgId)
+          )
+        )
+        .orderBy(workOrderLines.createdAt);
+      
+      res.json(repairHistory);
+    } catch (error) {
+      console.error("Error fetching repair history:", error);
+      res.status(500).json({ error: "Failed to fetch repair history" });
+    }
   });
 
   app.post("/api/assets", requireAuth, tenantMiddleware(), async (req, res) => {

@@ -1349,6 +1349,8 @@ export const workOrderLines = pgTable("work_order_lines", {
   status: text("status").notNull().default("pending").$type<typeof workOrderLineStatusEnum[number]>(),
   vmrsCode: text("vmrs_code"),
   vmrsTitle: text("vmrs_title"),
+  repairCode: text("repair_code"),
+  repairDescription: text("repair_description"),
   complaint: text("complaint"),
   cause: text("cause"),
   correction: text("correction"),
