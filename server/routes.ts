@@ -1802,6 +1802,53 @@ export async function registerRoutes(
     res.json(asset);
   });
 
+  // Link a manual to an asset
+  app.post("/api/asset-manuals", requireAuth, tenantMiddleware({ required: true }), async (req, res) => {
+    try {
+      const { assetId, manualId } = req.body;
+      const orgId = getOrgId(req);
+      
+      if (!assetId || !manualId) {
+        return res.status(400).json({ error: "assetId and manualId are required" });
+      }
+      
+      // Verify asset belongs to org
+      const asset = await storage.getAsset(assetId);
+      if (!asset || asset.orgId !== orgId) {
+        return res.status(404).json({ error: "Asset not found" });
+      }
+      
+      // Verify manual belongs to org
+      const manual = await db.select().from(manuals).where(
+        and(eq(manuals.id, manualId), eq(manuals.orgId, orgId))
+      ).limit(1);
+      
+      if (manual.length === 0) {
+        return res.status(404).json({ error: "Manual not found" });
+      }
+      
+      // Check if link already exists
+      const existingLink = await db.select().from(assetManuals).where(
+        and(eq(assetManuals.assetId, assetId), eq(assetManuals.manualId, manualId))
+      ).limit(1);
+      
+      if (existingLink.length > 0) {
+        return res.status(400).json({ error: "This manual is already linked to this asset" });
+      }
+      
+      // Create the link
+      const [newLink] = await db.insert(assetManuals).values({
+        assetId,
+        manualId,
+      }).returning();
+      
+      res.status(201).json(newLink);
+    } catch (error) {
+      console.error("Error linking manual to asset:", error);
+      res.status(500).json({ error: "Failed to link manual to asset" });
+    }
+  });
+
   app.get("/api/assets/:id/manuals", requireAuth, tenantMiddleware({ required: true }), async (req, res) => {
     try {
       const assetId = parseInt(req.params.id);
@@ -4138,6 +4185,92 @@ export async function registerRoutes(
       res.json(updated);
     } catch (error) {
       res.status(500).json({ error: "Failed to update manual" });
+    }
+  });
+
+  // AI-powered VIN pattern extraction from manual
+  app.post("/api/manuals/:id/extract-vins", requireAuth, tenantMiddleware({ required: true }), async (req, res) => {
+    try {
+      const manualId = parseInt(req.params.id);
+      const orgId = getOrgId(req);
+      
+      const manual = await storage.getManual(manualId);
+      if (!manual) return res.status(404).json({ error: "Manual not found" });
+      if (manual.orgId !== orgId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      
+      const OpenAI = (await import("openai")).default;
+      const openai = new OpenAI({
+        apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
+        baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+      });
+      
+      const prompt = `You are analyzing a vehicle service/maintenance manual. Based on the manual information provided, extract VIN (Vehicle Identification Number) patterns that this manual would apply to.
+
+Manual Information:
+- Title: ${manual.title}
+- Manufacturer: ${manual.manufacturer || "Unknown"}
+- Model: ${manual.model || "Unknown"}  
+- Year: ${manual.year || "Unknown"}
+- Type: ${manual.type}
+- Description: ${manual.description || "No description"}
+
+Based on this information, generate VIN patterns that would match vehicles this manual applies to. VIN patterns use wildcards (*) to match partial VINs.
+
+Common VIN pattern formats:
+- First 3 characters identify the World Manufacturer Identifier (WMI)
+- Characters 4-8 describe vehicle attributes
+- Character 9 is a check digit
+- Character 10 indicates model year
+- Character 11 indicates plant
+- Characters 12-17 are the production sequence
+
+Examples:
+- "1FUJG*" matches Freightliner trucks
+- "3FALF*" matches Ford trucks
+- "1HGBH*" matches Honda vehicles
+
+Generate 1-5 VIN patterns based on the manual information. If you cannot determine specific patterns from the information provided, return common patterns for the manufacturer.
+
+Respond with a JSON object in this exact format:
+{
+  "patterns": ["pattern1", "pattern2"],
+  "reasoning": "Brief explanation of how patterns were determined"
+}`;
+
+      const response = await openai.chat.completions.create({
+        model: "gpt-5-mini",
+        messages: [{ role: "user", content: prompt }],
+        response_format: { type: "json_object" },
+        max_completion_tokens: 500,
+      });
+      
+      const content = response.choices[0]?.message?.content;
+      if (!content) {
+        return res.status(500).json({ error: "No response from AI" });
+      }
+      
+      const result = JSON.parse(content);
+      const patterns = result.patterns || [];
+      
+      // Merge with existing patterns, avoiding duplicates
+      const existingPatterns = manual.vinPatterns || [];
+      const newPatterns = patterns.filter((p: string) => !existingPatterns.includes(p));
+      const allPatterns = [...existingPatterns, ...newPatterns];
+      
+      // Save to database
+      await storage.updateManual(manualId, { vinPatterns: allPatterns });
+      
+      res.json({
+        extractedPatterns: patterns,
+        newPatterns,
+        allPatterns,
+        reasoning: result.reasoning,
+      });
+    } catch (error) {
+      console.error("Error extracting VIN patterns:", error);
+      res.status(500).json({ error: "Failed to extract VIN patterns" });
     }
   });
 

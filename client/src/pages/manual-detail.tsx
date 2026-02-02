@@ -43,6 +43,7 @@ export default function ManualDetail() {
   });
   const [selectedAssetId, setSelectedAssetId] = useState<string>("");
   const [newVinPattern, setNewVinPattern] = useState("");
+  const [isExtractingVins, setIsExtractingVins] = useState(false);
   const { toast } = useToast();
   
   const { data: assets } = useQuery<Asset[]>({
@@ -145,6 +146,39 @@ export default function ManualDetail() {
         variant: "destructive",
       });
     }
+  };
+
+  const handleAiVinExtraction = async () => {
+    setIsExtractingVins(true);
+    try {
+      const response = await apiRequest("POST", `/api/manuals/${params?.id}/extract-vins`);
+      const data = response as { extractedPatterns: string[]; newPatterns: string[]; reasoning: string };
+      queryClient.invalidateQueries({ queryKey: ["/api/manuals", params?.id] });
+      
+      if (data.newPatterns && data.newPatterns.length > 0) {
+        toast({
+          title: "VIN Patterns Extracted",
+          description: `Added ${data.newPatterns.length} new pattern(s): ${data.newPatterns.join(", ")}`,
+        });
+      } else if (data.extractedPatterns && data.extractedPatterns.length > 0) {
+        toast({
+          title: "VIN Patterns Found",
+          description: `Found ${data.extractedPatterns.length} pattern(s), but they were already added.`,
+        });
+      } else {
+        toast({
+          title: "No Patterns Found",
+          description: "Could not extract VIN patterns from the manual information.",
+        });
+      }
+    } catch (err) {
+      toast({
+        title: "Error",
+        description: "Failed to extract VIN patterns.",
+        variant: "destructive",
+      });
+    }
+    setIsExtractingVins(false);
   };
 
   const updateMutation = useMutation({
@@ -615,14 +649,33 @@ export default function ManualDetail() {
                 <Car className="h-5 w-5" />
                 VIN Patterns
               </CardTitle>
-              <CardDescription>
-                Add VIN patterns to auto-associate this manual with matching assets
-              </CardDescription>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleAiVinExtraction}
+                disabled={isExtractingVins}
+                data-testid="button-ai-extract-vins"
+              >
+                {isExtractingVins ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Extracting...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="h-4 w-4 mr-2" />
+                    AI Extract
+                  </>
+                )}
+              </Button>
             </CardHeader>
             <CardContent className="space-y-3">
+              <p className="text-xs text-muted-foreground">
+                VIN patterns auto-associate this manual with matching assets. Click "AI Extract" to detect patterns from the manual info.
+              </p>
               <div className="flex gap-2">
                 <Input
-                  placeholder="e.g., 1FUJG*, 3FALF5*"
+                  placeholder="Or add manually: 1FUJG*, 3FALF5*"
                   value={newVinPattern}
                   onChange={(e) => setNewVinPattern(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && handleAddVinPattern()}
