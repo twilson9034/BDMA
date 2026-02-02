@@ -1,5 +1,5 @@
 import { db } from "../db";
-import { parts, vmrsDictionary, vmrsMappingFeedback } from "@shared/schema";
+import { parts, vmrsDictionary, vmrsMappingFeedback, vmrsTextFeedback } from "@shared/schema";
 import { eq, and, isNull } from "drizzle-orm";
 import type { Part, VmrsDictionary, InsertVmrsMappingFeedback } from "@shared/schema";
 
@@ -607,21 +607,21 @@ export async function saveTextVmrsFeedback(
   orgId?: number
 ): Promise<void> {
   try {
-    const { vmrsTextFeedback } = await import("@shared/schema");
     await db.insert(vmrsTextFeedback).values({
-      orgId,
+      orgId: orgId || null,
       sourceText,
-      sourceNotes,
+      sourceNotes: sourceNotes || null,
       sourceType: "checklist_item",
-      suggestedSystemCode,
-      suggestedTitle,
-      suggestedConfidence: suggestedConfidence?.toFixed(2),
-      selectedSystemCode,
-      selectedTitle,
+      suggestedSystemCode: suggestedSystemCode || null,
+      suggestedTitle: suggestedTitle || null,
+      suggestedConfidence: suggestedConfidence != null ? suggestedConfidence.toFixed(2) : null,
+      selectedSystemCode: selectedSystemCode || null,
+      selectedTitle: selectedTitle || null,
       wasAutoApplied,
       wasSkipped,
       selectedByUserId: userId,
     });
+    console.log(`[VMRS Feedback] Saved feedback for text: "${sourceText.substring(0, 50)}..." selected: ${selectedSystemCode || 'skipped'}`);
   } catch (error) {
     console.error("Error saving VMRS text feedback:", error);
   }

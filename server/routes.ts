@@ -3188,7 +3188,15 @@ export async function registerRoutes(
   app.post("/api/work-order-checklist-items/:itemId/create-line", requireAuth, async (req, res) => {
     try {
       const itemId = parseInt(req.params.itemId);
-      const { workOrderId, vmrsCode, vmrsTitle, wasAutoApplied, suggestedSystemCode, suggestedTitle, suggestedConfidence } = req.body;
+      const { 
+        workOrderId, 
+        vmrsCode, 
+        vmrsTitle, 
+        wasAutoApplied, 
+        suggestedSystemCode, 
+        suggestedTitle, 
+        suggestedConfidence 
+      } = req.body;
       
       if (!workOrderId) {
         return res.status(400).json({ error: "workOrderId is required" });
@@ -3208,12 +3216,16 @@ export async function registerRoutes(
         const userId = (req.user as any)?.claims?.sub || "unknown";
         const orgId = getOrgId(req);
         
+        const confidence = typeof suggestedConfidence === 'number' 
+          ? suggestedConfidence 
+          : (typeof suggestedConfidence === 'string' ? parseFloat(suggestedConfidence) : undefined);
+        
         await saveTextVmrsFeedback(
           item.itemText,
           item.notes || undefined,
-          suggestedSystemCode,
-          suggestedTitle,
-          suggestedConfidence ? parseFloat(suggestedConfidence) : undefined,
+          suggestedSystemCode || undefined,
+          suggestedTitle || undefined,
+          !isNaN(confidence as number) ? confidence : undefined,
           vmrsCode || undefined,
           vmrsTitle || undefined,
           wasAutoApplied === true,
