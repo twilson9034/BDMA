@@ -1277,7 +1277,7 @@ export default function WorkOrderDetail() {
           <WorkOrderHistoryTabs workOrderId={workOrder.id} assetId={workOrder.assetId} />
 
           {/* Asset Manuals & Documentation */}
-          <AssetManuals assetId={workOrder.assetId} assetName={asset?.name} />
+          <AssetManuals assetId={workOrder.assetId} assetName={linkedAsset?.name} />
 
           {/* Deferred Lines Card */}
           <DeferredLines workOrderId={workOrder.id} />
