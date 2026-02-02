@@ -37,16 +37,22 @@ Centralized database schema definitions, TypeScript types, and Zod validation sc
     - **Defer Predictions**: Schedule predictions to resurface at a future date or when a PM schedule triggers.
     - **AI Feedback Loop**: Learns from work order notes when linked WOs are completed, classifying feedback type based on keyword matching.
 - **Inventory & Procurement**: Full parts management with reorder points, intelligent classification (SMART, ABC), cycle counting, purchase requisitions, orders, and workflow management.
+    - **Auto Min/Max Updates**: Automatic recalculation of Min/Max and reorder points based on part usage patterns via `/api/parts/recalculate-minmax` endpoint.
+    - **Smart Parts Search**: Work order part additions show high-probability parts based on VMRS code matching and usage history.
 - **Scheduling & Inspections**: Interval-based PM schedules and Driver Vehicle Inspection Reports (DVIRs) with defect tracking and bulk QR code printing.
 - **Estimates**: Detailed maintenance cost estimates with approval workflows and conversion to work orders.
 - **Telematics & Diagnostics**: Live display and ingestion of engine diagnostic data and fault codes.
 - **Workflow Automation**: Intelligent asset status updates, smart part suggestions, and transaction reversals.
 - **Checklists**: Reusable templates with AI-powered generation.
+    - **Work Order Checklists**: Attach checklist templates to work orders with Pass/Needs Repair/N/A status options per item.
+    - **Checklist Item Notes**: Add notes to individual checklist items for detailed documentation.
+    - **Auto-Create WO Lines**: "Needs Repair" items can automatically generate new work order lines with notes transferred.
 - **Data Handling**: Bulk data import with error reporting, barcode/QR scanning, and part creation from PO lines.
 - **User & Team Management**: Multi-user labor tracking with rates, technician management, and role-based access control.
 - **Notifications**: In-app notification center with priority levels and real-time updates via Server-Sent Events (SSE).
 - **Reporting & Dashboards**: Enhanced dashboards with KPI metrics, customizable widgets, and saved reports.
 - **Specialized Modules**: Tire management with tire-specific fields and VMRS auto-assignment for code suggestions.
+    - **Configurable Brake Settings**: Per-organization brake measurement modes (stroke, pad_thickness, both, or N/A) for customized inspection workflows.
 - **Out-of-Service (OOS) Compliance**: Rules-based inspection engine for CVSA compliance checking, with configurable rules and integration into checklists.
 - **Multi-Tenant Architecture**:
     - **Data Isolation**: Organizations have isolated data, managed via `orgId` on all tenant-scoped tables.
