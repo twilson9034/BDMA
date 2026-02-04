@@ -1,0 +1,599 @@
+Here's a comprehensive list of all features and sub-features in your CMMS application:
+
+Dashboard
+Customizable widget layout with drag-and-drop
+Real-time KPI statistics (assets down, maintenance needed, open WOs, urgent WOs, completed this week)
+Recent work orders widget with status filtering
+Critical assets overview
+Low stock/out of stock inventory alerts
+Procurement overview (pending requisitions, active POs, reorder alerts)
+KPI metrics (MTTR, asset uptime, WO completion rate, maintenance cost per asset)
+Tire health monitoring (critical/warning/healthy tire counts)
+Parts usage analytics (top used parts, reorder needs)
+Theme switcher (light/dark mode)
+Notification center with real-time updates
+Work Orders
+Work Order Management:
+
+Create/edit/delete work orders
+Auto-generated WO numbers
+Status workflow (open, in-progress, pending_parts, completed, closed, cancelled)
+Priority levels (emergency, urgent, high, medium, low)
+Type classification (corrective, preventive, inspection, emergency, project, DVIR)
+Asset association
+Location assignment
+Technician assignment or outside vendor designation
+Due date scheduling
+Estimated vs actual hours tracking
+Safety notes display
+Signature capture on completion
+Batch operations (bulk status change, bulk assignment)
+Mobile-optimized card view
+Advanced filtering (status, priority, asset, technician, search)
+Server-side pagination with adjustable page sizes
+Sorting by any column
+Export capabilities
+Work Order Lines (Task-Level Management):
+
+Add unlimited tasks/lines per work order
+Line numbering system
+VMRS code assignment per line
+Individual line status tracking
+Complaint, Cause, Correction (3C) documentation
+Line-specific notes
+Estimated hours per line
+Timer tracking per technician per line (multi-user support)
+Manual time entry
+Labor cost calculation per line
+Parts consumption per line
+Part suggestions based on VMRS codes
+Checklist attachment and completion
+Defer line to future date or PM
+Hold line with reason tracking
+Close/reopen line controls
+Work accomplished codes
+Failure codes
+Individual line assignment
+Parts Management on WOs:
+
+Post parts consumed from inventory
+Manual part entry (non-inventory items)
+Part quantity tracking
+Cost tracking per part used
+Part suggestions by asset compatibility and VMRS
+Part request creation from WO lines
+Reserved parts view across all WOs
+Reversal capability for posted parts
+Time Tracking:
+
+Multi-user concurrent timers per line
+Start/stop timer with automatic elapsed time
+Manual time entry option
+Hourly rate tracking per user
+Time summary by line
+Time reversal capability
+Total labor cost auto-calculation
+Integration Features:
+
+Pending PMs table (add due PMs to current WO)
+Deferred lines table (reintegrate previously deferred tasks)
+Service manual integration (search and view relevant sections)
+Asset maintenance history view
+Part usage history for asset
+Document attachment support
+GPS location capture (if enabled)
+Barcode scanning support
+Transaction Ledger:
+
+Complete audit trail of all actions
+Part consumption tracking
+Time entry logging
+Status change history
+Reversal transactions
+User attribution for all actions
+Timestamp for all transactions
+Ready for Review:
+
+Dedicated page for completed WOs pending approval
+Manager approval/rejection workflow
+Batch approval capabilities
+Estimates
+All work order features adapted for estimation
+Estimate-specific status workflow (draft, open, in-progress, pending_review, approved, rejected, closed)
+Parts listing without inventory deduction
+Convert approved estimates to work orders
+Outside vendor cost estimation
+Approval workflow integration
+Assets
+Asset Registry:
+
+Create/edit/delete assets
+Unique asset numbering
+Hierarchical asset structure (parent-child relationships)
+Asset hierarchy path visualization
+Category classification (production equipment, HVAC, electrical, plumbing, building, vehicle, IT, safety, system, other)
+Status tracking (operational, maintenance_required, performing_maintenance, waiting_on_parts, down, retired)
+Reason for status tracking (aggregated from WO lines)
+Location assignment with RLS filtering
+Building/facility designation
+Manufacturer/model/serial number tracking
+VIN (last 5 digits) for vehicles
+Purchase information (date, cost, warranty expiry)
+Meter reading tracking (hours or miles)
+Priority levels (critical, high, medium, low)
+Lifecycle stage tracking (new, operational, aging, end_of_life)
+Replacement cost estimation
+Installation date tracking
+Image upload
+Custom fields support
+Tire configuration (axles and tire count per axle)
+Asset Operations:
+
+Batch meter reading updates
+Filter by status, category, location, priority
+Search across all fields
+Export to Excel
+View assets needing maintenance
+PM schedule association
+Work order history per asset
+Part usage history per asset
+Document management per asset
+Tire Management (Asset-Specific):
+
+Visual tire configuration display
+Interactive tire installation
+Tire removal with reason codes
+Tire rotation tracking
+Swap tires between positions
+AI-powered tire failure prediction
+Tire inventory selector
+Tire condition tracking
+Tire assignment history
+Inventory & Parts
+Parts Management:
+
+Create/edit/delete parts
+Unique part numbering
+Category classification (11 categories)
+Manufacturer/model tracking
+Unit of measure (8 options)
+Unit cost tracking
+Quantity on hand
+Min/max quantity thresholds
+Reorder point alerts
+Location assignment
+Bin location (sub-location)
+Vendor association
+Vendor part number
+Last purchase tracking
+Critical part flagging
+Lead time in days
+Compatible asset types filtering
+ABC classification (A, B, C, unclassified)
+Annual usage value/quantity tracking
+Serialization support
+Lot/batch tracking
+Custom fields
+Inventory Operations:
+
+Low stock alerts
+Out of stock alerts
+Critical low alerts
+Total inventory value calculation
+Cycle count scheduling
+Cycle count execution and reconciliation
+Part barcode generation and printing
+Barcode scanning
+Document attachment
+Filter by status, category, location, asset type
+Search functionality
+Export capabilities
+Part Kits:
+
+Create bundled part sets
+Category classification (PM, repair, inspection, seasonal, other)
+Parts list with quantities
+Total cost calculation
+PM schedule assignment
+VMRS + Asset assignment
+Active/inactive status
+Kit-based part consumption
+Procurement
+Part Requests:
+
+Technician-submitted requests from WO lines
+Urgency levels (standard, urgent, critical)
+Status workflow (pending, ordered, received, fulfilled, cancelled)
+Estimated cost tracking
+Non-inventory part requests
+Request notes
+Approval workflow
+Bulk requisition creation from requests
+Email notifications
+Purchase Requisitions:
+
+Consolidate multiple part requests
+Location-specific requisitions
+Total cost calculation
+Status workflow (draft, submitted, approved, rejected, cancelled)
+Convert to purchase orders
+Line item management
+Approval tracking
+Purchase Orders:
+
+Create from requisitions or standalone
+Vendor assignment
+PO number generation
+Status workflow (draft, sent, acknowledged, partially_received, received, cancelled)
+Expected delivery date
+Shipping address
+Payment terms
+Line item management with quantities and costs
+Total cost calculation
+Direct receiving initiation
+Receiving:
+
+Receive against POs
+Quantity verification
+Discrepancy logging
+Inventory auto-update
+Receiving transaction history
+Multi-line receiving
+Partial receiving support
+Vendors:
+
+Vendor profile management
+Contact information
+Payment terms
+Parts supplied tracking
+Performance metrics (on-time delivery %, quality score)
+Lead time tracking
+Active/inactive status
+Notes and history
+Reorder Alerts:
+
+Automated alert generation
+Criticality prioritization
+Quantity below reorder point detection
+Alert status tracking (pending, ordered, resolved, ignored)
+Bulk PO creation from alerts
+Procurement Analytics:
+
+Monthly spend tracking
+Average lead time by vendor
+Vendor performance dashboards
+Total POs/requisitions/receiving counts
+Time range filtering
+Location filtering
+Manual metric recalculation
+Preventive Maintenance
+PM Schedules:
+
+Create/edit/delete PM schedules
+PM code system (A, B, C, D, etc.)
+Type classification (inspection, service, registration, test, other)
+Interval types (days, miles, hours)
+Tolerance windows (early completion)
+Grace periods (before overdue)
+Status tracking (not_due, due_soon, overdue, disabled)
+Asset assignment (multiple assets per PM)
+Nested PM support (parent-child relationships)
+Last done tracking (date and meter reading)
+Next due calculation (date and meter reading)
+Checklist template attachment
+GPS requirement flag
+Barcode requirement flag
+Task list definition
+Active/inactive toggle
+PM Execution:
+
+PM dues table (all upcoming/overdue PMs)
+Asset PM status overview
+Auto-update on WO line completion
+Next due date/reading calculation
+PM history tracking per asset
+Integration with work order creation
+Checklists:
+
+Create reusable checklist templates
+Task definition with response types (pass/fail, yes/no, numeric, text)
+Required vs optional tasks
+Attach to PMs or work order lines
+Checklist completion tracking
+Response storage
+Notes per task
+Smart checklist builder with AI suggestions
+Manuals
+Manual Library:
+
+Upload PDF service manuals
+Manual metadata (name, description, make, model, year range)
+File URL storage
+Total page count tracking
+Processing status (pending, processing, completed, failed)
+Extraction method tracking (rules, LLM, hybrid, manual)
+AI Section Extraction:
+
+Automatic PDF section detection
+Title extraction
+Page range identification
+VMRS code tagging
+Confidence scoring
+Manual verification option
+Section hierarchy support
+Manual Viewer:
+
+Integrated PDF viewer
+Page navigation
+Search within manual
+Deep linking to specific pages
+Section sidebar navigation
+Zoom controls
+Manual Sections:
+
+Section management interface
+Title and page range editing
+VMRS code association
+Text excerpt storage
+Nested section support
+Manual creation/editing
+Verification status
+VIN Association:
+
+Link manuals to specific VINs (last 5 digits)
+VIN-based manual lookup
+Multiple VIN support per manual
+Service Info Integration:
+
+Search across all manuals
+Asset-specific manual filtering
+VMRS-based suggestions
+Open manual sections in modal from WO
+AI-powered search assist
+Messages
+Direct messaging (DM)
+Group conversations
+Participant management
+Unread message indicators
+Real-time message updates
+Message search
+Entity tagging support (WOs, assets)
+Conversation history
+Read receipts
+Last message preview
+Reports
+Pre-Built Reports:
+
+Work Order Cost by Asset
+Asset Downtime Report
+Parts Consumption Report
+Custom date range filtering
+Export to Excel
+Advanced Reporting:
+
+Custom report builder
+Entity selection
+Field selection
+Filter builder
+Grouping options
+Calculated fields
+Date grouping (daily, weekly, monthly, quarterly, yearly)
+Chart visualization
+Query preview
+Report validation
+Report templates
+Help guide
+Report Scheduling:
+
+Schedule recurring reports
+Email delivery
+Multiple recipients
+Report history tracking
+Analytics
+KPI Dashboard:
+
+Mean Time To Repair (MTTR)
+Mean Time Between Failures (MTBF)
+Asset uptime percentage
+Work order completion rate
+Maintenance cost per asset
+Emergency work order ratio
+PM compliance rate
+Parts inventory turnover
+Historical KPI trends
+Drill-down capabilities
+Location-based filtering
+Predictive Maintenance:
+
+AI-powered asset failure prediction
+Risk scoring (low, moderate, high, critical)
+Failure mode identification
+Recommended preventive actions
+Parts to stock suggestions
+Probability percentages
+Create WOs from predictions
+Historical failure analysis
+Tire Predictions:
+
+AI-driven tire failure analysis
+Underlying issue detection
+Confidence scoring
+Suggested work orders
+Integration with tire removal workflow
+Inspections
+Inspection Forms:
+
+Create custom inspection templates
+Field type support (text, number, checkbox, date, signature)
+Required field configuration
+Form versioning
+Inspection Execution:
+
+Mobile-friendly inspection interface
+Photo capture
+GPS location capture
+Signature capture
+Offline support
+Post-inspection WO creation
+Inspection history
+DVIR (Driver Vehicle Inspection Reports):
+
+Driver-submitted inspections
+Defect reporting
+VMRS code assignment
+Auto-create WOs from defects
+Resolution tracking
+Asset status updates
+Defect-to-WO line mapping
+Specialized Modules
+Tire Management (Global)
+Complete tire inventory
+Tire specifications (size, type, brand, model)
+Purchase tracking
+Tread depth recording
+Tire condition assessment
+Position tracking
+Rapid tire entry form
+Tire barcode support
+Tire lifecycle tracking
+Tire assignment history
+Low tire inventory alerts
+Fault Codes
+Telematics integration
+Fault code logging
+Asset association
+Code description
+Severity levels
+Resolution tracking
+Historical fault analysis
+TPMS (Tire Pressure Monitoring)
+Tire pressure readings
+Temperature monitoring
+Alert thresholds
+Real-time monitoring
+Historical pressure trends
+GPS Tracking
+Real-time location tracking
+Route history
+Geofencing
+Alert on geofence breach
+Location-based reporting
+Barcodes
+Part barcode generation
+Asset barcode generation
+Tire barcode generation
+Barcode scanning
+Quick lookup via barcode
+ABC Classification
+Automated part classification
+Annual usage value calculation
+A/B/C tier assignment
+Cycle count frequency recommendations
+Settings & Configuration
+System Settings
+Feature flags (DVIR, fault codes, TPMS, telematics)
+System-wide preferences
+User role management
+Location management with RLS
+VMRS Management
+System code administration
+Assembly code administration
+Component code administration
+Full code hierarchy
+Description management
+Alias support
+Asset type applicability
+Custom Fields
+Define custom fields per entity type
+Field type selection (text, number, date, dropdown, checkbox)
+Required/optional configuration
+Default values
+Field ordering
+Configurable Dropdowns
+Reason for repair codes
+Work accomplished codes
+Technician failure codes
+Active/inactive management
+Custom value management
+Bulk Operations
+Bulk data upload (CSV)
+Entity selection (Assets, Parts, Work Orders, etc.)
+Field mapping
+Validation
+Error reporting
+Preview before import
+Test Data Generator
+Generate sample assets
+Generate sample work orders
+Generate sample parts
+Generate sample PMs
+Configurable quantities
+Realistic data generation
+Data Purge
+Permanently delete old data
+Entity-specific purging
+Date range selection
+Confirmation workflow
+Audit logging
+Integrations
+Telematics provider setup (Samsara, etc.)
+Webhook configuration
+API key management
+Connection testing
+Data sync scheduling
+Public Dashboards
+Create shared dashboards
+Widget configuration
+Access token generation
+Embed support
+Public URL management
+Database Performance
+Indexing recommendations
+Query optimization tips
+Performance monitoring guidance
+Theme Customization
+Light/dark mode toggle
+Glassmorphism design system
+Color scheme configuration
+Logo upload
+Brand customization
+Security & Permissions
+Row-Level Security (RLS) by location
+Role-based access control (admin, manager, technician, parts_clerk, viewer)
+Permission guards on UI elements
+Audit logging for critical actions
+User assignment to locations
+Entity-level read/write rules
+User Experience Features
+Responsive design (mobile, tablet, desktop)
+Offline mode support for mobile
+Real-time data subscriptions
+Global search across entities
+Notification center
+Background data loading
+Optimistic UI updates
+Loading states and progress indicators
+Error handling with retry logic
+Toast notifications
+Keyboard shortcuts
+Accessibility support
+AI & Automation
+Service info assistant (manual search)
+Part suggestions by VMRS
+Predictive failure analysis
+Tire prediction on removal
+PDF section extraction
+Smart checklist generation
+Automated reorder alerts
+Automated PM scheduling
+Auto-update asset status
+Auto-calculate costs
+Auto-generate numbers (WO, PO, etc.)
+Data Export & Reporting
+Export to Excel
+Export to CSV
+PDF generation
+Print-friendly views
+Scheduled report delivery
+Custom report formats
+This represents the complete feature set of your CMMS application.

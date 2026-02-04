@@ -5,7 +5,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation, useRoute } from "wouter";
 import { 
   ArrowLeft, Save, Loader2, Edit, X, Plus, Trash2, 
-  ClipboardList, CheckCircle2, Sparkles, Truck
+  ClipboardList, CheckCircle2, Sparkles, Truck, CalendarClock, Link
 } from "lucide-react";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
@@ -53,6 +53,7 @@ interface ChecklistTemplate {
   estimatedMinutes: number | null;
   items: string[] | null;
   isActive: boolean;
+  isOosSensitive: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -82,6 +83,7 @@ const templateFormSchema = z.object({
   category: z.enum(["pm_service", "inspection", "safety", "pre_trip", "post_trip", "seasonal", "other"]),
   estimatedMinutes: z.number().optional(),
   isActive: z.boolean(),
+  isOosSensitive: z.boolean(),
 });
 
 type TemplateFormValues = z.infer<typeof templateFormSchema>;
@@ -95,7 +97,8 @@ export default function ChecklistTemplateDetail() {
   const [newTask, setNewTask] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
-  const [newAssignment, setNewAssignment] = useState({ manufacturer: "", model: "", assetType: "" });
+  const [selectedAssetModel, setSelectedAssetModel] = useState("");
+  const [newAssetType, setNewAssetType] = useState("");
   
   const templateId = params?.id ? parseInt(params.id) : null;
 
@@ -109,6 +112,28 @@ export default function ChecklistTemplateDetail() {
     enabled: !!templateId,
   });
 
+  // Fetch available asset make/models for dropdown
+  const { data: assetMakeModels } = useQuery<Array<{ manufacturer: string; model: string | null; year: number | null }>>({
+    queryKey: ["/api/assets/make-models"],
+  });
+
+  // Fetch linked PM schedules
+  interface PmScheduleLink {
+    pmScheduleChecklist: { id: number; pmScheduleId: number; checklistTemplateId: number };
+    pmSchedule: { id: number; name: string; description: string | null };
+  }
+  const { data: pmScheduleLinks } = useQuery<PmScheduleLink[]>({
+    queryKey: ["/api/checklist-templates", templateId, "pm-schedules"],
+    enabled: !!templateId,
+  });
+
+  // Filter out make/models that are already assigned
+  const availableAssetModels = (assetMakeModels || []).filter(
+    (am) => !assignments?.some(
+      (a) => a.manufacturer === am.manufacturer && a.model === am.model
+    )
+  );
+
   const form = useForm<TemplateFormValues>({
     resolver: zodResolver(templateFormSchema),
     defaultValues: {
@@ -117,6 +142,7 @@ export default function ChecklistTemplateDetail() {
       category: "pm_service",
       estimatedMinutes: undefined,
       isActive: true,
+      isOosSensitive: false,
     },
   });
 
@@ -128,6 +154,7 @@ export default function ChecklistTemplateDetail() {
         category: (template.category as any) || "pm_service",
         estimatedMinutes: template.estimatedMinutes || undefined,
         isActive: template.isActive ?? true,
+        isOosSensitive: template.isOosSensitive ?? false,
       });
       setTasks(template.items || []);
     }
@@ -139,6 +166,7 @@ export default function ChecklistTemplateDetail() {
         ...data,
         items: tasks,
         estimatedMinutes: data.estimatedMinutes || null,
+        isOosSensitive: data.isOosSensitive ?? false,
       });
     },
     onSuccess: () => {
@@ -167,7 +195,7 @@ export default function ChecklistTemplateDetail() {
   });
 
   const createAssignmentMutation = useMutation({
-    mutationFn: async (data: typeof newAssignment) => {
+    mutationFn: async (data: { manufacturer: string; model: string | null; assetType: string | null }) => {
       return apiRequest("POST", `/api/checklist-templates/${templateId}/assignments`, {
         manufacturer: data.manufacturer || null,
         model: data.model || null,
@@ -177,7 +205,8 @@ export default function ChecklistTemplateDetail() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/checklist-templates", templateId, "assignments"] });
       toast({ title: "Assignment Added", description: "Make/model assignment has been added." });
-      setNewAssignment({ manufacturer: "", model: "", assetType: "" });
+      setSelectedAssetModel("");
+      setNewAssetType("");
     },
     onError: () => {
       toast({ title: "Error", description: "Failed to add assignment", variant: "destructive" });
@@ -434,6 +463,23 @@ export default function ChecklistTemplateDetail() {
                       </FormItem>
                     )}
                   />
+                  <FormField
+                    control={form.control}
+                    name="isOosSensitive"
+                    render={({ field }) => (
+                      <FormItem className="flex items-center justify-between rounded-lg border p-4">
+                        <div className="space-y-0.5">
+                          <FormLabel>OOS Sensitive</FormLabel>
+                          <FormDescription>
+                            When enabled, out-of-service rules will evaluate responses inline and flag violations
+                          </FormDescription>
+                        </div>
+                        <FormControl>
+                          <Switch checked={field.value} onCheckedChange={field.onChange} disabled={!isEditing} data-testid="switch-oos-sensitive" />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
                 </CardContent>
               </Card>
 
@@ -518,21 +564,29 @@ export default function ChecklistTemplateDetail() {
               </p>
               
               <div className="space-y-2">
-                <Input
-                  placeholder="Manufacturer (e.g., Ford)"
-                  value={newAssignment.manufacturer}
-                  onChange={(e) => setNewAssignment({ ...newAssignment, manufacturer: e.target.value })}
-                  data-testid="input-manufacturer"
-                />
-                <Input
-                  placeholder="Model (e.g., F-150)"
-                  value={newAssignment.model}
-                  onChange={(e) => setNewAssignment({ ...newAssignment, model: e.target.value })}
-                  data-testid="input-model"
-                />
                 <Select 
-                  value={newAssignment.assetType} 
-                  onValueChange={(v) => setNewAssignment({ ...newAssignment, assetType: v })}
+                  value={selectedAssetModel} 
+                  onValueChange={setSelectedAssetModel}
+                >
+                  <SelectTrigger data-testid="select-vehicle-model">
+                    <SelectValue placeholder="Select a vehicle make/model..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableAssetModels
+                      .filter(am => am.model) // Only show assets with both make and model
+                      .map((am) => (
+                        <SelectItem 
+                          key={`${am.manufacturer}||${am.model || ""}||${am.year || ""}`} 
+                          value={`${am.manufacturer}||${am.model || ""}||${am.year || ""}`}
+                        >
+                          {am.manufacturer} {am.model}{am.year ? ` (${am.year})` : ""}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+                <Select 
+                  value={newAssetType} 
+                  onValueChange={setNewAssetType}
                 >
                   <SelectTrigger data-testid="select-asset-type">
                     <SelectValue placeholder="Asset Type (optional)" />
@@ -547,11 +601,24 @@ export default function ChecklistTemplateDetail() {
                 </Select>
                 <Button 
                   className="w-full" 
-                  onClick={() => createAssignmentMutation.mutate(newAssignment)}
-                  disabled={!newAssignment.manufacturer && !newAssignment.model && !newAssignment.assetType}
+                  onClick={() => {
+                    if (selectedAssetModel) {
+                      const [make, model] = selectedAssetModel.split("||");
+                      createAssignmentMutation.mutate({
+                        manufacturer: make,
+                        model: model || null,
+                        assetType: newAssetType || null,
+                      });
+                    }
+                  }}
+                  disabled={!selectedAssetModel || createAssignmentMutation.isPending}
                   data-testid="button-add-assignment"
                 >
-                  <Plus className="h-4 w-4 mr-2" />
+                  {createAssignmentMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Plus className="h-4 w-4 mr-2" />
+                  )}
                   Add Assignment
                 </Button>
               </div>
@@ -582,6 +649,39 @@ export default function ChecklistTemplateDetail() {
               )}
             </CardContent>
           </Card>
+
+          {pmScheduleLinks && pmScheduleLinks.length > 0 && (
+            <Card data-testid="card-linked-pm-schedules">
+              <CardHeader className="flex flex-row items-center gap-2">
+                <CalendarClock className="h-5 w-5 text-muted-foreground" />
+                <CardTitle>Linked PM Schedules</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  This checklist is linked to the following PM schedules. When a linked schedule is assigned to an asset, this checklist will be included automatically.
+                </p>
+                <div className="space-y-2">
+                  {pmScheduleLinks.map((link) => (
+                    <div 
+                      key={link.pmScheduleChecklist.id} 
+                      className="flex items-center gap-2 p-2 rounded-lg border"
+                      data-testid={`pm-schedule-link-${link.pmScheduleChecklist.id}`}
+                    >
+                      <Link className="h-4 w-4 text-muted-foreground" />
+                      <div className="text-sm">
+                        <span className="font-medium" data-testid={`text-pm-schedule-name-${link.pmScheduleChecklist.id}`}>
+                          {link.pmSchedule.name}
+                        </span>
+                        {link.pmSchedule.description && (
+                          <p className="text-xs text-muted-foreground">{link.pmSchedule.description}</p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           <Card>
             <CardHeader>

@@ -1,5 +1,6 @@
-import { eq, desc, sql, and, lt, lte } from "drizzle-orm";
+import { eq, desc, sql, and, or, lt, lte, gte, isNull, isNotNull, inArray } from "drizzle-orm";
 import { db } from "./db";
+import { dataCache, cacheKey } from "./cache";
 import {
   users,
   locations,
@@ -11,6 +12,8 @@ import {
   workOrderLines,
   workOrderTransactions,
   pmSchedules,
+  pmScheduleModels,
+  pmScheduleKitModels,
   pmAssetInstances,
   purchaseRequisitions,
   purchaseRequisitionLines,
@@ -31,6 +34,17 @@ import {
   faultCodes,
   checklistTemplates,
   checklistMakeModelAssignments,
+  workOrderChecklists,
+  workOrderChecklistItems,
+  receivingTransactions,
+  partRequests,
+  partKits,
+  partKitLines,
+  pmScheduleKits,
+  pmScheduleChecklists,
+  cycleCounts,
+  assetImages,
+  assetDocuments,
   type User,
   type UpsertUser,
   type InsertLocation,
@@ -39,6 +53,10 @@ import {
   type VmrsCode,
   type InsertAsset,
   type Asset,
+  type InsertAssetImage,
+  type AssetImage,
+  type InsertAssetDocument,
+  type AssetDocument,
   type InsertVendor,
   type Vendor,
   type InsertPart,
@@ -49,6 +67,12 @@ import {
   type WorkOrderLine,
   type InsertPmSchedule,
   type PmSchedule,
+  type InsertPmScheduleModel,
+  type PmScheduleModel,
+  type InsertPmScheduleKitModel,
+  type PmScheduleKitModel,
+  type InsertPmScheduleChecklist,
+  type PmScheduleChecklist,
   type InsertPmAssetInstance,
   type PmAssetInstance,
   type InsertPurchaseRequisition,
@@ -84,18 +108,143 @@ import {
   type ChecklistTemplate,
   type InsertChecklistMakeModelAssignment,
   type ChecklistMakeModelAssignment,
+  type InsertWorkOrderChecklist,
+  type WorkOrderChecklist,
+  type InsertWorkOrderChecklistItem,
+  type WorkOrderChecklistItem,
+  type InsertReceivingTransaction,
+  type ReceivingTransaction,
+  type InsertPartRequest,
+  type PartRequest,
+  type InsertPartKit,
+  type PartKit,
+  type InsertPartKitLine,
+  type PartKitLine,
+  type InsertPmScheduleKit,
+  type PmScheduleKit,
+  type InsertCycleCount,
+  type CycleCount,
   importJobs,
   type InsertImportJob,
   type ImportJob,
   partUsageHistory,
   type InsertPartUsageHistory,
   type PartUsageHistory,
+  laborEntries,
+  type InsertLaborEntry,
+  type LaborEntry,
+  notifications,
+  type InsertNotification,
+  type Notification,
+  organizations,
+  orgMemberships,
+  memberLocations,
+  tires,
+  conversations,
+  conversationParticipants,
+  messages,
+  savedReports,
+  gpsLocations,
+  tireReplacementSettings,
+  publicAssetTokens,
+  type Organization,
+  type OrgMembership,
+  type MemberLocation,
+  type InsertMemberLocation,
+  type Tire,
+  type InsertTire,
+  type Conversation,
+  type InsertConversation,
+  type Message,
+  type InsertMessage,
+  type SavedReport,
+  type InsertSavedReport,
+  type GpsLocation,
+  type InsertGpsLocation,
+  type TireReplacementSetting,
+  type InsertTireReplacementSetting,
+  type PublicAssetToken,
+  type InsertPublicAssetToken,
+  classificationRuns,
+  partClassificationSnapshots,
+  classificationAuditLog,
+  events,
+  eventParts,
+  type ClassificationRun,
+  type InsertClassificationRun,
+  type PartClassificationSnapshot,
+  type InsertPartClassificationSnapshot,
+  type ClassificationAuditLog,
+  type InsertClassificationAuditLog,
+  type Event,
+  type InsertEvent,
+  type EventPart,
+  type InsertEventPart,
+  assetBrakeSettings,
+  assetBrakeAxles,
+  assetTireSettings,
+  assetTireAxles,
+  brakeInspections,
+  brakeInspectionAxles,
+  tireInspections,
+  tireInspectionAxles,
+  type AssetBrakeSettings,
+  type InsertAssetBrakeSettings,
+  type AssetBrakeAxle,
+  type InsertAssetBrakeAxle,
+  type AssetTireSettings,
+  type InsertAssetTireSettings,
+  type AssetTireAxle,
+  type InsertAssetTireAxle,
+  type BrakeInspection,
+  type InsertBrakeInspection,
+  type BrakeInspectionAxle,
+  type InsertBrakeInspectionAxle,
+  type TireInspection,
+  type InsertTireInspection,
+  type TireInspectionAxle,
+  type InsertTireInspectionAxle,
 } from "@shared/schema";
 
 export interface IStorage {
   // Users
   getUser(id: string): Promise<User | undefined>;
   upsertUser(user: UpsertUser): Promise<User>;
+
+  // Organizations
+  getOrganization(id: number): Promise<Organization | undefined>;
+  getOrganizationBySlug(slug: string): Promise<Organization | undefined>;
+  createOrganization(data: { name: string; slug: string; plan?: string }): Promise<Organization>;
+  createOrgMembership(data: { userId: string; orgId: number; role: string; isDefault?: boolean; primaryLocationId?: number | null }): Promise<OrgMembership>;
+  getUserOrganizations(userId: string): Promise<Array<{ org: Organization; membership: OrgMembership }>>;
+  updateOrganization(id: number, data: Partial<{ name: string; slug: string }>): Promise<Organization | undefined>;
+  getOrgMembers(orgId: number): Promise<Array<{
+    id: number;
+    userId: string;
+    role: string | null;
+    joinedAt: Date | null;
+    firstName: string | null;
+    lastName: string | null;
+    email: string | null;
+    profileImageUrl: string | null;
+    hourlyRate: string | null;
+  }>>;
+  getOrgMembership(orgId: number, userId: string): Promise<OrgMembership | undefined>;
+  updateOrgMemberRole(memberId: number, role: string): Promise<OrgMembership | undefined>;
+  updateMemberHourlyRate(memberId: number, hourlyRate: string | null): Promise<OrgMembership | undefined>;
+  updateMemberPrimaryLocation(memberId: number, primaryLocationId: number | null): Promise<OrgMembership | undefined>;
+  getMemberLocations(membershipId: number): Promise<MemberLocation[]>;
+  addMemberLocation(data: InsertMemberLocation): Promise<MemberLocation>;
+  removeMemberLocation(membershipId: number, locationId: number): Promise<void>;
+  countOrgOwners(orgId: number): Promise<number>;
+  getSubsidiaryOrgs(parentOrgId: number): Promise<Organization[]>;
+  setParentOrg(orgId: number, parentOrgId: number | null): Promise<Organization | undefined>;
+  getOrgsForCorporateAdmin(userId: string): Promise<Organization[]>;
+  updateMemberCorporateAdmin(orgId: number, memberId: number, isCorporateAdmin: boolean): Promise<OrgMembership | undefined>;
+  hasCorporateAdminMembership(userId: string): Promise<boolean>;
+  getAllOrganizations(): Promise<Organization[]>;
+  isDevOfAnyOrg(userId: string): Promise<boolean>;
+  getMembershipByUserAndOrg(userId: string, orgId: number): Promise<OrgMembership | undefined>;
   
   // Locations
   getLocations(): Promise<Location[]>;
@@ -116,6 +265,44 @@ export interface IStorage {
   createAsset(asset: InsertAsset): Promise<Asset>;
   updateAsset(id: number, asset: Partial<InsertAsset>): Promise<Asset | undefined>;
   deleteAsset(id: number): Promise<void>;
+  batchUpdateAssetMeters(updates: Array<{ assetId: number; meterReading: string; meterType?: string }>): Promise<Asset[]>;
+  getAssetMakeModels(orgId?: number): Promise<Array<{ manufacturer: string; model: string | null; year: number | null }>>;
+  
+  // Asset Images
+  getAssetImages(assetId: number): Promise<AssetImage[]>;
+  getAssetImage(id: number): Promise<AssetImage | undefined>;
+  createAssetImage(image: InsertAssetImage): Promise<AssetImage>;
+  deleteAssetImage(id: number): Promise<void>;
+  setPrimaryAssetImage(assetId: number, imageId: number): Promise<void>;
+  
+  // Asset Documents
+  getAssetDocuments(assetId: number): Promise<AssetDocument[]>;
+  getAssetDocument(id: number): Promise<AssetDocument | undefined>;
+  createAssetDocument(document: InsertAssetDocument): Promise<AssetDocument>;
+  updateAssetDocument(id: number, document: Partial<InsertAssetDocument>): Promise<AssetDocument | undefined>;
+  deleteAssetDocument(id: number): Promise<void>;
+  
+  // Asset Brake Settings
+  getAssetBrakeSettings(assetId: number): Promise<AssetBrakeSettings | undefined>;
+  getAssetBrakeAxles(brakeSettingsId: number): Promise<AssetBrakeAxle[]>;
+  upsertAssetBrakeSettings(assetId: number, settings: InsertAssetBrakeSettings, axles: InsertAssetBrakeAxle[]): Promise<AssetBrakeSettings>;
+  
+  // Asset Tire Settings
+  getAssetTireSettings(assetId: number): Promise<AssetTireSettings | undefined>;
+  getAssetTireAxles(tireSettingsId: number): Promise<AssetTireAxle[]>;
+  upsertAssetTireSettings(assetId: number, settings: InsertAssetTireSettings, axles: InsertAssetTireAxle[]): Promise<AssetTireSettings>;
+  
+  // Brake Inspections
+  getBrakeInspections(workOrderId: number): Promise<BrakeInspection[]>;
+  getBrakeInspection(id: number): Promise<BrakeInspection | undefined>;
+  getBrakeInspectionAxles(brakeInspectionId: number): Promise<BrakeInspectionAxle[]>;
+  createBrakeInspection(inspection: InsertBrakeInspection, axles: InsertBrakeInspectionAxle[]): Promise<BrakeInspection>;
+  
+  // Tire Inspections
+  getTireInspections(workOrderId: number): Promise<TireInspection[]>;
+  getTireInspection(id: number): Promise<TireInspection | undefined>;
+  getTireInspectionAxles(tireInspectionId: number): Promise<TireInspectionAxle[]>;
+  createTireInspection(inspection: InsertTireInspection, axles: InsertTireInspectionAxle[]): Promise<TireInspection>;
   
   // Vendors
   getVendors(): Promise<Vendor[]>;
@@ -125,14 +312,17 @@ export interface IStorage {
   
   // Parts
   getParts(): Promise<Part[]>;
+  getPartsPaginated(options: { limit: number; offset: number; search?: string }): Promise<{ parts: Part[]; total: number }>;
   getPart(id: number): Promise<Part | undefined>;
   createPart(part: InsertPart): Promise<Part>;
   updatePart(id: number, part: Partial<InsertPart>): Promise<Part | undefined>;
+  getPartsByOrgPaginated(orgId: number, options: { limit: number; offset: number; search?: string }): Promise<{ parts: Part[]; total: number }>;
+  recalculateMinMax(orgId: number, params: { leadTimeDays: number; safetyStockDays: number; lookbackDays: number }): Promise<{ partsAnalyzed: number; partsWithUsage: number; partsUpdated: number; updates: Array<{ partId: number; partNumber: string; oldReorderPoint: string; newReorderPoint: string; newMaxQuantity: string }> }>;
   
   // Work Orders
   getWorkOrders(): Promise<WorkOrder[]>;
   getWorkOrder(id: number): Promise<WorkOrder | undefined>;
-  getRecentWorkOrders(limit: number): Promise<WorkOrder[]>;
+  getRecentWorkOrders(limit: number, orgId?: number, locationId?: number): Promise<WorkOrder[]>;
   createWorkOrder(workOrder: InsertWorkOrder): Promise<WorkOrder>;
   updateWorkOrder(id: number, workOrder: Partial<InsertWorkOrder>): Promise<WorkOrder | undefined>;
   deleteWorkOrder(id: number): Promise<void>;
@@ -140,17 +330,40 @@ export interface IStorage {
   // Work Order Lines
   getWorkOrderLines(workOrderId: number): Promise<WorkOrderLine[]>;
   getWorkOrderLine(id: number): Promise<WorkOrderLine | undefined>;
+  getRescheduledLines(): Promise<WorkOrderLine[]>;
+  getRescheduledLinesToWorkOrder(workOrderId: number): Promise<WorkOrderLine[]>;
   createWorkOrderLine(line: InsertWorkOrderLine): Promise<WorkOrderLine>;
   updateWorkOrderLine(id: number, line: Partial<InsertWorkOrderLine>): Promise<WorkOrderLine | undefined>;
   deleteWorkOrderLine(id: number): Promise<void>;
   getNextWorkOrderLineNumber(workOrderId: number): Promise<number>;
   requestPartForLine(lineId: number, partId: number, quantity: number): Promise<void>;
   
+  // Work Order Transactions (parts usage, labor)
+  getWorkOrderTransactions(workOrderId: number): Promise<WorkOrderTransaction[]>;
+  createWorkOrderTransaction(transaction: InsertWorkOrderTransaction): Promise<WorkOrderTransaction>;
+  
   // PM Schedules
   getPmSchedules(): Promise<PmSchedule[]>;
   getPmSchedule(id: number): Promise<PmSchedule | undefined>;
   createPmSchedule(schedule: InsertPmSchedule): Promise<PmSchedule>;
   updatePmSchedule(id: number, schedule: Partial<InsertPmSchedule>): Promise<PmSchedule | undefined>;
+  
+  // PM Schedule Models (link PM to makes/models)
+  getPmScheduleModels(pmScheduleId: number): Promise<PmScheduleModel[]>;
+  addPmScheduleModel(data: InsertPmScheduleModel): Promise<PmScheduleModel>;
+  deletePmScheduleModel(id: number): Promise<void>;
+  
+  // PM Schedule Kit Models (link kits to specific models within a PM)
+  getPmScheduleKitModels(pmScheduleKitId: number): Promise<PmScheduleKitModel[]>;
+  addPmScheduleKitModel(data: InsertPmScheduleKitModel): Promise<PmScheduleKitModel>;
+  deletePmScheduleKitModel(id: number): Promise<void>;
+  
+  // PM Schedule Checklists (link checklist templates to PM schedules)
+  getPmScheduleChecklists(pmScheduleId: number): Promise<PmScheduleChecklist[]>;
+  getPmSchedulesByChecklistId(checklistTemplateId: number, orgId?: number): Promise<Array<{ pmScheduleChecklist: PmScheduleChecklist; pmSchedule: PmSchedule }>>;
+  addPmScheduleChecklist(data: InsertPmScheduleChecklist): Promise<PmScheduleChecklist>;
+  deletePmScheduleChecklist(id: number): Promise<void>;
+  getPmScheduleByVmrsCode(vmrsCodeId: number, orgId?: number): Promise<PmSchedule | undefined>;
   
   // PM Asset Instances
   getPmAssetInstances(): Promise<PmAssetInstance[]>;
@@ -252,7 +465,60 @@ export interface IStorage {
     partsLowStock: number;
     pmDueThisWeek: number;
   }>;
+
+  getKpiMetrics(): Promise<{
+    mttr: number | null; // Mean Time To Repair in hours
+    mtbf: number | null; // Mean Time Between Failures in days
+    assetUptime: number; // Percentage
+    pmCompliance: number; // Percentage
+    emergencyWoRatio: number; // Percentage
+    avgCostPerWo: number;
+  }>;
+
+  getProcurementOverview(): Promise<{
+    pendingRequisitions: number;
+    activePurchaseOrders: number;
+    reorderAlerts: number;
+    pendingPartRequests: number;
+  }>;
+
+  getPartsAnalytics(): Promise<{
+    topUsedParts: Array<{
+      partId: number;
+      partNumber: string;
+      partName: string;
+      usageCount: number;
+      totalCost: number;
+    }>;
+    lowStockCritical: number;
+  }>;
   
+  getTireHealthStats(orgId?: number): Promise<{
+    totalTires: number;
+    healthyTires: number;
+    warningTires: number;
+    criticalTires: number;
+    averageTreadDepth: number;
+    tiresNeedingReplacement: Array<{
+      id: number;
+      serialNumber: string;
+      assetName: string;
+      position: string;
+      treadDepth: number;
+      condition: string;
+    }>;
+  }>;
+  
+  // Admin record counts for data purge page
+  getAdminRecordCounts(orgId?: number): Promise<{
+    assets: number;
+    workOrders: number;
+    parts: number;
+    dvirs: number;
+    pmSchedules: number;
+    documents: number;
+  }>;
+
   // Additional methods for Phase 3
   getWorkOrdersByAsset(assetId: number): Promise<WorkOrder[]>;
   getAssetByNumber(assetNumber: string): Promise<Asset | undefined>;
@@ -264,9 +530,20 @@ export interface IStorage {
   consumePartFromInventory(partId: number, quantity: number, workOrderId: number, lineId: number): Promise<void>;
   getWorkOrderTransactions(workOrderId: number): Promise<WorkOrderTransaction[]>;
   getLineTransactions(lineId: number): Promise<WorkOrderTransaction[]>;
+  getTransaction(id: number): Promise<WorkOrderTransaction | undefined>;
+  reverseTransaction(transactionId: number, performedById: string | null, reason: string): Promise<WorkOrderTransaction>;
   addLineItem(lineId: number, data: { description: string; quantity: number; unitCost: number; partId?: number }): Promise<void>;
   getSimilarAssets(manufacturer: string, model: string, excludeAssetId: number): Promise<Asset[]>;
   getFleetPartReplacementPatterns(): Promise<{ partId: number; partNumber: string; partName: string; replacementCount: number; avgMeterReading: number }[]>;
+
+  // Labor Entries (Multi-user Time Tracking)
+  getLaborEntries(workOrderId: number): Promise<LaborEntry[]>;
+  getLaborEntry(id: number): Promise<LaborEntry | undefined>;
+  getActiveLaborEntries(userId: string): Promise<LaborEntry[]>;
+  createLaborEntry(entry: InsertLaborEntry): Promise<LaborEntry>;
+  updateLaborEntry(id: number, entry: Partial<InsertLaborEntry>): Promise<LaborEntry | undefined>;
+  completeLaborEntry(id: number): Promise<LaborEntry | undefined>;
+  deleteLaborEntry(id: number): Promise<void>;
 
   // Checklist Templates
   getChecklistTemplates(): Promise<ChecklistTemplate[]>;
@@ -281,6 +558,15 @@ export interface IStorage {
   createChecklistAssignment(assignment: InsertChecklistMakeModelAssignment): Promise<ChecklistMakeModelAssignment>;
   deleteChecklistAssignment(id: number): Promise<void>;
   deleteChecklistAssignmentsByTemplate(templateId: number): Promise<void>;
+  
+  // Work Order Checklists
+  getWorkOrderChecklists(workOrderId: number): Promise<WorkOrderChecklist[]>;
+  getWorkOrderChecklist(id: number): Promise<WorkOrderChecklist | undefined>;
+  getWorkOrderChecklistItems(checklistId: number): Promise<WorkOrderChecklistItem[]>;
+  createWorkOrderChecklist(workOrderId: number, templateId: number, workOrderLineId?: number): Promise<WorkOrderChecklist>;
+  updateChecklistItemStatus(itemId: number, status: string, notes?: string, completedById?: string): Promise<WorkOrderChecklistItem | undefined>;
+  createWorkOrderLineFromChecklistItem(itemId: number, workOrderId: number, vmrsCode?: string, vmrsTitle?: string): Promise<WorkOrderLine>;
+  getWorkOrderChecklistItem(itemId: number): Promise<WorkOrderChecklistItem | undefined>;
   
   // Import Jobs
   getImportJobs(): Promise<ImportJob[]>;
@@ -306,6 +592,58 @@ export interface IStorage {
     unitPrice: string | number;
     totalCost?: string | number;
   }>): Promise<{ successCount: number; errorCount: number; errors: Array<{ row: number; message: string }> }>;
+
+  // Receiving Transactions
+  getReceivingTransactions(poId?: number): Promise<ReceivingTransaction[]>;
+  createReceivingTransaction(transaction: InsertReceivingTransaction): Promise<ReceivingTransaction>;
+  
+  // Part Requests
+  getPartRequests(status?: string): Promise<PartRequest[]>;
+  getPartRequest(id: number): Promise<PartRequest | undefined>;
+  createPartRequest(request: InsertPartRequest): Promise<PartRequest>;
+  updatePartRequest(id: number, request: Partial<InsertPartRequest>): Promise<PartRequest | undefined>;
+  getNextPartRequestNumber(): Promise<string>;
+
+  // Notifications
+  getNotifications(userId: string): Promise<Notification[]>;
+  getNotification(id: number): Promise<Notification | undefined>;
+  getUnreadNotificationCount(userId: string): Promise<number>;
+  getUnreadNotificationCountByOrg(userId: string, orgId: number): Promise<number>;
+  createNotification(notification: InsertNotification): Promise<Notification>;
+  markNotificationRead(id: number, userId: string): Promise<Notification | undefined>;
+  markAllNotificationsRead(userId: string): Promise<number>;
+  markAllNotificationsReadByOrg(userId: string, orgId: number): Promise<number>;
+  dismissNotification(id: number, userId: string): Promise<void>;
+
+  // Classification Runs
+  getClassificationRuns(orgId: number): Promise<ClassificationRun[]>;
+  getClassificationRun(id: number): Promise<ClassificationRun | undefined>;
+  createClassificationRun(run: InsertClassificationRun): Promise<ClassificationRun>;
+  updateClassificationRun(id: number, run: Partial<InsertClassificationRun>): Promise<ClassificationRun | undefined>;
+
+  // Classification Snapshots
+  getPartClassificationSnapshots(runId: number): Promise<PartClassificationSnapshot[]>;
+  getLatestPartClassificationSnapshot(partId: number): Promise<PartClassificationSnapshot | undefined>;
+  createPartClassificationSnapshot(snapshot: InsertPartClassificationSnapshot): Promise<PartClassificationSnapshot>;
+
+  // Classification Audit Log
+  getClassificationAuditLog(orgId: number, partId?: number): Promise<ClassificationAuditLog[]>;
+  createClassificationAuditLogEntry(entry: InsertClassificationAuditLog): Promise<ClassificationAuditLog>;
+
+  // Events
+  getEventsByOrg(orgId: number): Promise<Event[]>;
+  getEvent(id: number): Promise<Event | undefined>;
+  createEvent(event: InsertEvent): Promise<Event>;
+  updateEvent(id: number, event: Partial<InsertEvent>): Promise<Event | undefined>;
+
+  // Event Parts
+  getEventParts(eventId: number): Promise<EventPart[]>;
+  createEventPart(eventPart: InsertEventPart): Promise<EventPart>;
+
+  // Classification Aggregation Queries
+  getPartUsageAggregation(orgId: number, windowMonths: number): Promise<Array<{ partId: number; totalQty: number; totalSpend: number }>>;
+  getPartMonthlyUsage(partId: number, windowMonths: number): Promise<Array<{ month: string; qty: number }>>;
+  getPartRoadcallStats(partId: number, windowMonths: number): Promise<{ count: number; downtimeHours: number }>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -316,6 +654,26 @@ export class DatabaseStorage implements IStorage {
   }
 
   async upsertUser(userData: UpsertUser): Promise<User> {
+    // First check if a user with this email already exists
+    if (userData.email) {
+      const existingByEmail = await db.select().from(users).where(eq(users.email, userData.email));
+      if (existingByEmail.length > 0 && existingByEmail[0].id !== userData.id) {
+        // Update the existing user's info but keep their original ID
+        const [updated] = await db
+          .update(users)
+          .set({
+            firstName: userData.firstName,
+            lastName: userData.lastName,
+            profileImageUrl: userData.profileImageUrl,
+            updatedAt: new Date(),
+          })
+          .where(eq(users.email, userData.email))
+          .returning();
+        return updated;
+      }
+    }
+    
+    // Standard upsert by ID
     const [user] = await db
       .insert(users)
       .values(userData)
@@ -333,6 +691,218 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
+  // Organizations
+  async getOrganization(id: number): Promise<Organization | undefined> {
+    const [org] = await db.select().from(organizations).where(eq(organizations.id, id));
+    return org;
+  }
+
+  async getOrganizationBySlug(slug: string): Promise<Organization | undefined> {
+    const [org] = await db.select().from(organizations).where(eq(organizations.slug, slug));
+    return org;
+  }
+
+  async createOrganization(data: { name: string; slug: string; plan?: string }): Promise<Organization> {
+    const [org] = await db.insert(organizations).values({
+      name: data.name,
+      slug: data.slug,
+      plan: data.plan || "starter",
+    }).returning();
+    return org;
+  }
+
+  async createOrgMembership(data: { userId: string; orgId: number; role: string; isDefault?: boolean; primaryLocationId?: number | null }): Promise<OrgMembership> {
+    const [membership] = await db.insert(orgMemberships).values({
+      userId: data.userId,
+      orgId: data.orgId,
+      role: data.role,
+      isDefault: data.isDefault ?? false,
+      primaryLocationId: data.primaryLocationId ?? null,
+    }).returning();
+    return membership;
+  }
+
+  async getUserOrganizations(userId: string): Promise<Array<{ org: Organization; membership: OrgMembership }>> {
+    const results = await db.select()
+      .from(orgMemberships)
+      .innerJoin(organizations, eq(orgMemberships.orgId, organizations.id))
+      .where(eq(orgMemberships.userId, userId));
+    
+    return results.map(row => ({
+      org: row.organizations,
+      membership: row.org_memberships,
+    }));
+  }
+
+  async updateOrganization(id: number, data: Partial<{ name: string; slug: string }>): Promise<Organization | undefined> {
+    const [updated] = await db.update(organizations)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(organizations.id, id))
+      .returning();
+    return updated;
+  }
+
+  async getOrgMembers(orgId: number): Promise<Array<{
+    id: number;
+    userId: string;
+    role: string | null;
+    joinedAt: Date | null;
+    firstName: string | null;
+    lastName: string | null;
+    email: string | null;
+    profileImageUrl: string | null;
+    hourlyRate: string | null;
+  }>> {
+    const members = await db.select({
+      id: orgMemberships.id,
+      userId: orgMemberships.userId,
+      role: orgMemberships.role,
+      joinedAt: orgMemberships.createdAt,
+      firstName: users.firstName,
+      lastName: users.lastName,
+      email: users.email,
+      profileImageUrl: users.profileImageUrl,
+      hourlyRate: orgMemberships.hourlyRate,
+    })
+      .from(orgMemberships)
+      .leftJoin(users, eq(orgMemberships.userId, users.id))
+      .where(eq(orgMemberships.orgId, orgId));
+    return members;
+  }
+
+  async getOrgMembership(orgId: number, userId: string): Promise<OrgMembership | undefined> {
+    const [membership] = await db.select().from(orgMemberships)
+      .where(and(eq(orgMemberships.orgId, orgId), eq(orgMemberships.userId, userId)));
+    return membership;
+  }
+
+  async updateOrgMemberRole(memberId: number, role: string): Promise<OrgMembership | undefined> {
+    const [updated] = await db.update(orgMemberships)
+      .set({ role })
+      .where(eq(orgMemberships.id, memberId))
+      .returning();
+    return updated;
+  }
+
+  async updateMemberHourlyRate(memberId: number, hourlyRate: string | null): Promise<OrgMembership | undefined> {
+    const [updated] = await db.update(orgMemberships)
+      .set({ hourlyRate })
+      .where(eq(orgMemberships.id, memberId))
+      .returning();
+    return updated;
+  }
+
+  async countOrgOwners(orgId: number): Promise<number> {
+    const owners = await db.select().from(orgMemberships)
+      .where(and(eq(orgMemberships.orgId, orgId), eq(orgMemberships.role, "owner")));
+    return owners.length;
+  }
+
+  async getSubsidiaryOrgs(parentOrgId: number): Promise<Organization[]> {
+    return db.select().from(organizations)
+      .where(eq(organizations.parentOrgId, parentOrgId));
+  }
+
+  async setParentOrg(orgId: number, parentOrgId: number | null): Promise<Organization | undefined> {
+    const [updated] = await db.update(organizations)
+      .set({ parentOrgId, updatedAt: new Date() })
+      .where(eq(organizations.id, orgId))
+      .returning();
+    return updated;
+  }
+
+  async getOrgsForCorporateAdmin(userId: string): Promise<Organization[]> {
+    // Find all memberships where user is corporate admin
+    const adminMemberships = await db.select()
+      .from(orgMemberships)
+      .where(and(eq(orgMemberships.userId, userId), eq(orgMemberships.isCorporateAdmin, true)));
+    
+    if (adminMemberships.length === 0) return [];
+    
+    // Get all parent orgs and their subsidiaries
+    const allOrgs: Organization[] = [];
+    for (const membership of adminMemberships) {
+      const parentOrg = await this.getOrganization(membership.orgId);
+      if (parentOrg) {
+        allOrgs.push(parentOrg);
+        const subsidiaries = await this.getSubsidiaryOrgs(parentOrg.id);
+        allOrgs.push(...subsidiaries);
+      }
+    }
+    
+    // Remove duplicates
+    const uniqueOrgs = Array.from(new Map(allOrgs.map(org => [org.id, org])).values());
+    return uniqueOrgs;
+  }
+
+  async updateMemberCorporateAdmin(orgId: number, memberId: number, isCorporateAdmin: boolean): Promise<OrgMembership | undefined> {
+    // Verify member belongs to this org
+    const [member] = await db.select().from(orgMemberships)
+      .where(and(eq(orgMemberships.id, memberId), eq(orgMemberships.orgId, orgId)));
+    
+    if (!member) return undefined;
+    
+    const [updated] = await db.update(orgMemberships)
+      .set({ isCorporateAdmin })
+      .where(and(eq(orgMemberships.id, memberId), eq(orgMemberships.orgId, orgId)))
+      .returning();
+    
+    return updated;
+  }
+
+  async hasCorporateAdminMembership(userId: string): Promise<boolean> {
+    const [membership] = await db.select()
+      .from(orgMemberships)
+      .where(and(eq(orgMemberships.userId, userId), eq(orgMemberships.isCorporateAdmin, true)))
+      .limit(1);
+    return !!membership;
+  }
+
+  async getAllOrganizations(): Promise<Organization[]> {
+    return await db.select().from(organizations).orderBy(organizations.name);
+  }
+
+  async isDevOfAnyOrg(userId: string): Promise<boolean> {
+    const [membership] = await db.select()
+      .from(orgMemberships)
+      .where(and(eq(orgMemberships.userId, userId), eq(orgMemberships.role, "dev")))
+      .limit(1);
+    return !!membership;
+  }
+
+  async getMembershipByUserAndOrg(userId: string, orgId: number): Promise<OrgMembership | undefined> {
+    const [membership] = await db.select()
+      .from(orgMemberships)
+      .where(and(eq(orgMemberships.userId, userId), eq(orgMemberships.orgId, orgId)));
+    return membership;
+  }
+
+  async updateMemberPrimaryLocation(memberId: number, primaryLocationId: number | null): Promise<OrgMembership | undefined> {
+    const [updated] = await db.update(orgMemberships)
+      .set({ primaryLocationId })
+      .where(eq(orgMemberships.id, memberId))
+      .returning();
+    return updated;
+  }
+
+  async getMemberLocations(membershipId: number): Promise<MemberLocation[]> {
+    return db.select().from(memberLocations)
+      .where(eq(memberLocations.membershipId, membershipId));
+  }
+
+  async addMemberLocation(data: InsertMemberLocation): Promise<MemberLocation> {
+    const [created] = await db.insert(memberLocations).values(data).returning();
+    return created;
+  }
+
+  async removeMemberLocation(membershipId: number, locationId: number): Promise<void> {
+    await db.delete(memberLocations)
+      .where(and(
+        eq(memberLocations.membershipId, membershipId),
+        eq(memberLocations.locationId, locationId)
+      ));
+  }
+
   // Locations
   async getLocations(): Promise<Location[]> {
     return db.select().from(locations).orderBy(locations.name);
@@ -345,11 +915,13 @@ export class DatabaseStorage implements IStorage {
 
   async createLocation(location: InsertLocation): Promise<Location> {
     const [created] = await db.insert(locations).values(location).returning();
+    if (created.orgId) dataCache.invalidate(cacheKey("locations", created.orgId));
     return created;
   }
 
   async updateLocation(id: number, location: Partial<InsertLocation>): Promise<Location | undefined> {
     const [updated] = await db.update(locations).set({ ...location, updatedAt: new Date() }).where(eq(locations.id, id)).returning();
+    if (updated?.orgId) dataCache.invalidate(cacheKey("locations", updated.orgId));
     return updated;
   }
 
@@ -401,6 +973,229 @@ export class DatabaseStorage implements IStorage {
     await db.delete(assets).where(eq(assets.id, id));
   }
 
+  async batchUpdateAssetMeters(updates: Array<{ assetId: number; meterReading: string; meterType?: string }>): Promise<Asset[]> {
+    const updatedAssets: Asset[] = [];
+    for (const update of updates) {
+      const [updated] = await db.update(assets)
+        .set({
+          currentMeterReading: update.meterReading,
+          ...(update.meterType && { meterType: update.meterType }),
+          lastMeterUpdate: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(assets.id, update.assetId))
+        .returning();
+      if (updated) updatedAssets.push(updated);
+    }
+    return updatedAssets;
+  }
+
+  async getAssetMakeModels(orgId?: number): Promise<Array<{ manufacturer: string; model: string | null; year: number | null }>> {
+    const conditions = orgId ? eq(assets.orgId, orgId) : undefined;
+    const results = await db
+      .selectDistinct({
+        manufacturer: assets.manufacturer,
+        model: assets.model,
+        year: assets.year,
+      })
+      .from(assets)
+      .where(conditions ? and(conditions, isNotNull(assets.manufacturer)) : isNotNull(assets.manufacturer))
+      .orderBy(assets.manufacturer, assets.model);
+    
+    return results.filter(r => r.manufacturer !== null) as Array<{ manufacturer: string; model: string | null; year: number | null }>;
+  }
+
+  // Asset Images
+  async getAssetImages(assetId: number): Promise<AssetImage[]> {
+    return db.select().from(assetImages).where(eq(assetImages.assetId, assetId)).orderBy(desc(assetImages.isPrimary));
+  }
+
+  async getAssetImage(id: number): Promise<AssetImage | undefined> {
+    const [image] = await db.select().from(assetImages).where(eq(assetImages.id, id));
+    return image;
+  }
+
+  async createAssetImage(image: InsertAssetImage): Promise<AssetImage> {
+    const [created] = await db.insert(assetImages).values(image).returning();
+    return created;
+  }
+
+  async deleteAssetImage(id: number): Promise<void> {
+    await db.delete(assetImages).where(eq(assetImages.id, id));
+  }
+
+  async setPrimaryAssetImage(assetId: number, imageId: number): Promise<void> {
+    // First, unset any existing primary images for this asset
+    await db.update(assetImages)
+      .set({ isPrimary: false })
+      .where(eq(assetImages.assetId, assetId));
+    // Then set the new primary image
+    await db.update(assetImages)
+      .set({ isPrimary: true })
+      .where(eq(assetImages.id, imageId));
+  }
+
+  // Asset Documents
+  async getAssetDocuments(assetId: number): Promise<AssetDocument[]> {
+    return db.select().from(assetDocuments).where(eq(assetDocuments.assetId, assetId)).orderBy(desc(assetDocuments.createdAt));
+  }
+
+  async getAssetDocument(id: number): Promise<AssetDocument | undefined> {
+    const [doc] = await db.select().from(assetDocuments).where(eq(assetDocuments.id, id));
+    return doc;
+  }
+
+  async createAssetDocument(document: InsertAssetDocument): Promise<AssetDocument> {
+    const [created] = await db.insert(assetDocuments).values(document).returning();
+    return created;
+  }
+
+  async updateAssetDocument(id: number, document: Partial<InsertAssetDocument>): Promise<AssetDocument | undefined> {
+    const [updated] = await db.update(assetDocuments)
+      .set(document)
+      .where(eq(assetDocuments.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteAssetDocument(id: number): Promise<void> {
+    await db.delete(assetDocuments).where(eq(assetDocuments.id, id));
+  }
+
+  // Asset Brake Settings
+  async getAssetBrakeSettings(assetId: number): Promise<AssetBrakeSettings | undefined> {
+    const [settings] = await db.select().from(assetBrakeSettings).where(eq(assetBrakeSettings.assetId, assetId));
+    return settings;
+  }
+
+  async getAssetBrakeAxles(brakeSettingsId: number): Promise<AssetBrakeAxle[]> {
+    return db.select().from(assetBrakeAxles).where(eq(assetBrakeAxles.brakeSettingsId, brakeSettingsId)).orderBy(assetBrakeAxles.axlePosition);
+  }
+
+  async upsertAssetBrakeSettings(assetId: number, settings: InsertAssetBrakeSettings, axles: InsertAssetBrakeAxle[]): Promise<AssetBrakeSettings> {
+    // Check if settings exist
+    const existing = await this.getAssetBrakeSettings(assetId);
+    
+    let brakeSettings: AssetBrakeSettings;
+    if (existing) {
+      // Update existing settings
+      const [updated] = await db.update(assetBrakeSettings)
+        .set({ ...settings, updatedAt: new Date() })
+        .where(eq(assetBrakeSettings.id, existing.id))
+        .returning();
+      brakeSettings = updated;
+      
+      // Delete old axles and insert new ones
+      await db.delete(assetBrakeAxles).where(eq(assetBrakeAxles.brakeSettingsId, existing.id));
+    } else {
+      // Create new settings
+      const [created] = await db.insert(assetBrakeSettings).values({ ...settings, assetId }).returning();
+      brakeSettings = created;
+    }
+    
+    // Insert axles
+    if (axles.length > 0) {
+      await db.insert(assetBrakeAxles).values(
+        axles.map(axle => ({ ...axle, brakeSettingsId: brakeSettings.id }))
+      );
+    }
+    
+    return brakeSettings;
+  }
+
+  // Asset Tire Settings
+  async getAssetTireSettings(assetId: number): Promise<AssetTireSettings | undefined> {
+    const [settings] = await db.select().from(assetTireSettings).where(eq(assetTireSettings.assetId, assetId));
+    return settings;
+  }
+
+  async getAssetTireAxles(tireSettingsId: number): Promise<AssetTireAxle[]> {
+    return db.select().from(assetTireAxles).where(eq(assetTireAxles.tireSettingsId, tireSettingsId)).orderBy(assetTireAxles.axlePosition);
+  }
+
+  async upsertAssetTireSettings(assetId: number, settings: InsertAssetTireSettings, axles: InsertAssetTireAxle[]): Promise<AssetTireSettings> {
+    // Check if settings exist
+    const existing = await this.getAssetTireSettings(assetId);
+    
+    let tireSettings: AssetTireSettings;
+    if (existing) {
+      // Update existing settings
+      const [updated] = await db.update(assetTireSettings)
+        .set({ ...settings, updatedAt: new Date() })
+        .where(eq(assetTireSettings.id, existing.id))
+        .returning();
+      tireSettings = updated;
+      
+      // Delete old axles and insert new ones
+      await db.delete(assetTireAxles).where(eq(assetTireAxles.tireSettingsId, existing.id));
+    } else {
+      // Create new settings
+      const [created] = await db.insert(assetTireSettings).values({ ...settings, assetId }).returning();
+      tireSettings = created;
+    }
+    
+    // Insert axles
+    if (axles.length > 0) {
+      await db.insert(assetTireAxles).values(
+        axles.map(axle => ({ ...axle, tireSettingsId: tireSettings.id }))
+      );
+    }
+    
+    return tireSettings;
+  }
+
+  // Brake Inspections
+  async getBrakeInspections(workOrderId: number): Promise<BrakeInspection[]> {
+    return db.select().from(brakeInspections).where(eq(brakeInspections.workOrderId, workOrderId)).orderBy(desc(brakeInspections.inspectedAt));
+  }
+
+  async getBrakeInspection(id: number): Promise<BrakeInspection | undefined> {
+    const [inspection] = await db.select().from(brakeInspections).where(eq(brakeInspections.id, id));
+    return inspection;
+  }
+
+  async getBrakeInspectionAxles(brakeInspectionId: number): Promise<BrakeInspectionAxle[]> {
+    return db.select().from(brakeInspectionAxles).where(eq(brakeInspectionAxles.brakeInspectionId, brakeInspectionId)).orderBy(brakeInspectionAxles.axlePosition);
+  }
+
+  async createBrakeInspection(inspection: InsertBrakeInspection, axles: InsertBrakeInspectionAxle[]): Promise<BrakeInspection> {
+    const [created] = await db.insert(brakeInspections).values(inspection).returning();
+    
+    if (axles.length > 0) {
+      await db.insert(brakeInspectionAxles).values(
+        axles.map(axle => ({ ...axle, brakeInspectionId: created.id }))
+      );
+    }
+    
+    return created;
+  }
+
+  // Tire Inspections
+  async getTireInspections(workOrderId: number): Promise<TireInspection[]> {
+    return db.select().from(tireInspections).where(eq(tireInspections.workOrderId, workOrderId)).orderBy(desc(tireInspections.inspectedAt));
+  }
+
+  async getTireInspection(id: number): Promise<TireInspection | undefined> {
+    const [inspection] = await db.select().from(tireInspections).where(eq(tireInspections.id, id));
+    return inspection;
+  }
+
+  async getTireInspectionAxles(tireInspectionId: number): Promise<TireInspectionAxle[]> {
+    return db.select().from(tireInspectionAxles).where(eq(tireInspectionAxles.tireInspectionId, tireInspectionId)).orderBy(tireInspectionAxles.axlePosition);
+  }
+
+  async createTireInspection(inspection: InsertTireInspection, axles: InsertTireInspectionAxle[]): Promise<TireInspection> {
+    const [created] = await db.insert(tireInspections).values(inspection).returning();
+    
+    if (axles.length > 0) {
+      await db.insert(tireInspectionAxles).values(
+        axles.map(axle => ({ ...axle, tireInspectionId: created.id }))
+      );
+    }
+    
+    return created;
+  }
+
   // Vendors
   async getVendors(): Promise<Vendor[]> {
     return db.select().from(vendors).orderBy(vendors.name);
@@ -413,17 +1208,41 @@ export class DatabaseStorage implements IStorage {
 
   async createVendor(vendor: InsertVendor): Promise<Vendor> {
     const [created] = await db.insert(vendors).values(vendor).returning();
+    if (created.orgId) dataCache.invalidate(cacheKey("vendors", created.orgId));
     return created;
   }
 
   async updateVendor(id: number, vendor: Partial<InsertVendor>): Promise<Vendor | undefined> {
     const [updated] = await db.update(vendors).set({ ...vendor, updatedAt: new Date() }).where(eq(vendors.id, id)).returning();
+    if (updated?.orgId) dataCache.invalidate(cacheKey("vendors", updated.orgId));
     return updated;
   }
 
   // Parts
   async getParts(): Promise<Part[]> {
     return db.select().from(parts).orderBy(parts.name);
+  }
+
+  async getPartsPaginated(options: { limit: number; offset: number; search?: string }): Promise<{ parts: Part[]; total: number }> {
+    const { limit, offset, search } = options;
+    
+    let baseQuery = db.select().from(parts);
+    let countQuery = db.select({ count: sql<number>`count(*)::int` }).from(parts);
+    
+    if (search) {
+      const searchPattern = `%${search.toLowerCase()}%`;
+      const searchCondition = or(
+        sql`LOWER(${parts.partNumber}) LIKE ${searchPattern}`,
+        sql`LOWER(${parts.name}) LIKE ${searchPattern}`
+      );
+      baseQuery = baseQuery.where(searchCondition) as typeof baseQuery;
+      countQuery = countQuery.where(searchCondition) as typeof countQuery;
+    }
+    
+    const [{ count: total }] = await countQuery;
+    const partsResult = await baseQuery.orderBy(parts.partNumber).limit(limit).offset(offset);
+    
+    return { parts: partsResult, total };
   }
 
   async getPart(id: number): Promise<Part | undefined> {
@@ -451,7 +1270,24 @@ export class DatabaseStorage implements IStorage {
     return wo;
   }
 
-  async getRecentWorkOrders(limit: number = 10): Promise<WorkOrder[]> {
+  async getRecentWorkOrders(limit: number = 10, orgId?: number, locationId?: number): Promise<WorkOrder[]> {
+    if (orgId && locationId) {
+      // Get assets at this location
+      const locationAssets = await db.select().from(assets).where(and(eq(assets.orgId, orgId), eq(assets.locationId, locationId)));
+      const assetIds = locationAssets.map(a => a.id);
+      if (assetIds.length === 0) return [];
+      
+      // Get work orders for those assets
+      return db.select().from(workOrders)
+        .where(and(eq(workOrders.orgId, orgId), inArray(workOrders.assetId, assetIds)))
+        .orderBy(desc(workOrders.createdAt))
+        .limit(limit);
+    } else if (orgId) {
+      return db.select().from(workOrders)
+        .where(eq(workOrders.orgId, orgId))
+        .orderBy(desc(workOrders.createdAt))
+        .limit(limit);
+    }
     return db.select().from(workOrders).orderBy(desc(workOrders.createdAt)).limit(limit);
   }
 
@@ -502,6 +1338,18 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(workOrderLines).where(eq(workOrderLines.workOrderId, workOrderId)).orderBy(workOrderLines.lineNumber);
   }
 
+  async getRescheduledLines(): Promise<WorkOrderLine[]> {
+    return db.select().from(workOrderLines)
+      .where(eq(workOrderLines.status, "rescheduled"))
+      .orderBy(desc(workOrderLines.updatedAt));
+  }
+
+  async getRescheduledLinesToWorkOrder(workOrderId: number): Promise<WorkOrderLine[]> {
+    return db.select().from(workOrderLines)
+      .where(eq(workOrderLines.rescheduledTo, workOrderId))
+      .orderBy(workOrderLines.lineNumber);
+  }
+
   async getWorkOrderLine(id: number): Promise<WorkOrderLine | undefined> {
     const [line] = await db.select().from(workOrderLines).where(eq(workOrderLines.id, id));
     return line;
@@ -530,6 +1378,16 @@ export class DatabaseStorage implements IStorage {
     return lines.length > 0 ? lines[0].lineNumber + 1 : 1;
   }
 
+  // Work Order Transactions (parts usage, labor)
+  async getWorkOrderTransactions(workOrderId: number): Promise<WorkOrderTransaction[]> {
+    return db.select().from(workOrderTransactions).where(eq(workOrderTransactions.workOrderId, workOrderId)).orderBy(workOrderTransactions.createdAt);
+  }
+
+  async createWorkOrderTransaction(transaction: InsertWorkOrderTransaction): Promise<WorkOrderTransaction> {
+    const [created] = await db.insert(workOrderTransactions).values(transaction).returning();
+    return created;
+  }
+
   // PM Schedules
   async getPmSchedules(): Promise<PmSchedule[]> {
     return db.select().from(pmSchedules).orderBy(pmSchedules.name);
@@ -542,12 +1400,78 @@ export class DatabaseStorage implements IStorage {
 
   async createPmSchedule(schedule: InsertPmSchedule): Promise<PmSchedule> {
     const [created] = await db.insert(pmSchedules).values(schedule).returning();
+    if (created.orgId) dataCache.invalidate(cacheKey("pmSchedules", created.orgId));
     return created;
   }
 
   async updatePmSchedule(id: number, schedule: Partial<InsertPmSchedule>): Promise<PmSchedule | undefined> {
     const [updated] = await db.update(pmSchedules).set({ ...schedule, updatedAt: new Date() }).where(eq(pmSchedules.id, id)).returning();
+    if (updated?.orgId) dataCache.invalidate(cacheKey("pmSchedules", updated.orgId));
     return updated;
+  }
+
+  // PM Schedule Models
+  async getPmScheduleModels(pmScheduleId: number): Promise<PmScheduleModel[]> {
+    return db.select().from(pmScheduleModels).where(eq(pmScheduleModels.pmScheduleId, pmScheduleId));
+  }
+
+  async addPmScheduleModel(data: InsertPmScheduleModel): Promise<PmScheduleModel> {
+    const [created] = await db.insert(pmScheduleModels).values(data).returning();
+    return created;
+  }
+
+  async deletePmScheduleModel(id: number): Promise<void> {
+    await db.delete(pmScheduleModels).where(eq(pmScheduleModels.id, id));
+  }
+
+  // PM Schedule Kit Models
+  async getPmScheduleKitModels(pmScheduleKitId: number): Promise<PmScheduleKitModel[]> {
+    return db.select().from(pmScheduleKitModels).where(eq(pmScheduleKitModels.pmScheduleKitId, pmScheduleKitId));
+  }
+
+  async addPmScheduleKitModel(data: InsertPmScheduleKitModel): Promise<PmScheduleKitModel> {
+    const [created] = await db.insert(pmScheduleKitModels).values(data).returning();
+    return created;
+  }
+
+  async deletePmScheduleKitModel(id: number): Promise<void> {
+    await db.delete(pmScheduleKitModels).where(eq(pmScheduleKitModels.id, id));
+  }
+
+  // PM Schedule Checklists
+  async getPmScheduleChecklists(pmScheduleId: number): Promise<PmScheduleChecklist[]> {
+    return db.select().from(pmScheduleChecklists).where(eq(pmScheduleChecklists.pmScheduleId, pmScheduleId));
+  }
+
+  async getPmSchedulesByChecklistId(checklistTemplateId: number, orgId?: number): Promise<Array<{ pmScheduleChecklist: PmScheduleChecklist; pmSchedule: PmSchedule }>> {
+    const conditions = [eq(pmScheduleChecklists.checklistTemplateId, checklistTemplateId)];
+    if (orgId) conditions.push(eq(pmSchedules.orgId, orgId));
+    
+    const results = await db
+      .select({
+        pmScheduleChecklist: pmScheduleChecklists,
+        pmSchedule: pmSchedules,
+      })
+      .from(pmScheduleChecklists)
+      .innerJoin(pmSchedules, eq(pmScheduleChecklists.pmScheduleId, pmSchedules.id))
+      .where(and(...conditions));
+    return results;
+  }
+
+  async addPmScheduleChecklist(data: InsertPmScheduleChecklist): Promise<PmScheduleChecklist> {
+    const [result] = await db.insert(pmScheduleChecklists).values(data).returning();
+    return result;
+  }
+
+  async deletePmScheduleChecklist(id: number): Promise<void> {
+    await db.delete(pmScheduleChecklists).where(eq(pmScheduleChecklists.id, id));
+  }
+
+  async getPmScheduleByVmrsCode(vmrsCodeId: number, orgId?: number): Promise<PmSchedule | undefined> {
+    const conditions = [eq(pmSchedules.vmrsCodeId, vmrsCodeId)];
+    if (orgId) conditions.push(eq(pmSchedules.orgId, orgId));
+    const [result] = await db.select().from(pmSchedules).where(and(...conditions));
+    return result;
   }
 
   // PM Asset Instances
@@ -870,7 +1794,16 @@ export class DatabaseStorage implements IStorage {
     const allParts = await db.select().from(parts);
     
     const now = new Date();
-    const oneWeekFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const endOfWeek = new Date(now);
+    endOfWeek.setDate(now.getDate() + 7);
+    
+    // Calculate PM due this week from pmAssetInstances
+    const allPmInstances = await db.select().from(pmAssetInstances);
+    const pmDueThisWeek = allPmInstances.filter(instance => {
+      if (!instance.nextDueDate) return false;
+      const dueDate = new Date(instance.nextDueDate);
+      return dueDate >= now && dueDate <= endOfWeek;
+    }).length;
     
     return {
       totalAssets: allAssets.length,
@@ -885,8 +1818,127 @@ export class DatabaseStorage implements IStorage {
       partsLowStock: allParts.filter(p => 
         Number(p.quantityOnHand || 0) <= Number(p.reorderPoint || 0)
       ).length,
-      pmDueThisWeek: 8, // Would calculate from pmAssetInstances
+      pmDueThisWeek,
     };
+  }
+
+  async getKpiMetrics() {
+    const allWorkOrders = await db.select().from(workOrders);
+    const completedWos = allWorkOrders.filter(w => w.status === "completed" || w.status === "closed");
+    const allAssets = await db.select().from(assets);
+    
+    // MTTR: Mean Time To Repair (average hours from open to complete)
+    let mttr: number | null = null;
+    const wosWithTimes = completedWos.filter(w => w.startedAt && w.completedAt);
+    if (wosWithTimes.length > 0) {
+      const totalHours = wosWithTimes.reduce((sum, wo) => {
+        const start = new Date(wo.startedAt!).getTime();
+        const end = new Date(wo.completedAt!).getTime();
+        return sum + (end - start) / (1000 * 60 * 60);
+      }, 0);
+      mttr = Math.round((totalHours / wosWithTimes.length) * 10) / 10;
+    }
+
+    // MTBF: Mean Time Between Failures (days between corrective/emergency WOs per asset)
+    let mtbf: number | null = null;
+    const failureWos = allWorkOrders.filter(w => 
+      (w.type === "corrective" || w.type === "emergency") && w.assetId
+    ).sort((a, b) => new Date(a.createdAt!).getTime() - new Date(b.createdAt!).getTime());
+    
+    if (failureWos.length > 1) {
+      const intervals: number[] = [];
+      const assetFailures: Record<number, Date[]> = {};
+      failureWos.forEach(wo => {
+        if (!assetFailures[wo.assetId!]) assetFailures[wo.assetId!] = [];
+        assetFailures[wo.assetId!].push(new Date(wo.createdAt!));
+      });
+      Object.values(assetFailures).forEach(dates => {
+        for (let i = 1; i < dates.length; i++) {
+          intervals.push((dates[i].getTime() - dates[i-1].getTime()) / (1000 * 60 * 60 * 24));
+        }
+      });
+      if (intervals.length > 0) {
+        mtbf = Math.round(intervals.reduce((a, b) => a + b, 0) / intervals.length);
+      }
+    }
+
+    // Asset Uptime: % of assets operational
+    const assetUptime = allAssets.length > 0 
+      ? Math.round((allAssets.filter(a => a.status === "operational").length / allAssets.length) * 100) 
+      : 100;
+
+    // PM Compliance: % of preventive WOs completed vs total preventive WOs
+    const preventiveWos = allWorkOrders.filter(w => w.type === "preventive");
+    const completedPreventive = preventiveWos.filter(w => w.status === "completed" || w.status === "closed");
+    const pmCompliance = preventiveWos.length > 0
+      ? Math.round((completedPreventive.length / preventiveWos.length) * 100)
+      : 100;
+
+    // Emergency WO Ratio
+    const emergencyWos = allWorkOrders.filter(w => w.type === "emergency" || w.priority === "critical");
+    const emergencyWoRatio = allWorkOrders.length > 0
+      ? Math.round((emergencyWos.length / allWorkOrders.length) * 100)
+      : 0;
+
+    // Average Cost per WO
+    const totalCost = completedWos.reduce((sum, wo) => sum + Number(wo.totalCost || 0), 0);
+    const avgCostPerWo = completedWos.length > 0 ? Math.round(totalCost / completedWos.length) : 0;
+
+    return { mttr, mtbf, assetUptime, pmCompliance, emergencyWoRatio, avgCostPerWo };
+  }
+
+  async getProcurementOverview() {
+    const allRequisitions = await db.select().from(purchaseRequisitions);
+    const allPurchaseOrders = await db.select().from(purchaseOrders);
+    const allReorderAlerts = await db.select().from(reorderAlerts);
+    const allPartRequests = await db.select().from(partRequests);
+
+    return {
+      pendingRequisitions: allRequisitions.filter(r => r.status === "submitted" || r.status === "draft").length,
+      activePurchaseOrders: allPurchaseOrders.filter(po => 
+        po.status === "sent" || po.status === "acknowledged" || po.status === "partial"
+      ).length,
+      reorderAlerts: allReorderAlerts.filter(a => a.status === "pending").length,
+      pendingPartRequests: allPartRequests.filter(pr => pr.status === "pending").length,
+    };
+  }
+
+  async getPartsAnalytics() {
+    const allTransactions = await db.select().from(workOrderTransactions);
+    const allParts = await db.select().from(parts);
+    
+    // Aggregate part consumption
+    const partUsage: Record<number, { count: number; cost: number }> = {};
+    allTransactions
+      .filter(t => t.type === "part_consumption" && t.partId)
+      .forEach(t => {
+        if (!partUsage[t.partId!]) partUsage[t.partId!] = { count: 0, cost: 0 };
+        partUsage[t.partId!].count += Number(t.quantity || 1);
+        partUsage[t.partId!].cost += Number(t.totalCost || 0);
+      });
+
+    const topUsedParts = Object.entries(partUsage)
+      .map(([partId, usage]) => {
+        const part = allParts.find(p => p.id === parseInt(partId));
+        return {
+          partId: parseInt(partId),
+          partNumber: part?.partNumber || "Unknown",
+          partName: part?.name || "Unknown",
+          usageCount: usage.count,
+          totalCost: usage.cost,
+        };
+      })
+      .sort((a, b) => b.usageCount - a.usageCount)
+      .slice(0, 5);
+
+    // Critical low stock (quantity at 0 or below reorder point for critical parts)
+    const lowStockCritical = allParts.filter(p => {
+      const qty = Number(p.quantityOnHand || 0);
+      const reorder = Number(p.reorderPoint || 0);
+      return qty <= reorder && qty <= 5;
+    }).length;
+
+    return { topUsedParts, lowStockCritical };
   }
 
   // Phase 3 methods
@@ -1026,6 +2078,75 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(workOrderTransactions).where(eq(workOrderTransactions.workOrderLineId, lineId)).orderBy(desc(workOrderTransactions.createdAt));
   }
 
+  async getTransaction(id: number): Promise<WorkOrderTransaction | undefined> {
+    const result = await db.select().from(workOrderTransactions).where(eq(workOrderTransactions.id, id));
+    return result[0];
+  }
+
+  async reverseTransaction(transactionId: number, performedById: string | null, reason: string): Promise<WorkOrderTransaction> {
+    const original = await this.getTransaction(transactionId);
+    if (!original) throw new Error("Transaction not found");
+    if (original.isReversed) throw new Error("Transaction already reversed");
+
+    const reversalType = original.type === "part_consumption" ? "part_return" 
+                        : original.type === "time_entry" ? "time_adjustment" 
+                        : "reversal";
+
+    const result = await db.transaction(async (tx) => {
+      await tx.update(workOrderTransactions)
+        .set({ isReversed: true })
+        .where(eq(workOrderTransactions.id, transactionId));
+
+      if (original.type === "part_consumption" && original.partId && original.quantity) {
+        const [part] = await tx.select().from(parts).where(eq(parts.id, original.partId));
+        if (part) {
+          const newQty = Number(part.quantityOnHand || 0) + Number(original.quantity);
+          await tx.update(parts)
+            .set({ quantityOnHand: String(newQty), updatedAt: new Date() })
+            .where(eq(parts.id, original.partId));
+        }
+
+        if (original.workOrderLineId) {
+          const [line] = await tx.select().from(workOrderLines).where(eq(workOrderLines.id, original.workOrderLineId));
+          if (line) {
+            const newPartsCost = Math.max(0, Number(line.partsCost || 0) - Number(original.totalCost || 0));
+            await tx.update(workOrderLines)
+              .set({ partsCost: String(newPartsCost), updatedAt: new Date() })
+              .where(eq(workOrderLines.id, original.workOrderLineId));
+          }
+        }
+      }
+
+      if (original.type === "time_entry" && original.hours && original.workOrderLineId) {
+        const [line] = await tx.select().from(workOrderLines).where(eq(workOrderLines.id, original.workOrderLineId));
+        if (line) {
+          const newLaborHours = Math.max(0, Number(line.laborHours || 0) - Number(original.hours));
+          await tx.update(workOrderLines)
+            .set({ laborHours: String(newLaborHours), updatedAt: new Date() })
+            .where(eq(workOrderLines.id, original.workOrderLineId));
+        }
+      }
+
+      const [reversalTransaction] = await tx.insert(workOrderTransactions).values({
+        workOrderId: original.workOrderId,
+        workOrderLineId: original.workOrderLineId,
+        type: reversalType,
+        partId: original.partId,
+        quantity: original.quantity ? String(-Number(original.quantity)) : null,
+        unitCost: original.unitCost,
+        totalCost: original.totalCost ? String(-Number(original.totalCost)) : null,
+        hours: original.hours ? String(-Number(original.hours)) : null,
+        description: `REVERSAL: ${reason}. Original: ${original.description || 'N/A'}`,
+        performedById,
+        reversedTransactionId: transactionId,
+      }).returning();
+
+      return reversalTransaction;
+    });
+
+    return result;
+  }
+
   async addLineItem(lineId: number, data: { description: string; quantity: number; unitCost: number; partId?: number }): Promise<void> {
     const line = await this.getWorkOrderLine(lineId);
     if (!line) throw new Error("Line not found");
@@ -1120,6 +2241,73 @@ export class DatabaseStorage implements IStorage {
     }));
   }
 
+  // Labor Entries (Multi-user Time Tracking)
+  async getLaborEntries(workOrderId: number): Promise<LaborEntry[]> {
+    return db.select().from(laborEntries)
+      .where(eq(laborEntries.workOrderId, workOrderId))
+      .orderBy(desc(laborEntries.startTime));
+  }
+
+  async getLaborEntry(id: number): Promise<LaborEntry | undefined> {
+    const [entry] = await db.select().from(laborEntries).where(eq(laborEntries.id, id));
+    return entry;
+  }
+
+  async getActiveLaborEntries(userId: string): Promise<LaborEntry[]> {
+    return db.select().from(laborEntries)
+      .where(and(
+        eq(laborEntries.userId, userId),
+        eq(laborEntries.status, "running")
+      ));
+  }
+
+  async createLaborEntry(entry: InsertLaborEntry): Promise<LaborEntry> {
+    const [created] = await db.insert(laborEntries).values(entry).returning();
+    return created;
+  }
+
+  async updateLaborEntry(id: number, entry: Partial<InsertLaborEntry>): Promise<LaborEntry | undefined> {
+    const [updated] = await db.update(laborEntries)
+      .set({ ...entry, updatedAt: new Date() })
+      .where(eq(laborEntries.id, id))
+      .returning();
+    return updated;
+  }
+
+  async completeLaborEntry(id: number): Promise<LaborEntry | undefined> {
+    const entry = await this.getLaborEntry(id);
+    if (!entry) return undefined;
+
+    const endTime = new Date();
+    const startTime = new Date(entry.startTime);
+    const pausedSeconds = entry.pausedDuration || 0;
+    
+    // Calculate actual working time in hours
+    const totalSeconds = (endTime.getTime() - startTime.getTime()) / 1000;
+    const workingSeconds = totalSeconds - pausedSeconds;
+    const calculatedHours = Math.max(0, workingSeconds / 3600);
+    
+    // Calculate labor cost if hourly rate is set
+    const hourlyRate = entry.hourlyRate ? parseFloat(entry.hourlyRate) : 0;
+    const laborCost = calculatedHours * hourlyRate;
+
+    const [updated] = await db.update(laborEntries)
+      .set({
+        status: "completed",
+        endTime,
+        calculatedHours: calculatedHours.toFixed(2),
+        laborCost: laborCost.toFixed(2),
+        updatedAt: new Date(),
+      })
+      .where(eq(laborEntries.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteLaborEntry(id: number): Promise<void> {
+    await db.delete(laborEntries).where(eq(laborEntries.id, id));
+  }
+
   // Checklist Templates
   async getChecklistTemplates(): Promise<ChecklistTemplate[]> {
     return db.select().from(checklistTemplates).orderBy(desc(checklistTemplates.createdAt));
@@ -1185,6 +2373,110 @@ export class DatabaseStorage implements IStorage {
   async deleteChecklistAssignmentsByTemplate(templateId: number): Promise<void> {
     await db.delete(checklistMakeModelAssignments)
       .where(eq(checklistMakeModelAssignments.checklistTemplateId, templateId));
+  }
+
+  // Work Order Checklists
+  async getWorkOrderChecklists(workOrderId: number): Promise<WorkOrderChecklist[]> {
+    return db.select().from(workOrderChecklists)
+      .where(eq(workOrderChecklists.workOrderId, workOrderId))
+      .orderBy(workOrderChecklists.id);
+  }
+
+  async getWorkOrderChecklist(id: number): Promise<WorkOrderChecklist | undefined> {
+    const [checklist] = await db.select().from(workOrderChecklists)
+      .where(eq(workOrderChecklists.id, id));
+    return checklist;
+  }
+
+  async getWorkOrderChecklistItems(checklistId: number): Promise<WorkOrderChecklistItem[]> {
+    return db.select().from(workOrderChecklistItems)
+      .where(eq(workOrderChecklistItems.workOrderChecklistId, checklistId))
+      .orderBy(workOrderChecklistItems.itemIndex);
+  }
+
+  async createWorkOrderChecklist(workOrderId: number, templateId: number, workOrderLineId?: number): Promise<WorkOrderChecklist> {
+    const template = await this.getChecklistTemplate(templateId);
+    if (!template) {
+      throw new Error(`Checklist template ${templateId} not found`);
+    }
+
+    const [checklist] = await db.insert(workOrderChecklists).values({
+      workOrderId,
+      checklistTemplateId: templateId,
+      workOrderLineId: workOrderLineId || null,
+    }).returning();
+
+    const items = template.items as string[] || [];
+    if (items.length > 0) {
+      await db.insert(workOrderChecklistItems).values(
+        items.map((itemText, index) => ({
+          workOrderChecklistId: checklist.id,
+          itemIndex: index,
+          itemText,
+          status: "pending" as const,
+        }))
+      );
+    }
+
+    return checklist;
+  }
+
+  async updateChecklistItemStatus(itemId: number, status: string, notes?: string, completedById?: string): Promise<WorkOrderChecklistItem | undefined> {
+    const updateData: Partial<WorkOrderChecklistItem> = { status: status as any };
+    if (notes !== undefined) {
+      updateData.notes = notes;
+    }
+    if (completedById !== undefined) {
+      updateData.completedById = completedById;
+    }
+    if (status !== "pending") {
+      updateData.completedAt = new Date();
+    }
+
+    const [updated] = await db.update(workOrderChecklistItems)
+      .set(updateData)
+      .where(eq(workOrderChecklistItems.id, itemId))
+      .returning();
+    return updated;
+  }
+
+  async createWorkOrderLineFromChecklistItem(
+    itemId: number, 
+    workOrderId: number, 
+    vmrsCode?: string, 
+    vmrsTitle?: string
+  ): Promise<WorkOrderLine> {
+    const [item] = await db.select().from(workOrderChecklistItems)
+      .where(eq(workOrderChecklistItems.id, itemId));
+    
+    if (!item) {
+      throw new Error(`Checklist item ${itemId} not found`);
+    }
+
+    const nextLineNumber = await this.getNextWorkOrderLineNumber(workOrderId);
+    
+    const [line] = await db.insert(workOrderLines).values({
+      workOrderId,
+      lineNumber: nextLineNumber,
+      description: item.itemText,
+      complaint: item.itemText,
+      notes: item.notes || undefined,
+      vmrsCode: vmrsCode || undefined,
+      vmrsTitle: vmrsTitle || undefined,
+      status: "pending",
+    }).returning();
+
+    await db.update(workOrderChecklistItems)
+      .set({ createdWorkOrderLineId: line.id })
+      .where(eq(workOrderChecklistItems.id, itemId));
+
+    return line;
+  }
+  
+  async getWorkOrderChecklistItem(itemId: number): Promise<WorkOrderChecklistItem | undefined> {
+    const [item] = await db.select().from(workOrderChecklistItems)
+      .where(eq(workOrderChecklistItems.id, itemId));
+    return item;
   }
 
   // Import Jobs
@@ -1357,6 +2649,1390 @@ export class DatabaseStorage implements IStorage {
     }
 
     return { successCount, errorCount, errors };
+  }
+
+  // Receiving Transactions
+  async getReceivingTransactions(poId?: number): Promise<ReceivingTransaction[]> {
+    if (poId) {
+      return await db.select().from(receivingTransactions).where(eq(receivingTransactions.poId, poId)).orderBy(desc(receivingTransactions.receivedDate));
+    }
+    return await db.select().from(receivingTransactions).orderBy(desc(receivingTransactions.receivedDate));
+  }
+
+  async createReceivingTransaction(transaction: InsertReceivingTransaction): Promise<ReceivingTransaction> {
+    const [result] = await db.insert(receivingTransactions).values(transaction).returning();
+    return result;
+  }
+
+  // Part Requests
+  async getPartRequests(status?: string): Promise<PartRequest[]> {
+    if (status) {
+      return await db.select().from(partRequests).where(eq(partRequests.status, status as any)).orderBy(desc(partRequests.createdAt));
+    }
+    return await db.select().from(partRequests).orderBy(desc(partRequests.createdAt));
+  }
+
+  async getPartRequest(id: number): Promise<PartRequest | undefined> {
+    const [result] = await db.select().from(partRequests).where(eq(partRequests.id, id));
+    return result;
+  }
+
+  async createPartRequest(request: InsertPartRequest): Promise<PartRequest> {
+    const [result] = await db.insert(partRequests).values(request).returning();
+    return result;
+  }
+
+  async updatePartRequest(id: number, request: Partial<InsertPartRequest>): Promise<PartRequest | undefined> {
+    const [result] = await db.update(partRequests).set({ ...request, updatedAt: new Date() }).where(eq(partRequests.id, id)).returning();
+    return result;
+  }
+
+  async getNextPartRequestNumber(): Promise<string> {
+    const year = new Date().getFullYear();
+    const [latest] = await db
+      .select({ requestNumber: partRequests.requestNumber })
+      .from(partRequests)
+      .where(sql`${partRequests.requestNumber} LIKE ${'PR-' + year + '-%'}`)
+      .orderBy(desc(partRequests.requestNumber))
+      .limit(1);
+    
+    let nextNum = 1;
+    if (latest?.requestNumber) {
+      const parts = latest.requestNumber.split('-');
+      const lastNum = parseInt(parts[2], 10);
+      if (!isNaN(lastNum)) {
+        nextNum = lastNum + 1;
+      }
+    }
+    return `PR-${year}-${String(nextNum).padStart(4, '0')}`;
+  }
+
+  // Part Kits
+  async getPartKits(): Promise<PartKit[]> {
+    return await db.select().from(partKits).orderBy(desc(partKits.createdAt));
+  }
+
+  async getPartKit(id: number): Promise<PartKit | undefined> {
+    const [result] = await db.select().from(partKits).where(eq(partKits.id, id));
+    return result;
+  }
+
+  async createPartKit(kit: InsertPartKit): Promise<PartKit> {
+    const [result] = await db.insert(partKits).values(kit).returning();
+    return result;
+  }
+
+  async updatePartKit(id: number, kit: Partial<InsertPartKit>): Promise<PartKit | undefined> {
+    const [result] = await db.update(partKits).set({ ...kit, updatedAt: new Date() }).where(eq(partKits.id, id)).returning();
+    return result;
+  }
+
+  async deletePartKit(id: number): Promise<void> {
+    await db.delete(partKits).where(eq(partKits.id, id));
+  }
+
+  async getNextKitNumber(): Promise<string> {
+    const year = new Date().getFullYear();
+    const [latest] = await db
+      .select({ kitNumber: partKits.kitNumber })
+      .from(partKits)
+      .where(sql`${partKits.kitNumber} LIKE ${'KIT-' + year + '-%'}`)
+      .orderBy(desc(partKits.kitNumber))
+      .limit(1);
+    
+    let nextNum = 1;
+    if (latest?.kitNumber) {
+      const kitParts = latest.kitNumber.split('-');
+      const lastNum = parseInt(kitParts[2], 10);
+      if (!isNaN(lastNum)) nextNum = lastNum + 1;
+    }
+    return `KIT-${year}-${String(nextNum).padStart(4, '0')}`;
+  }
+
+  // Part Kit Lines
+  async getPartKitLines(kitId: number): Promise<PartKitLine[]> {
+    return await db.select().from(partKitLines).where(eq(partKitLines.kitId, kitId));
+  }
+
+  async createPartKitLine(line: InsertPartKitLine): Promise<PartKitLine> {
+    const [result] = await db.insert(partKitLines).values(line).returning();
+    await this.recalculateKitTotal(line.kitId);
+    return result;
+  }
+
+  async updatePartKitLine(id: number, line: Partial<InsertPartKitLine>): Promise<PartKitLine | undefined> {
+    const [existing] = await db.select().from(partKitLines).where(eq(partKitLines.id, id));
+    if (!existing) return undefined;
+    const [result] = await db.update(partKitLines).set(line).where(eq(partKitLines.id, id)).returning();
+    await this.recalculateKitTotal(existing.kitId);
+    return result;
+  }
+
+  async deletePartKitLine(id: number): Promise<void> {
+    const [existing] = await db.select().from(partKitLines).where(eq(partKitLines.id, id));
+    if (existing) {
+      await db.delete(partKitLines).where(eq(partKitLines.id, id));
+      await this.recalculateKitTotal(existing.kitId);
+    }
+  }
+
+  async recalculateKitTotal(kitId: number): Promise<void> {
+    const lines = await this.getPartKitLines(kitId);
+    let total = 0;
+    for (const line of lines) {
+      total += Number(line.lineCost || 0);
+    }
+    await db.update(partKits).set({ totalCost: String(total), updatedAt: new Date() }).where(eq(partKits.id, kitId));
+  }
+
+  // PM Schedule Kits
+  async getPmScheduleKits(pmScheduleId: number): Promise<PmScheduleKit[]> {
+    return await db.select().from(pmScheduleKits).where(eq(pmScheduleKits.pmScheduleId, pmScheduleId));
+  }
+
+  async addKitToPmSchedule(pmScheduleId: number, kitId: number): Promise<PmScheduleKit> {
+    const [result] = await db.insert(pmScheduleKits).values({ pmScheduleId, kitId }).returning();
+    return result;
+  }
+
+  async removeKitFromPmSchedule(id: number): Promise<void> {
+    await db.delete(pmScheduleKits).where(eq(pmScheduleKits.id, id));
+  }
+
+  // Cycle Counts
+  async getCycleCounts(status?: string): Promise<CycleCount[]> {
+    if (status) {
+      return await db.select().from(cycleCounts).where(eq(cycleCounts.status, status as any)).orderBy(desc(cycleCounts.scheduledDate));
+    }
+    return await db.select().from(cycleCounts).orderBy(desc(cycleCounts.scheduledDate));
+  }
+
+  async getCycleCount(id: number): Promise<CycleCount | undefined> {
+    const [result] = await db.select().from(cycleCounts).where(eq(cycleCounts.id, id));
+    return result;
+  }
+
+  async createCycleCount(count: InsertCycleCount): Promise<CycleCount> {
+    const [result] = await db.insert(cycleCounts).values(count).returning();
+    return result;
+  }
+
+  async updateCycleCount(id: number, count: Partial<InsertCycleCount>): Promise<CycleCount | undefined> {
+    const [result] = await db.update(cycleCounts).set({ ...count, updatedAt: new Date() }).where(eq(cycleCounts.id, id)).returning();
+    return result;
+  }
+
+  async getNextCycleCountNumber(): Promise<string> {
+    const year = new Date().getFullYear();
+    const [latest] = await db
+      .select({ countNumber: cycleCounts.countNumber })
+      .from(cycleCounts)
+      .where(sql`${cycleCounts.countNumber} LIKE ${'CC-' + year + '-%'}`)
+      .orderBy(desc(cycleCounts.countNumber))
+      .limit(1);
+    
+    let nextNum = 1;
+    if (latest?.countNumber) {
+      const countParts = latest.countNumber.split('-');
+      const lastNum = parseInt(countParts[2], 10);
+      if (!isNaN(lastNum)) nextNum = lastNum + 1;
+    }
+    return `CC-${year}-${String(nextNum).padStart(4, '0')}`;
+  }
+
+  async executeCycleCount(id: number, actualQuantity: number, countedById: string | null, countedByName: string | null, notes?: string): Promise<CycleCount | undefined> {
+    const count = await this.getCycleCount(id);
+    if (!count) return undefined;
+
+    const part = await this.getPart(count.partId);
+    if (!part) return undefined;
+
+    const expected = Number(part.quantityOnHand || 0);
+    const variance = actualQuantity - expected;
+    const variancePercent = expected !== 0 ? (variance / expected) * 100 : 0;
+    const varianceCost = variance * Number(part.unitCost || 0);
+
+    const [result] = await db.update(cycleCounts).set({
+      status: "completed",
+      countedDate: new Date(),
+      expectedQuantity: String(expected),
+      actualQuantity: String(actualQuantity),
+      variance: String(variance),
+      variancePercent: String(variancePercent),
+      varianceCost: String(varianceCost),
+      countedById,
+      countedByName,
+      notes,
+      updatedAt: new Date(),
+    }).where(eq(cycleCounts.id, id)).returning();
+
+    return result;
+  }
+
+  async reconcileCycleCount(id: number): Promise<CycleCount | undefined> {
+    const count = await this.getCycleCount(id);
+    if (!count || count.status !== "completed" || count.isReconciled) return undefined;
+
+    await db.transaction(async (tx) => {
+      await tx.update(parts).set({
+        quantityOnHand: count.actualQuantity,
+        lastCycleCountDate: new Date(),
+        updatedAt: new Date(),
+      }).where(eq(parts.id, count.partId));
+
+      await tx.update(cycleCounts).set({
+        isReconciled: true,
+        reconciledAt: new Date(),
+        updatedAt: new Date(),
+      }).where(eq(cycleCounts.id, id));
+    });
+
+    return await this.getCycleCount(id);
+  }
+
+  // ABC Classification
+  async recalculateABCClassification(): Promise<{ updated: number }> {
+    const allParts = await this.getParts();
+    const partsWithValue = allParts.map(p => ({
+      id: p.id,
+      value: Number(p.annualUsageValue || 0),
+    })).sort((a, b) => b.value - a.value);
+
+    const totalValue = partsWithValue.reduce((sum, p) => sum + p.value, 0);
+    let cumulativeValue = 0;
+    let updated = 0;
+
+    for (const p of partsWithValue) {
+      cumulativeValue += p.value;
+      const cumPercent = totalValue > 0 ? (cumulativeValue / totalValue) * 100 : 100;
+      
+      let abcClass: "A" | "B" | "C";
+      if (cumPercent <= 80) abcClass = "A";
+      else if (cumPercent <= 95) abcClass = "B";
+      else abcClass = "C";
+
+      await db.update(parts).set({ abcClass, updatedAt: new Date() }).where(eq(parts.id, p.id));
+      updated++;
+    }
+
+    return { updated };
+  }
+
+  async scheduleCycleCountsForParts(): Promise<{ scheduled: number }> {
+    const allParts = await this.getParts();
+    const now = new Date();
+    let scheduled = 0;
+
+    for (const part of allParts) {
+      let monthsInterval: number;
+      switch (part.abcClass) {
+        case "A": monthsInterval = 1; break;
+        case "B": monthsInterval = 3; break;
+        default: monthsInterval = 12; break;
+      }
+
+      const lastCount = part.lastCycleCountDate ? new Date(part.lastCycleCountDate) : null;
+      const nextDue = lastCount 
+        ? new Date(lastCount.getTime() + monthsInterval * 30 * 24 * 60 * 60 * 1000)
+        : now;
+
+      if (nextDue <= now || !part.nextCycleCountDate) {
+        const existingScheduled = await db.select().from(cycleCounts)
+          .where(and(eq(cycleCounts.partId, part.id), eq(cycleCounts.status, "scheduled")));
+        
+        if (existingScheduled.length === 0) {
+          const countNumber = await this.getNextCycleCountNumber();
+          await this.createCycleCount({
+            countNumber,
+            partId: part.id,
+            locationId: part.locationId,
+            status: "scheduled",
+            scheduledDate: nextDue,
+          });
+          
+          await db.update(parts).set({ 
+            nextCycleCountDate: nextDue, 
+            updatedAt: new Date() 
+          }).where(eq(parts.id, part.id));
+          
+          scheduled++;
+        }
+      }
+    }
+
+    return { scheduled };
+  }
+
+  // PM Due List
+  async getPmDueList(): Promise<Array<PmAssetInstance & { pmSchedule?: PmSchedule; asset?: Asset }>> {
+    const instances = await db.select().from(pmAssetInstances).orderBy(pmAssetInstances.nextDueDate);
+    const results: Array<PmAssetInstance & { pmSchedule?: PmSchedule; asset?: Asset }> = [];
+
+    for (const instance of instances) {
+      const pmSchedule = await this.getPmSchedule(instance.pmScheduleId);
+      const asset = await this.getAsset(instance.assetId);
+      results.push({ ...instance, pmSchedule, asset });
+    }
+
+    return results;
+  }
+
+  async completePmFromWorkOrder(pmInstanceId: number, completionDate: Date, meterReading?: number): Promise<PmAssetInstance | undefined> {
+    const instance = await db.select().from(pmAssetInstances).where(eq(pmAssetInstances.id, pmInstanceId));
+    if (instance.length === 0) return undefined;
+
+    const pmSchedule = await this.getPmSchedule(instance[0].pmScheduleId);
+    if (!pmSchedule) return undefined;
+
+    let nextDueDate: Date | null = null;
+    let nextDueMeter: string | null = null;
+
+    if (pmSchedule.intervalType === "days") {
+      nextDueDate = new Date(completionDate);
+      nextDueDate.setDate(nextDueDate.getDate() + pmSchedule.intervalValue);
+    } else if (meterReading !== undefined) {
+      nextDueMeter = String(meterReading + pmSchedule.intervalValue);
+    }
+
+    const [result] = await db.update(pmAssetInstances).set({
+      lastCompletedDate: completionDate,
+      lastCompletedMeter: meterReading ? String(meterReading) : null,
+      nextDueDate,
+      nextDueMeter,
+      isOverdue: false,
+      updatedAt: new Date(),
+    }).where(eq(pmAssetInstances.id, pmInstanceId)).returning();
+
+    return result;
+  }
+
+  // Consume Kit on Work Order
+  async consumeKitOnWorkOrder(kitId: number, workOrderId: number, workOrderLineId: number, performedById?: string): Promise<{ consumed: number; totalCost: number }> {
+    const kit = await this.getPartKit(kitId);
+    if (!kit) throw new Error("Kit not found");
+
+    const lines = await this.getPartKitLines(kitId);
+    let consumed = 0;
+    let totalCost = 0;
+
+    await db.transaction(async (tx) => {
+      for (const line of lines) {
+        const part = await this.getPart(line.partId);
+        if (!part) continue;
+
+        const qty = Number(line.quantity);
+        const unitCost = Number(part.unitCost || 0);
+        const lineTotalCost = qty * unitCost;
+
+        const newQty = Math.max(0, Number(part.quantityOnHand || 0) - qty);
+        await tx.update(parts).set({ 
+          quantityOnHand: String(newQty), 
+          updatedAt: new Date() 
+        }).where(eq(parts.id, line.partId));
+
+        await tx.insert(workOrderTransactions).values({
+          workOrderId,
+          workOrderLineId,
+          type: "part_consumption",
+          partId: line.partId,
+          quantity: String(qty),
+          unitCost: String(unitCost),
+          totalCost: String(lineTotalCost),
+          description: `Kit consumption: ${kit.name} - ${part.partNumber}`,
+          performedById,
+        });
+
+        consumed++;
+        totalCost += lineTotalCost;
+      }
+    });
+
+    return { consumed, totalCost };
+  }
+
+  // Notifications
+  async getNotifications(userId: string): Promise<Notification[]> {
+    return db.select().from(notifications)
+      .where(and(eq(notifications.userId, userId), isNull(notifications.dismissedAt)))
+      .orderBy(desc(notifications.createdAt))
+      .limit(50);
+  }
+
+  async getNotification(id: number): Promise<Notification | undefined> {
+    const [notification] = await db.select().from(notifications).where(eq(notifications.id, id));
+    return notification;
+  }
+
+  async getUnreadNotificationCountByOrg(userId: string, orgId: number): Promise<number> {
+    const result = await db.select({ count: sql<number>`count(*)` }).from(notifications)
+      .where(and(
+        eq(notifications.userId, userId),
+        eq(notifications.orgId, orgId),
+        eq(notifications.isRead, false),
+        isNull(notifications.dismissedAt)
+      ));
+    return result[0]?.count || 0;
+  }
+
+  async getUnreadNotificationCount(userId: string): Promise<number> {
+    const result = await db.select({ count: sql<number>`count(*)` }).from(notifications)
+      .where(and(
+        eq(notifications.userId, userId),
+        eq(notifications.isRead, false),
+        isNull(notifications.dismissedAt)
+      ));
+    return result[0]?.count || 0;
+  }
+
+  async createNotification(notification: InsertNotification): Promise<Notification> {
+    const [result] = await db.insert(notifications).values(notification).returning();
+    return result;
+  }
+
+  async markNotificationRead(id: number, userId: string): Promise<Notification | undefined> {
+    const [result] = await db.update(notifications)
+      .set({ isRead: true, readAt: new Date() })
+      .where(and(eq(notifications.id, id), eq(notifications.userId, userId)))
+      .returning();
+    return result;
+  }
+
+  async markAllNotificationsRead(userId: string): Promise<number> {
+    const result = await db.update(notifications)
+      .set({ isRead: true, readAt: new Date() })
+      .where(and(eq(notifications.userId, userId), eq(notifications.isRead, false)));
+    return result.rowCount || 0;
+  }
+
+  async markAllNotificationsReadByOrg(userId: string, orgId: number): Promise<number> {
+    const result = await db.update(notifications)
+      .set({ isRead: true, readAt: new Date() })
+      .where(and(
+        eq(notifications.userId, userId),
+        eq(notifications.orgId, orgId),
+        eq(notifications.isRead, false)
+      ));
+    return result.rowCount || 0;
+  }
+
+  async dismissNotification(id: number, userId: string): Promise<void> {
+    await db.update(notifications)
+      .set({ dismissedAt: new Date() })
+      .where(and(eq(notifications.id, id), eq(notifications.userId, userId)));
+  }
+
+  // ============================================================
+  // TENANT-SCOPED METHODS
+  // These methods filter data by organization ID for multi-tenancy
+  // ============================================================
+
+  async getAssetsByOrg(orgId: number): Promise<Asset[]> {
+    return db.select().from(assets).where(eq(assets.orgId, orgId)).orderBy(desc(assets.createdAt));
+  }
+
+  async getPartsByOrg(orgId: number): Promise<Part[]> {
+    return db.select().from(parts).where(eq(parts.orgId, orgId)).orderBy(parts.partNumber);
+  }
+
+  async getPartsByOrgPaginated(orgId: number, options: { limit: number; offset: number; search?: string }): Promise<{ parts: Part[]; total: number }> {
+    const { limit, offset, search } = options;
+    
+    let conditions = [eq(parts.orgId, orgId)];
+    
+    if (search) {
+      const searchPattern = `%${search.toLowerCase()}%`;
+      const searchCondition = or(
+        sql`LOWER(${parts.partNumber}) LIKE ${searchPattern}`,
+        sql`LOWER(${parts.name}) LIKE ${searchPattern}`
+      );
+      conditions.push(searchCondition as any);
+    }
+    
+    const whereClause = conditions.length > 1 ? and(...conditions) : conditions[0];
+    
+    const [{ count: total }] = await db.select({ count: sql<number>`count(*)::int` }).from(parts).where(whereClause);
+    const partsResult = await db.select().from(parts).where(whereClause).orderBy(parts.partNumber).limit(limit).offset(offset);
+    
+    return { parts: partsResult, total };
+  }
+
+  async recalculateMinMax(orgId: number, params: { leadTimeDays: number; safetyStockDays: number; lookbackDays: number }): Promise<{ partsAnalyzed: number; partsWithUsage: number; partsUpdated: number; updates: Array<{ partId: number; partNumber: string; oldReorderPoint: string; newReorderPoint: string; newMaxQuantity: string }> }> {
+    const { leadTimeDays, safetyStockDays, lookbackDays } = params;
+    
+    // Get all parts for this org (tenant-scoped)
+    const orgParts = await db.select().from(parts).where(eq(parts.orgId, orgId));
+    
+    // Get usage history for the lookback period, joined with parts to ensure tenant isolation
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - lookbackDays);
+    
+    // Tenant-safe query: join partUsageHistory with parts filtered by orgId
+    const usageHistory = await db
+      .select({
+        partId: partUsageHistory.partId,
+        totalQuantity: sql<string>`COALESCE(SUM(${partUsageHistory.quantity}), '0')`,
+        usageCount: sql<number>`COUNT(*)`,
+      })
+      .from(partUsageHistory)
+      .innerJoin(parts, eq(partUsageHistory.partId, parts.id))
+      .where(
+        and(
+          gte(partUsageHistory.usedAt, cutoffDate),
+          isNotNull(partUsageHistory.partId),
+          eq(parts.orgId, orgId) // Tenant isolation via join
+        )
+      )
+      .groupBy(partUsageHistory.partId);
+    
+    const usageMap = new Map(usageHistory.map(u => [u.partId, u]));
+    
+    let updatedCount = 0;
+    const updates: { partId: number; partNumber: string; oldReorderPoint: string; newReorderPoint: string; newMaxQuantity: string }[] = [];
+    
+    for (const part of orgParts) {
+      const usage = usageMap.get(part.id);
+      if (!usage) continue;
+      
+      const totalUsed = parseFloat(usage.totalQuantity || "0");
+      if (totalUsed <= 0) continue;
+      
+      // Calculate average daily usage
+      const avgDailyUsage = totalUsed / lookbackDays;
+      
+      // Reorder point = (average daily usage * lead time) + safety stock
+      const safetyStock = avgDailyUsage * safetyStockDays;
+      const newReorderPoint = Math.ceil((avgDailyUsage * leadTimeDays) + safetyStock);
+      
+      // Max quantity = reorder point + (average daily usage * order cycle days)
+      // Using 30-day order cycle as default
+      const orderCycleDays = 30;
+      const newMaxQuantity = Math.ceil(newReorderPoint + (avgDailyUsage * orderCycleDays));
+      
+      // Reorder quantity = max quantity - reorder point
+      const newReorderQuantity = newMaxQuantity - newReorderPoint;
+      
+      // Only update if values have changed significantly (> 5% difference)
+      const oldReorderPoint = parseFloat(part.reorderPoint || "0");
+      const percentChange = oldReorderPoint > 0 
+        ? Math.abs(newReorderPoint - oldReorderPoint) / oldReorderPoint 
+        : 1;
+      
+      if (percentChange > 0.05 || oldReorderPoint === 0) {
+        await db.update(parts).set({
+          reorderPoint: newReorderPoint.toString(),
+          maxQuantity: newMaxQuantity.toString(),
+          reorderQuantity: newReorderQuantity.toString(),
+          updatedAt: new Date(),
+        }).where(eq(parts.id, part.id));
+        
+        updates.push({
+          partId: part.id,
+          partNumber: part.partNumber,
+          oldReorderPoint: part.reorderPoint || "0",
+          newReorderPoint: newReorderPoint.toString(),
+          newMaxQuantity: newMaxQuantity.toString(),
+        });
+        
+        updatedCount++;
+      }
+    }
+    
+    return {
+      partsAnalyzed: orgParts.length,
+      partsWithUsage: usageHistory.length,
+      partsUpdated: updatedCount,
+      updates,
+    };
+  }
+
+  async getWorkOrdersByOrg(orgId: number): Promise<WorkOrder[]> {
+    return db.select().from(workOrders).where(eq(workOrders.orgId, orgId)).orderBy(desc(workOrders.createdAt));
+  }
+
+  async getLocationsByOrg(orgId: number): Promise<Location[]> {
+    const key = cacheKey("locations", orgId);
+    const cached = dataCache.get<Location[]>(key);
+    if (cached) return cached;
+    
+    const result = await db.select().from(locations).where(eq(locations.orgId, orgId)).orderBy(locations.name);
+    dataCache.set(key, result, 10 * 60 * 1000); // Cache for 10 minutes
+    return result;
+  }
+
+  async getVendorsByOrg(orgId: number): Promise<Vendor[]> {
+    const key = cacheKey("vendors", orgId);
+    const cached = dataCache.get<Vendor[]>(key);
+    if (cached) return cached;
+    
+    const result = await db.select().from(vendors).where(eq(vendors.orgId, orgId)).orderBy(vendors.name);
+    dataCache.set(key, result, 10 * 60 * 1000); // Cache for 10 minutes
+    return result;
+  }
+
+  async getPmSchedulesByOrg(orgId: number): Promise<PmSchedule[]> {
+    const key = cacheKey("pmSchedules", orgId);
+    const cached = dataCache.get<PmSchedule[]>(key);
+    if (cached) return cached;
+    
+    const result = await db.select().from(pmSchedules).where(eq(pmSchedules.orgId, orgId)).orderBy(pmSchedules.name);
+    dataCache.set(key, result, 10 * 60 * 1000); // Cache for 10 minutes
+    return result;
+  }
+
+  async getRequisitionsByOrg(orgId: number): Promise<PurchaseRequisition[]> {
+    return db.select().from(purchaseRequisitions).where(eq(purchaseRequisitions.orgId, orgId)).orderBy(desc(purchaseRequisitions.createdAt));
+  }
+
+  async getPurchaseOrdersByOrg(orgId: number): Promise<PurchaseOrder[]> {
+    return db.select().from(purchaseOrders).where(eq(purchaseOrders.orgId, orgId)).orderBy(desc(purchaseOrders.createdAt));
+  }
+
+  async getEstimatesByOrg(orgId: number): Promise<Estimate[]> {
+    return db.select().from(estimates).where(eq(estimates.orgId, orgId)).orderBy(desc(estimates.createdAt));
+  }
+
+  async getDvirsByOrg(orgId: number): Promise<Dvir[]> {
+    return db.select().from(dvirs).where(eq(dvirs.orgId, orgId)).orderBy(desc(dvirs.inspectionDate));
+  }
+
+  async getManualsByOrg(orgId: number): Promise<Manual[]> {
+    return db.select().from(manuals).where(eq(manuals.orgId, orgId)).orderBy(manuals.manufacturer);
+  }
+
+  async getPredictionsByOrg(orgId: number): Promise<Prediction[]> {
+    return db.select().from(predictions).where(eq(predictions.orgId, orgId)).orderBy(desc(predictions.createdAt));
+  }
+
+  async getFeedbackByOrg(orgId: number): Promise<Feedback[]> {
+    return db.select().from(feedback).where(eq(feedback.orgId, orgId)).orderBy(desc(feedback.createdAt));
+  }
+
+  async getDashboardStatsByOrg(orgId: number, locationId?: number) {
+    // Build asset query with optional location filter
+    let orgAssets;
+    if (locationId) {
+      orgAssets = await db.select().from(assets).where(and(eq(assets.orgId, orgId), eq(assets.locationId, locationId)));
+    } else {
+      orgAssets = await db.select().from(assets).where(eq(assets.orgId, orgId));
+    }
+    
+    // Get asset IDs for filtering work orders
+    const assetIds = new Set(orgAssets.map(a => a.id));
+    
+    // Get work orders - filter by location through assets if location specified
+    let orgWorkOrders;
+    if (locationId) {
+      const allOrgWOs = await db.select().from(workOrders).where(eq(workOrders.orgId, orgId));
+      orgWorkOrders = allOrgWOs.filter(wo => wo.assetId && assetIds.has(wo.assetId));
+    } else {
+      orgWorkOrders = await db.select().from(workOrders).where(eq(workOrders.orgId, orgId));
+    }
+    
+    // Parts are org-scoped (not location-specific typically)
+    const orgParts = await db.select().from(parts).where(eq(parts.orgId, orgId));
+    
+    const now = new Date();
+    const endOfWeek = new Date(now);
+    endOfWeek.setDate(now.getDate() + 7);
+    
+    // Calculate PM due this week - join pmAssetInstances with pmSchedules to filter by org
+    const orgPmSchedules = await db.select().from(pmSchedules).where(eq(pmSchedules.orgId, orgId));
+    const orgPmScheduleIds = new Set(orgPmSchedules.map(pm => pm.id));
+    
+    const allPmInstances = await db.select().from(pmAssetInstances);
+    const pmDueThisWeek = allPmInstances.filter(instance => {
+      if (!orgPmScheduleIds.has(instance.pmScheduleId)) return false;
+      // If location filter, check if the asset is at that location
+      if (locationId && !assetIds.has(instance.assetId)) return false;
+      if (!instance.nextDueDate) return false;
+      const dueDate = new Date(instance.nextDueDate);
+      return dueDate >= now && dueDate <= endOfWeek;
+    }).length;
+    
+    return {
+      totalAssets: orgAssets.length,
+      operationalAssets: orgAssets.filter(a => a.status === "operational").length,
+      inMaintenanceAssets: orgAssets.filter(a => a.status === "in_maintenance").length,
+      downAssets: orgAssets.filter(a => a.status === "down").length,
+      openWorkOrders: orgWorkOrders.filter(w => w.status === "open" || w.status === "in_progress").length,
+      overdueWorkOrders: orgWorkOrders.filter(w => 
+        (w.status === "open" || w.status === "in_progress") && 
+        w.dueDate && new Date(w.dueDate) < now
+      ).length,
+      partsLowStock: orgParts.filter(p => 
+        Number(p.quantityOnHand || 0) <= Number(p.reorderPoint || 0)
+      ).length,
+      pmDueThisWeek,
+    };
+  }
+
+  async getKpiMetricsByOrg(orgId: number, locationId?: number) {
+    // Get assets with optional location filter
+    let orgAssets;
+    if (locationId) {
+      orgAssets = await db.select().from(assets).where(and(eq(assets.orgId, orgId), eq(assets.locationId, locationId)));
+    } else {
+      orgAssets = await db.select().from(assets).where(eq(assets.orgId, orgId));
+    }
+    const assetIds = new Set(orgAssets.map(a => a.id));
+    
+    // Get work orders filtered by location through assets
+    let orgWorkOrders;
+    if (locationId) {
+      const allOrgWOs = await db.select().from(workOrders).where(eq(workOrders.orgId, orgId));
+      orgWorkOrders = allOrgWOs.filter(wo => wo.assetId && assetIds.has(wo.assetId));
+    } else {
+      orgWorkOrders = await db.select().from(workOrders).where(eq(workOrders.orgId, orgId));
+    }
+    const completedWos = orgWorkOrders.filter(w => w.status === "completed" || w.status === "closed");
+    let mttr: number | null = null;
+    const wosWithTimes = completedWos.filter(w => w.startedAt && w.completedAt);
+    if (wosWithTimes.length > 0) {
+      const totalHours = wosWithTimes.reduce((sum, wo) => {
+        const start = new Date(wo.startedAt!).getTime();
+        const end = new Date(wo.completedAt!).getTime();
+        return sum + (end - start) / (1000 * 60 * 60);
+      }, 0);
+      mttr = Math.round((totalHours / wosWithTimes.length) * 10) / 10;
+    }
+    let mtbf: number | null = null;
+    const failureWos = orgWorkOrders.filter(w => 
+      (w.type === "corrective" || w.type === "emergency") && w.assetId
+    ).sort((a, b) => new Date(a.createdAt!).getTime() - new Date(b.createdAt!).getTime());
+    if (failureWos.length > 1) {
+      const intervals: number[] = [];
+      const assetFailures: Record<number, Date[]> = {};
+      failureWos.forEach(wo => {
+        if (!assetFailures[wo.assetId!]) assetFailures[wo.assetId!] = [];
+        assetFailures[wo.assetId!].push(new Date(wo.createdAt!));
+      });
+      Object.values(assetFailures).forEach(dates => {
+        for (let i = 1; i < dates.length; i++) {
+          intervals.push((dates[i].getTime() - dates[i-1].getTime()) / (1000 * 60 * 60 * 24));
+        }
+      });
+      if (intervals.length > 0) {
+        mtbf = Math.round(intervals.reduce((a, b) => a + b, 0) / intervals.length);
+      }
+    }
+    const assetUptime = orgAssets.length > 0 
+      ? Math.round((orgAssets.filter(a => a.status === "operational").length / orgAssets.length) * 100) 
+      : null;
+    const pmCompliance = 85;
+    let avgCostPerWo: number | null = null;
+    const wosWithCost = completedWos.filter(w => Number(w.actualCost || 0) > 0);
+    if (wosWithCost.length > 0) {
+      avgCostPerWo = Math.round(wosWithCost.reduce((sum, w) => sum + Number(w.actualCost || 0), 0) / wosWithCost.length);
+    }
+    return { mttr, mtbf, assetUptime, pmCompliance, avgCostPerWo };
+  }
+
+  async getProcurementOverviewByOrg(orgId: number, locationId?: number) {
+    // Procurement is org-wide, not location-specific
+    // locationId parameter included for API consistency but not used for filtering
+    const orgReqs = await db.select().from(purchaseRequisitions).where(eq(purchaseRequisitions.orgId, orgId));
+    const orgPos = await db.select().from(purchaseOrders).where(eq(purchaseOrders.orgId, orgId));
+    return {
+      pendingRequisitions: orgReqs.filter(r => r.status === "pending" || r.status === "submitted").length,
+      approvedRequisitions: orgReqs.filter(r => r.status === "approved").length,
+      openPurchaseOrders: orgPos.filter(p => p.status === "open" || p.status === "submitted").length,
+      partiallyReceivedPOs: orgPos.filter(p => p.status === "partially_received").length,
+      totalOpenPOValue: orgPos
+        .filter(p => p.status === "open" || p.status === "submitted" || p.status === "partially_received")
+        .reduce((sum, po) => sum + Number(po.totalAmount || 0), 0),
+    };
+  }
+
+  async getPartsAnalyticsByOrg(orgId: number, locationId?: number) {
+    // Parts are org-wide, not location-specific
+    // locationId parameter included for API consistency but not used for filtering
+    const orgParts = await db.select().from(parts).where(eq(parts.orgId, orgId));
+    const orgPartIds = new Set(orgParts.map(p => p.id));
+    
+    // Get all transactions and filter by org parts (since transactions don't have orgId)
+    const allTransactions = await db.select().from(inventoryTransactions);
+    const orgTransactions = allTransactions.filter(t => t.partId && orgPartIds.has(t.partId));
+    
+    const partUsage: Record<number, { count: number; cost: number }> = {};
+    orgTransactions
+      .filter(t => t.type === "part_consumption" && t.partId)
+      .forEach(t => {
+        if (!partUsage[t.partId!]) partUsage[t.partId!] = { count: 0, cost: 0 };
+        partUsage[t.partId!].count += Number(t.quantity || 1);
+        partUsage[t.partId!].cost += Number(t.totalCost || 0);
+      });
+    const topUsedParts = Object.entries(partUsage)
+      .map(([partId, usage]) => {
+        const part = orgParts.find(p => p.id === parseInt(partId));
+        return {
+          partId: parseInt(partId),
+          partNumber: part?.partNumber || "Unknown",
+          partName: part?.name || "Unknown",
+          usageCount: usage.count,
+          totalCost: usage.cost,
+        };
+      })
+      .sort((a, b) => b.usageCount - a.usageCount)
+      .slice(0, 5);
+    const lowStockCritical = orgParts.filter(p => {
+      const qty = Number(p.quantityOnHand || 0);
+      const reorder = Number(p.reorderPoint || 0);
+      return qty <= reorder && qty <= 5;
+    }).length;
+    return { topUsedParts, lowStockCritical };
+  }
+
+  async getTireHealthStats(orgId?: number, locationId?: number) {
+    let allTires: Tire[];
+    if (orgId) {
+      allTires = await db.select().from(tires).where(eq(tires.orgId, orgId));
+    } else {
+      allTires = await db.select().from(tires);
+    }
+    
+    // Get assets for location filtering
+    let allAssets;
+    if (orgId && locationId) {
+      allAssets = await db.select().from(assets).where(and(eq(assets.orgId, orgId), eq(assets.locationId, locationId)));
+    } else if (orgId) {
+      allAssets = await db.select().from(assets).where(eq(assets.orgId, orgId));
+    } else {
+      allAssets = await db.select().from(assets);
+    }
+    const assetMap = new Map(allAssets.map(a => [a.id, a]));
+    const locationAssetIds = new Set(allAssets.map(a => a.id));
+    
+    // Filter tires by location if specified
+    let filteredTires = allTires;
+    if (locationId) {
+      filteredTires = allTires.filter(t => t.assetId && locationAssetIds.has(t.assetId));
+    }
+    
+    const installedTires = filteredTires.filter(t => t.status === "installed");
+    const healthyTires = installedTires.filter(t => t.condition === "new" || t.condition === "good");
+    const warningTires = installedTires.filter(t => t.condition === "fair" || t.condition === "worn");
+    const criticalTires = installedTires.filter(t => t.condition === "critical" || t.condition === "failed");
+    
+    const tiresWithDepth = installedTires.filter(t => t.treadDepth !== null);
+    const avgTreadDepth = tiresWithDepth.length > 0 
+      ? tiresWithDepth.reduce((sum, t) => sum + Number(t.treadDepth || 0), 0) / tiresWithDepth.length
+      : 0;
+    
+    const tiresNeedingReplacement = criticalTires.slice(0, 5).map(tire => ({
+      id: tire.id,
+      serialNumber: tire.serialNumber,
+      assetName: tire.assetId ? (assetMap.get(tire.assetId)?.name || "Unknown") : "In Inventory",
+      position: tire.position || "",
+      treadDepth: Number(tire.treadDepth || 0),
+      condition: tire.condition || "unknown",
+    }));
+    
+    return {
+      totalTires: installedTires.length,
+      healthyTires: healthyTires.length,
+      warningTires: warningTires.length,
+      criticalTires: criticalTires.length,
+      averageTreadDepth: avgTreadDepth,
+      tiresNeedingReplacement,
+    };
+  }
+
+  async getAdminRecordCounts(orgId?: number): Promise<{
+    assets: number;
+    workOrders: number;
+    parts: number;
+    dvirs: number;
+    pmSchedules: number;
+    documents: number;
+  }> {
+    if (orgId) {
+      const [assetCount] = await db.select({ count: sql<number>`count(*)::int` }).from(assets).where(eq(assets.orgId, orgId));
+      const [woCount] = await db.select({ count: sql<number>`count(*)::int` }).from(workOrders).where(eq(workOrders.orgId, orgId));
+      const [partCount] = await db.select({ count: sql<number>`count(*)::int` }).from(parts).where(eq(parts.orgId, orgId));
+      const [dvirCount] = await db.select({ count: sql<number>`count(*)::int` }).from(dvirs).where(eq(dvirs.orgId, orgId));
+      const [pmCount] = await db.select({ count: sql<number>`count(*)::int` }).from(pmSchedules).where(eq(pmSchedules.orgId, orgId));
+      // Count documents through assets (assetDocuments doesn't have orgId directly)
+      const [docCount] = await db.select({ count: sql<number>`count(*)::int` })
+        .from(assetDocuments)
+        .innerJoin(assets, eq(assetDocuments.assetId, assets.id))
+        .where(eq(assets.orgId, orgId));
+      
+      return {
+        assets: assetCount?.count || 0,
+        workOrders: woCount?.count || 0,
+        parts: partCount?.count || 0,
+        dvirs: dvirCount?.count || 0,
+        pmSchedules: pmCount?.count || 0,
+        documents: docCount?.count || 0,
+      };
+    } else {
+      const [assetCount] = await db.select({ count: sql<number>`count(*)::int` }).from(assets);
+      const [woCount] = await db.select({ count: sql<number>`count(*)::int` }).from(workOrders);
+      const [partCount] = await db.select({ count: sql<number>`count(*)::int` }).from(parts);
+      const [dvirCount] = await db.select({ count: sql<number>`count(*)::int` }).from(dvirs);
+      const [pmCount] = await db.select({ count: sql<number>`count(*)::int` }).from(pmSchedules);
+      const [docCount] = await db.select({ count: sql<number>`count(*)::int` }).from(assetDocuments);
+      
+      return {
+        assets: assetCount?.count || 0,
+        workOrders: woCount?.count || 0,
+        parts: partCount?.count || 0,
+        dvirs: dvirCount?.count || 0,
+        pmSchedules: pmCount?.count || 0,
+        documents: docCount?.count || 0,
+      };
+    }
+  }
+
+  async getPartKitsByOrg(orgId: number): Promise<PartKit[]> {
+    return db.select().from(partKits).where(eq(partKits.orgId, orgId)).orderBy(partKits.name);
+  }
+
+  async getCycleCountsByOrg(orgId: number): Promise<CycleCount[]> {
+    return db.select().from(cycleCounts).where(eq(cycleCounts.orgId, orgId)).orderBy(desc(cycleCounts.scheduledDate));
+  }
+
+  async getChecklistTemplatesByOrg(orgId: number): Promise<ChecklistTemplate[]> {
+    return db.select().from(checklistTemplates).where(eq(checklistTemplates.orgId, orgId)).orderBy(checklistTemplates.name);
+  }
+
+  async getPartRequestsByOrg(orgId: number, status?: string): Promise<PartRequest[]> {
+    if (status) {
+      return db.select().from(partRequests)
+        .where(and(eq(partRequests.orgId, orgId), eq(partRequests.status, status)))
+        .orderBy(desc(partRequests.createdAt));
+    }
+    return db.select().from(partRequests).where(eq(partRequests.orgId, orgId)).orderBy(desc(partRequests.createdAt));
+  }
+
+  async getNotificationsByOrg(orgId: number, userId: string): Promise<Notification[]> {
+    return db.select().from(notifications)
+      .where(and(eq(notifications.orgId, orgId), eq(notifications.userId, userId), isNull(notifications.dismissedAt)))
+      .orderBy(desc(notifications.createdAt));
+  }
+
+  async getDashboardStatsByOrg(orgId: number): Promise<{
+    totalAssets: number;
+    operationalAssets: number;
+    inMaintenanceAssets: number;
+    downAssets: number;
+    openWorkOrders: number;
+    overdueWorkOrders: number;
+    partsLowStock: number;
+    pmDueThisWeek: number;
+  }> {
+    const orgAssets = await db.select().from(assets).where(eq(assets.orgId, orgId));
+    const orgWorkOrders = await db.select().from(workOrders).where(eq(workOrders.orgId, orgId));
+    const orgParts = await db.select().from(parts).where(eq(parts.orgId, orgId));
+
+    const operational = orgAssets.filter(a => a.status === "operational").length;
+    const inMaintenance = orgAssets.filter(a => a.status === "in_maintenance").length;
+    const down = orgAssets.filter(a => a.status === "down").length;
+    const openWos = orgWorkOrders.filter(w => w.status === "open" || w.status === "in_progress").length;
+    const overdueWos = orgWorkOrders.filter(w => w.dueDate && new Date(w.dueDate) < new Date() && w.status !== "completed" && w.status !== "cancelled").length;
+    const lowStock = orgParts.filter(p => p.reorderPoint && p.quantityOnHand && parseFloat(p.quantityOnHand) <= parseFloat(p.reorderPoint)).length;
+
+    // Calculate PM due this week - join pmAssetInstances with pmSchedules to filter by org
+    const now = new Date();
+    const endOfWeek = new Date(now);
+    endOfWeek.setDate(now.getDate() + 7);
+    
+    const orgPmSchedules = await db.select().from(pmSchedules).where(eq(pmSchedules.orgId, orgId));
+    const orgPmScheduleIds = new Set(orgPmSchedules.map(pm => pm.id));
+    
+    const allPmInstances = await db.select().from(pmAssetInstances);
+    const pmDueThisWeek = allPmInstances.filter(instance => {
+      if (!orgPmScheduleIds.has(instance.pmScheduleId)) return false;
+      if (!instance.nextDueDate) return false;
+      const dueDate = new Date(instance.nextDueDate);
+      return dueDate >= now && dueDate <= endOfWeek;
+    }).length;
+
+    return {
+      totalAssets: orgAssets.length,
+      operationalAssets: operational,
+      inMaintenanceAssets: inMaintenance,
+      downAssets: down,
+      openWorkOrders: openWos,
+      overdueWorkOrders: overdueWos,
+      partsLowStock: lowStock,
+      pmDueThisWeek,
+    };
+  }
+
+  // Validate entity belongs to org
+  async validateAssetOrg(assetId: number, orgId: number): Promise<boolean> {
+    const [asset] = await db.select().from(assets).where(and(eq(assets.id, assetId), eq(assets.orgId, orgId)));
+    return !!asset;
+  }
+
+  async validateWorkOrderOrg(workOrderId: number, orgId: number): Promise<boolean> {
+    const [wo] = await db.select().from(workOrders).where(and(eq(workOrders.id, workOrderId), eq(workOrders.orgId, orgId)));
+    return !!wo;
+  }
+
+  async validatePartOrg(partId: number, orgId: number): Promise<boolean> {
+    const [part] = await db.select().from(parts).where(and(eq(parts.id, partId), eq(parts.orgId, orgId)));
+    return !!part;
+  }
+
+  // Tires
+  async getTiresByOrg(orgId: number): Promise<Tire[]> {
+    return db.select().from(tires).where(eq(tires.orgId, orgId)).orderBy(desc(tires.createdAt));
+  }
+
+  async getTires(): Promise<Tire[]> {
+    return db.select().from(tires).orderBy(desc(tires.createdAt));
+  }
+
+  async getTire(id: number): Promise<Tire | undefined> {
+    const [tire] = await db.select().from(tires).where(eq(tires.id, id));
+    return tire;
+  }
+
+  async createTire(data: InsertTire & { orgId?: number }): Promise<Tire> {
+    const [tire] = await db.insert(tires).values(data).returning();
+    return tire;
+  }
+
+  async updateTire(id: number, data: Partial<InsertTire>): Promise<Tire | undefined> {
+    const [tire] = await db.update(tires).set({ ...data, updatedAt: new Date() }).where(eq(tires.id, id)).returning();
+    return tire;
+  }
+
+  async deleteTire(id: number): Promise<void> {
+    await db.delete(tires).where(eq(tires.id, id));
+  }
+
+  // Conversations
+  async getConversationsByOrg(orgId: number): Promise<Conversation[]> {
+    return db.select().from(conversations).where(eq(conversations.orgId, orgId)).orderBy(desc(conversations.updatedAt));
+  }
+
+  async getConversations(): Promise<Conversation[]> {
+    return db.select().from(conversations).orderBy(desc(conversations.updatedAt));
+  }
+
+  async getConversation(id: number): Promise<Conversation | undefined> {
+    const [conv] = await db.select().from(conversations).where(eq(conversations.id, id));
+    return conv;
+  }
+
+  async createConversation(data: InsertConversation & { orgId?: number }): Promise<Conversation> {
+    const [conv] = await db.insert(conversations).values(data).returning();
+    return conv;
+  }
+
+  async addConversationParticipant(conversationId: number, userId: string): Promise<void> {
+    await db.insert(conversationParticipants).values({ conversationId, userId });
+  }
+
+  async getConversationParticipants(conversationId: number): Promise<{ userId: string }[]> {
+    return db.select({ userId: conversationParticipants.userId })
+      .from(conversationParticipants)
+      .where(eq(conversationParticipants.conversationId, conversationId));
+  }
+
+  // Messages
+  async getMessagesByConversation(conversationId: number): Promise<Message[]> {
+    return db.select().from(messages).where(eq(messages.conversationId, conversationId)).orderBy(messages.createdAt);
+  }
+
+  async createMessage(data: InsertMessage): Promise<Message> {
+    const [msg] = await db.insert(messages).values(data).returning();
+    return msg;
+  }
+
+  // Saved Reports
+  async getSavedReportsByOrg(orgId: number): Promise<SavedReport[]> {
+    return db.select().from(savedReports).where(eq(savedReports.orgId, orgId)).orderBy(desc(savedReports.createdAt));
+  }
+
+  async getSavedReports(): Promise<SavedReport[]> {
+    return db.select().from(savedReports).orderBy(desc(savedReports.createdAt));
+  }
+
+  async getSavedReport(id: number): Promise<SavedReport | undefined> {
+    const [report] = await db.select().from(savedReports).where(eq(savedReports.id, id));
+    return report;
+  }
+
+  async createSavedReport(data: InsertSavedReport & { orgId?: number }): Promise<SavedReport> {
+    const [report] = await db.insert(savedReports).values(data).returning();
+    return report;
+  }
+
+  async deleteSavedReport(id: number): Promise<void> {
+    await db.delete(savedReports).where(eq(savedReports.id, id));
+  }
+
+  // GPS Locations
+  async getGpsLocationsByOrg(orgId: number, assetId?: number): Promise<GpsLocation[]> {
+    if (assetId) {
+      return db.select().from(gpsLocations)
+        .where(and(eq(gpsLocations.orgId, orgId), eq(gpsLocations.assetId, assetId)))
+        .orderBy(desc(gpsLocations.timestamp))
+        .limit(100);
+    }
+    return db.select().from(gpsLocations).where(eq(gpsLocations.orgId, orgId)).orderBy(desc(gpsLocations.timestamp)).limit(100);
+  }
+
+  async getGpsLocations(assetId?: number): Promise<GpsLocation[]> {
+    if (assetId) {
+      return db.select().from(gpsLocations).where(eq(gpsLocations.assetId, assetId)).orderBy(desc(gpsLocations.timestamp)).limit(100);
+    }
+    return db.select().from(gpsLocations).orderBy(desc(gpsLocations.timestamp)).limit(100);
+  }
+
+  async getGpsLocationsByAsset(assetId: number): Promise<GpsLocation[]> {
+    return db.select().from(gpsLocations).where(eq(gpsLocations.assetId, assetId)).orderBy(desc(gpsLocations.timestamp)).limit(100);
+  }
+
+  async createGpsLocation(data: InsertGpsLocation & { orgId?: number }): Promise<GpsLocation> {
+    const [loc] = await db.insert(gpsLocations).values(data).returning();
+    return loc;
+  }
+
+  // Tire Replacement Settings
+  async getTireReplacementSettingsByOrg(orgId: number): Promise<TireReplacementSetting[]> {
+    return db.select().from(tireReplacementSettings).where(eq(tireReplacementSettings.orgId, orgId));
+  }
+
+  async getTireReplacementSetting(id: number): Promise<TireReplacementSetting | undefined> {
+    const [setting] = await db.select().from(tireReplacementSettings).where(eq(tireReplacementSettings.id, id));
+    return setting;
+  }
+
+  async createTireReplacementSetting(data: InsertTireReplacementSetting): Promise<TireReplacementSetting> {
+    const [setting] = await db.insert(tireReplacementSettings).values(data).returning();
+    return setting;
+  }
+
+  async updateTireReplacementSetting(id: number, data: Partial<InsertTireReplacementSetting>): Promise<TireReplacementSetting | undefined> {
+    const [updated] = await db.update(tireReplacementSettings)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(tireReplacementSettings.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteTireReplacementSetting(id: number): Promise<void> {
+    await db.delete(tireReplacementSettings).where(eq(tireReplacementSettings.id, id));
+  }
+
+  // Public Asset Tokens (for QR Code DVIR)
+  async getPublicAssetTokensByOrg(orgId: number): Promise<PublicAssetToken[]> {
+    return db.select().from(publicAssetTokens).where(eq(publicAssetTokens.orgId, orgId));
+  }
+
+  async getPublicAssetTokenByAsset(assetId: number): Promise<PublicAssetToken | undefined> {
+    const [token] = await db.select().from(publicAssetTokens)
+      .where(and(eq(publicAssetTokens.assetId, assetId), eq(publicAssetTokens.isActive, true)));
+    return token;
+  }
+
+  async getPublicAssetTokenByToken(token: string): Promise<PublicAssetToken | undefined> {
+    const [tokenRecord] = await db.select().from(publicAssetTokens)
+      .where(and(eq(publicAssetTokens.token, token), eq(publicAssetTokens.isActive, true)));
+    return tokenRecord;
+  }
+
+  async createPublicAssetToken(data: InsertPublicAssetToken): Promise<PublicAssetToken> {
+    const [token] = await db.insert(publicAssetTokens).values(data).returning();
+    return token;
+  }
+
+  async updatePublicAssetToken(id: number, data: Partial<InsertPublicAssetToken>): Promise<PublicAssetToken | undefined> {
+    const [updated] = await db.update(publicAssetTokens)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(publicAssetTokens.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deletePublicAssetToken(id: number): Promise<void> {
+    await db.delete(publicAssetTokens).where(eq(publicAssetTokens.id, id));
+  }
+
+  // Get asset details for public DVIR submission
+  async getAssetForPublicDvir(token: string): Promise<{ asset: Asset; org: Organization } | undefined> {
+    const tokenRecord = await this.getPublicAssetTokenByToken(token);
+    if (!tokenRecord) return undefined;
+    
+    const asset = await this.getAsset(tokenRecord.assetId);
+    if (!asset) return undefined;
+    
+    const org = await this.getOrganization(tokenRecord.orgId);
+    if (!org) return undefined;
+    
+    return { asset, org };
+  }
+
+  // Classification Runs
+  async getClassificationRuns(orgId: number): Promise<ClassificationRun[]> {
+    return db.select().from(classificationRuns)
+      .where(eq(classificationRuns.orgId, orgId))
+      .orderBy(desc(classificationRuns.startedAt));
+  }
+
+  async getClassificationRun(id: number): Promise<ClassificationRun | undefined> {
+    const [run] = await db.select().from(classificationRuns)
+      .where(eq(classificationRuns.id, id));
+    return run;
+  }
+
+  async createClassificationRun(run: InsertClassificationRun): Promise<ClassificationRun> {
+    const [created] = await db.insert(classificationRuns).values(run).returning();
+    return created;
+  }
+
+  async updateClassificationRun(id: number, run: Partial<InsertClassificationRun>): Promise<ClassificationRun | undefined> {
+    const [updated] = await db.update(classificationRuns)
+      .set(run)
+      .where(eq(classificationRuns.id, id))
+      .returning();
+    return updated;
+  }
+
+  // Classification Snapshots
+  async getPartClassificationSnapshots(runId: number): Promise<PartClassificationSnapshot[]> {
+    return db.select().from(partClassificationSnapshots)
+      .where(eq(partClassificationSnapshots.runId, runId));
+  }
+
+  async getLatestPartClassificationSnapshot(partId: number): Promise<PartClassificationSnapshot | undefined> {
+    const [snapshot] = await db.select().from(partClassificationSnapshots)
+      .where(eq(partClassificationSnapshots.partId, partId))
+      .orderBy(desc(partClassificationSnapshots.createdAt))
+      .limit(1);
+    return snapshot;
+  }
+
+  async createPartClassificationSnapshot(snapshot: InsertPartClassificationSnapshot): Promise<PartClassificationSnapshot> {
+    const [created] = await db.insert(partClassificationSnapshots).values(snapshot).returning();
+    return created;
+  }
+
+  // Classification Audit Log
+  async getClassificationAuditLog(orgId: number, partId?: number): Promise<ClassificationAuditLog[]> {
+    if (partId) {
+      return db.select().from(classificationAuditLog)
+        .where(and(eq(classificationAuditLog.orgId, orgId), eq(classificationAuditLog.partId, partId)))
+        .orderBy(desc(classificationAuditLog.changedAt));
+    }
+    return db.select().from(classificationAuditLog)
+      .where(eq(classificationAuditLog.orgId, orgId))
+      .orderBy(desc(classificationAuditLog.changedAt));
+  }
+
+  async createClassificationAuditLogEntry(entry: InsertClassificationAuditLog): Promise<ClassificationAuditLog> {
+    const [created] = await db.insert(classificationAuditLog).values(entry).returning();
+    return created;
+  }
+
+  // Events
+  async getEventsByOrg(orgId: number): Promise<Event[]> {
+    return db.select().from(events)
+      .where(eq(events.orgId, orgId))
+      .orderBy(desc(events.startTime));
+  }
+
+  async getEvent(id: number): Promise<Event | undefined> {
+    const [event] = await db.select().from(events)
+      .where(eq(events.id, id));
+    return event;
+  }
+
+  async createEvent(event: InsertEvent): Promise<Event> {
+    const [created] = await db.insert(events).values(event).returning();
+    return created;
+  }
+
+  async updateEvent(id: number, event: Partial<InsertEvent>): Promise<Event | undefined> {
+    const [updated] = await db.update(events)
+      .set(event)
+      .where(eq(events.id, id))
+      .returning();
+    return updated;
+  }
+
+  // Event Parts
+  async getEventParts(eventId: number): Promise<EventPart[]> {
+    return db.select().from(eventParts)
+      .where(eq(eventParts.eventId, eventId));
+  }
+
+  async createEventPart(eventPart: InsertEventPart): Promise<EventPart> {
+    const [created] = await db.insert(eventParts).values(eventPart).returning();
+    return created;
+  }
+
+  // Classification Aggregation Queries
+  async getPartUsageAggregation(orgId: number, windowMonths: number): Promise<Array<{ partId: number; totalQty: number; totalSpend: number }>> {
+    const windowStart = new Date();
+    windowStart.setMonth(windowStart.getMonth() - windowMonths);
+    
+    const result = await db.execute(sql`
+      SELECT 
+        part_id as "partId",
+        COALESCE(SUM(CAST(quantity AS DECIMAL)), 0) as "totalQty",
+        COALESCE(SUM(CAST(quantity AS DECIMAL) * COALESCE(p.unit_cost, 0)), 0) as "totalSpend"
+      FROM part_usage_history puh
+      LEFT JOIN parts p ON puh.part_id = p.id
+      WHERE puh.part_id IS NOT NULL 
+        AND p.org_id = ${orgId}
+        AND puh.used_at >= ${windowStart}
+      GROUP BY part_id
+    `);
+    
+    return (result.rows as any[]).map(r => ({
+      partId: Number(r.partId),
+      totalQty: Number(r.totalQty),
+      totalSpend: Number(r.totalSpend)
+    }));
+  }
+
+  async getPartMonthlyUsage(partId: number, windowMonths: number): Promise<Array<{ month: string; qty: number }>> {
+    const windowStart = new Date();
+    windowStart.setMonth(windowStart.getMonth() - windowMonths);
+    
+    const result = await db.execute(sql`
+      SELECT 
+        TO_CHAR(used_at, 'YYYY-MM') as month,
+        COALESCE(SUM(CAST(quantity AS DECIMAL)), 0) as qty
+      FROM part_usage_history
+      WHERE part_id = ${partId}
+        AND used_at >= ${windowStart}
+      GROUP BY TO_CHAR(used_at, 'YYYY-MM')
+      ORDER BY month
+    `);
+    
+    return (result.rows as any[]).map(r => ({
+      month: r.month,
+      qty: Number(r.qty)
+    }));
+  }
+
+  async getPartRoadcallStats(partId: number, windowMonths: number): Promise<{ count: number; downtimeHours: number }> {
+    const windowStart = new Date();
+    windowStart.setMonth(windowStart.getMonth() - windowMonths);
+    
+    const result = await db.execute(sql`
+      SELECT 
+        COUNT(DISTINCT e.id) as count,
+        COALESCE(SUM(CAST(e.downtime_hours AS DECIMAL)), 0) as "downtimeHours"
+      FROM events e
+      INNER JOIN event_parts ep ON e.id = ep.event_id
+      WHERE ep.part_id = ${partId}
+        AND e.event_type = 'ROAD_CALL'
+        AND e.start_time >= ${windowStart}
+    `);
+    
+    const row = (result.rows as any[])[0];
+    return {
+      count: Number(row?.count || 0),
+      downtimeHours: Number(row?.downtimeHours || 0)
+    };
   }
 }
 

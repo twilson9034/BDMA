@@ -5,7 +5,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation, useRoute, Link } from "wouter";
 import { 
   ArrowLeft, Save, Loader2, Edit, Package, 
-  MapPin, DollarSign, BarChart3, X, AlertTriangle, ShoppingCart
+  MapPin, DollarSign, BarChart3, X, AlertTriangle, ShoppingCart, Printer
 } from "lucide-react";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
@@ -613,10 +613,107 @@ export default function PartDetail() {
                 <span className="text-muted-foreground">Unit</span>
                 <span>{part.unitOfMeasure || "each"}</span>
               </div>
+              {!part.barcode && (
+                <div className="flex flex-col gap-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Barcode</span>
+                    <span className="text-xs text-muted-foreground">Not set</span>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full"
+                    data-testid="button-generate-barcode"
+                    onClick={async () => {
+                      const generatedBarcode = `P${String(part.id).padStart(8, '0')}`;
+                      try {
+                        await apiRequest("PATCH", `/api/parts/${part.id}`, { barcode: generatedBarcode });
+                        queryClient.invalidateQueries({ queryKey: ["/api/parts", part.id] });
+                        queryClient.invalidateQueries({ queryKey: ["/api/parts"] });
+                        toast({ title: "Barcode Generated", description: `Barcode ${generatedBarcode} has been assigned to this part.` });
+                      } catch {
+                        toast({ title: "Error", description: "Failed to generate barcode", variant: "destructive" });
+                      }
+                    }}
+                  >
+                    <Package className="h-4 w-4 mr-2" />
+                    Generate Barcode
+                  </Button>
+                </div>
+              )}
               {part.barcode && (
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Barcode</span>
-                  <span className="font-mono">{part.barcode}</span>
+                <div className="flex flex-col gap-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Barcode</span>
+                    <span className="font-mono">{part.barcode}</span>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full"
+                    data-testid="button-print-barcode"
+                    onClick={() => {
+                      const printWindow = window.open('', '_blank', 'width=400,height=300');
+                      if (printWindow) {
+                        printWindow.document.write(`
+                          <!DOCTYPE html>
+                          <html>
+                          <head>
+                            <title>Print Barcode - ${part.partNumber}</title>
+                            <style>
+                              body { 
+                                font-family: Arial, sans-serif; 
+                                text-align: center; 
+                                padding: 20px;
+                                margin: 0;
+                              }
+                              .barcode-container {
+                                border: 2px dashed #ccc;
+                                padding: 20px;
+                                margin: 10px;
+                                display: inline-block;
+                              }
+                              .barcode {
+                                font-family: 'Libre Barcode 39', monospace;
+                                font-size: 48px;
+                                letter-spacing: 2px;
+                              }
+                              .barcode-text {
+                                font-family: monospace;
+                                font-size: 14px;
+                                margin-top: 8px;
+                              }
+                              .part-info {
+                                font-size: 12px;
+                                margin-top: 8px;
+                                color: #666;
+                              }
+                              @media print {
+                                .no-print { display: none; }
+                                .barcode-container { border: 1px solid #000; }
+                              }
+                            </style>
+                            <link href="https://fonts.googleapis.com/css2?family=Libre+Barcode+39&display=swap" rel="stylesheet">
+                          </head>
+                          <body>
+                            <div class="barcode-container">
+                              <div class="barcode">*${part.barcode}*</div>
+                              <div class="barcode-text">${part.barcode}</div>
+                              <div class="part-info">${part.partNumber} - ${part.name}</div>
+                            </div>
+                            <div class="no-print" style="margin-top: 20px;">
+                              <button onclick="window.print()" style="padding: 10px 20px; cursor: pointer;">Print</button>
+                            </div>
+                          </body>
+                          </html>
+                        `);
+                        printWindow.document.close();
+                      }
+                    }}
+                  >
+                    <Printer className="h-4 w-4 mr-2" />
+                    Print Barcode Label
+                  </Button>
                 </div>
               )}
               {part.createdAt && (

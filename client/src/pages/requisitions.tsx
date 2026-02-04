@@ -21,6 +21,7 @@ export default function Requisitions() {
   const mockRequisitions: PurchaseRequisition[] = [
     {
       id: 1,
+      orgId: 1,
       requisitionNumber: "REQ-2024-0012",
       title: "Monthly oil and filter restock",
       description: "Regular restock of engine oils and filters",
@@ -36,6 +37,7 @@ export default function Requisitions() {
     },
     {
       id: 2,
+      orgId: 1,
       requisitionNumber: "REQ-2024-0011",
       title: "Emergency brake parts",
       description: "Brake pads and rotors for emergency repair",
@@ -51,6 +53,7 @@ export default function Requisitions() {
     },
     {
       id: 3,
+      orgId: 1,
       requisitionNumber: "REQ-2024-0010",
       title: "Tire replacement batch",
       description: "New tires for fleet vehicles",

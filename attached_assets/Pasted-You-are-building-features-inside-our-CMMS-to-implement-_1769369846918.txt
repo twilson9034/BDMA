@@ -1,0 +1,193 @@
+You are building features inside our CMMS to implement a SMART inventory classification system that combines:
+- cost impact (annual spend)
+- road-call / downtime impact
+- safety & compliance impact
+We want the system to auto-classify parts using historical usage and events, and also allow manual overrides with audit history.
+
+GOALS
+1) Create a hybrid classification framework with these output labels:
+   - Class S = Safety/Compliance Override (always highest control)
+   - Class A = high priority
+   - Class B = medium priority
+   - Class C = low priority
+   Additionally assign an XYZ volatility tag:
+   - X = steady demand
+   - Y = moderate variability / seasonal
+   - Z = sporadic
+   Output example: “S-Z”, “A-X”, “B-Y”, etc.
+
+2) Auto-classify parts daily (or on demand) using:
+   - rolling usage history (12 months default; support 24 months option)
+   - unit cost
+   - work order consumption links
+   - road-call events linked to parts (and optionally downtime hours)
+   - VMRS codes and safety mapping (brakes/steering/wheels/etc.)
+   - compliance flags + recall/traceability flags
+   - lead time (if available) as a tie-breaker or minor score boost
+
+3) Keep everything explainable:
+   - store the inputs used for scoring for each part per run
+   - store the computed sub-scores (Cost, RoadCall, Safety)
+   - store final score + resulting class + XYZ tag
+   - provide a “Why is this class?” UI that lists top drivers and values
+
+DATA MODEL (add tables/fields)
+A) parts
+   - id (pk)
+   - part_number (unique)
+   - name
+   - description
+   - manufacturer
+   - unit_cost (decimal)
+   - uom
+   - preferred_supplier_id (nullable)
+   - lead_time_days (nullable int)
+   - vmrs_system_code (nullable)   // e.g., 013
+   - vmrs_assembly_code (nullable) // e.g., 001
+   - vmrs_component_code (nullable) // e.g., 012
+   - safety_system (enum/nullable) // e.g., BRAKES, STEERING, TIRES_WHEELS, SUSPENSION, ELECTRICAL, HVAC, OTHER
+   - failure_severity (int 1-5, default 1)
+   - compliance_override (bool default false) // if true => Class S
+   - traceability_required (bool default false)
+   - substitute_allowed (bool default true)
+   - classification_current (string) // e.g., “A”, “B”, “C”, “S”
+   - xyz_current (string) // “X”, “Y”, “Z”
+   - priority_score_current (decimal)
+   - last_classified_at (datetime)
+   - classification_locked (bool default false) // if true, auto-classification cannot change class; still compute score for visibility
+
+B) part_usage (or derive from transactions)
+   - id
+   - part_id
+   - quantity
+   - unit_cost_at_time (decimal)
+   - location_id
+   - consumed_at (datetime)
+   - work_order_id (nullable)
+   - event_type (enum) // ISSUE, RETURN, ADJUSTMENT, etc.
+
+C) events (road calls + downtime)
+   - id
+   - unit_id
+   - event_type (enum: ROAD_CALL, BREAKDOWN, INSPECTION_FAIL, PM, etc.)
+   - start_time, end_time
+   - downtime_hours (computed or stored)
+   - severity (0-3 optional)
+   - notes
+
+D) event_parts (link parts to events)
+   - id
+   - event_id
+   - part_id
+   - quantity
+   - confidence (0-1) // in case link is inferred
+   - link_method (enum: MANUAL, FROM_WORK_ORDER, INFERRED)
+
+E) classification_runs
+   - id
+   - started_at
+   - finished_at
+   - window_months (12 or 24)
+   - parameters_json (weights, thresholds)
+   - status
+
+F) part_classification_snapshots
+   - id
+   - run_id
+   - part_id
+   - annual_qty (decimal)
+   - annual_spend (decimal)
+   - cost_score (0-100)
+   - roadcall_count (int)
+   - downtime_hours (decimal)
+   - roadcall_score (0-100)
+   - safety_score (0-100)
+   - total_score (0-100)
+   - class_result (“S”/“A”/“B”/“C”)
+   - xyz_result (“X”/“Y”/“Z”)
+   - explanation_json // top factors
+
+G) classification_audit_log
+   - id
+   - part_id
+   - changed_by_user_id (nullable for system)
+   - changed_at
+   - old_class, new_class
+   - old_xyz, new_xyz
+   - reason (text)
+   - is_system (bool)
+
+SCORING + CLASSIFICATION LOGIC
+1) Hard overrides:
+   If parts.compliance_override = true OR parts.traceability_required = true OR safety_system in (BRAKES, STEERING, TIRES_WHEELS) AND failure_severity >= 4:
+      => class_result = “S”
+      (still compute scores; S is final)
+
+2) Subscores (0-100 each)
+   Cost:
+      annual_spend = sum(quantity * unit_cost_at_time) over window
+      cost_score = percentile_rank(annual_spend among all parts with spend > 0) scaled 0-100
+   RoadCall:
+      roadcall_count = count of events linked where event_type=ROAD_CALL in window
+      downtime_hours = sum(downtime_hours) for those events
+      roadcall_score = normalize( roadcall_count * 1.0 + downtime_hours * 0.25 ) into 0-100 using percentile_rank
+      (use log transform if needed to reduce extreme outliers)
+   Safety:
+      base = 0
+      if safety_system in (BRAKES, STEERING, TIRES_WHEELS): base += 60
+      else if safety_system in (SUSPENSION): base += 40
+      else if safety_system in (ELECTRICAL): base += 20
+      else base += 10
+      base += (failure_severity-1) * 10
+      if event_type includes INSPECTION_FAIL linked to part in window: base += 20
+      safety_score = clamp(base, 0, 100)
+
+3) Total score weights (configurable, default):
+   total_score = 0.35*cost_score + 0.35*roadcall_score + 0.30*safety_score
+   Optional tie-breaker bump:
+     if lead_time_days >= 14: total_score += 3
+     if lead_time_days >= 30: total_score += 5
+   clamp 0-100
+
+4) Assign A/B/C by score percentiles (excluding Class S):
+   - A = top 20% total_score
+   - B = next 30%
+   - C = remaining 50%
+   Make these thresholds configurable per org.
+
+XYZ VOLATILITY TAG
+Compute monthly demand for last 12 months (qty per month).
+Let mean = avg(monthly_qty), stdev = std(monthly_qty)
+Let CV = stdev / max(mean, small_epsilon)
+Rules:
+- X if mean > 0 AND CV <= 0.5
+- Y if mean > 0 AND 0.5 < CV <= 1.0
+- Z if mean == 0 OR CV > 1.0
+Also mark “Z” if part had < 3 non-zero months in window.
+
+AUTOMATION
+- Add a scheduled job (daily 2am) to run classification with window_months=12
+- Add an API endpoint and UI button “Recompute Classification”
+- Respect parts.classification_locked:
+   - if locked, do not change class_result/xyz_result in parts table
+   - still store snapshots and display “Suggested: ___” vs “Locked: ___”
+
+UI REQUIREMENTS
+- Part detail page: show current class (locked or auto), xyz, score
+- “Why this class?” panel: show annual spend, roadcalls, downtime, safety factors, lead time
+- A list view filter by Class and by safety system; show stockout risk fields if available
+- Admin page to configure weights, thresholds, and window months
+- Audit trail section showing changes and reasons
+
+IMPLEMENTATION NOTES
+- Use deterministic, testable functions for scoring.
+- Add unit tests for edge cases: no usage, new part, extreme spend, locked parts.
+- Make weights/thresholds stored in DB (org_settings) and loaded per run.
+- Keep compute efficient: pre-aggregate usage/events by part for the window.
+
+DELIVERABLES
+- DB migrations
+- backend services/jobs/APIs
+- UI updates
+- tests
+- documentation page explaining classification, weights, and override behavior

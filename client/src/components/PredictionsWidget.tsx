@@ -9,6 +9,7 @@ import {
   X,
   Sparkles
 } from "lucide-react";
+import { useEventSource } from "@/hooks/use-event-source";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -52,10 +53,11 @@ function getSeverityBorder(severity: string): string {
 
 export function PredictionsWidget() {
   const { toast } = useToast();
+
+  useEventSource("dashboard");
   
   const { data: predictions, isLoading } = useQuery<Prediction[]>({
     queryKey: ["/api/predictions"],
-    refetchInterval: 60000,
   });
 
   const acknowledgeMutation = useMutation({

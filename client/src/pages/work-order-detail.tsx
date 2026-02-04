@@ -5,9 +5,9 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation, useRoute } from "wouter";
 import { 
   ArrowLeft, Save, Loader2, Edit, Trash2, Clock, 
-  Calendar, User, Wrench, AlertTriangle, CheckCircle2,
+  Calendar, User, Wrench, AlertTriangle, CheckCircle2, CheckCircle,
   Plus, X, Play, Square, Timer, Package, CalendarClock,
-  Sparkles, Lightbulb
+  Sparkles, Lightbulb, PenLine, Search, ClipboardList, CircleDot, CircleCheck, CircleX, CircleMinus, FileText
 } from "lucide-react";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
@@ -41,9 +41,15 @@ import {
 import { PageHeader } from "@/components/PageHeader";
 import { StatusBadge } from "@/components/StatusBadge";
 import { PriorityBadge } from "@/components/PriorityBadge";
+import { SignatureCapture, SignatureDisplay } from "@/components/SignatureCapture";
+import { LaborTracker } from "@/components/LaborTracker";
+import { WorkOrderHistoryTabs } from "@/components/WorkOrderHistoryTabs";
+import { DeferredLines } from "@/components/DeferredLines";
+import { AssetManuals } from "@/components/AssetManuals";
+import { BrakeTireInspection } from "@/components/BrakeTireInspection";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import type { WorkOrder, Asset, WorkOrderLine, Part, VmrsCode, WorkOrderTransaction } from "@shared/schema";
+import type { WorkOrder, Asset, WorkOrderLine, Part, VmrsCode, WorkOrderTransaction, Location, ChecklistTemplate, WorkOrderChecklist, WorkOrderChecklistItem } from "@shared/schema";
 
 const workOrderFormSchema = z.object({
   description: z.string().optional(),
@@ -83,6 +89,8 @@ export default function WorkOrderDetail() {
   const [newLineCause, setNewLineCause] = useState("");
   const [newLineCorrection, setNewLineCorrection] = useState("");
   const [newLineNotes, setNewLineNotes] = useState("");
+  const [newLineRepairCode, setNewLineRepairCode] = useState("");
+  const [newLineRepairDescription, setNewLineRepairDescription] = useState("");
   const [newLinePartId, setNewLinePartId] = useState<string>("");
   const [newLineQuantity, setNewLineQuantity] = useState("1");
   const [newLinePartsCost, setNewLinePartsCost] = useState("");
@@ -93,15 +101,96 @@ export default function WorkOrderDetail() {
   const [addItemDescription, setAddItemDescription] = useState("");
   const [addItemQuantity, setAddItemQuantity] = useState("1");
   const [addItemUnitCost, setAddItemUnitCost] = useState("");
+  const [partSearchQuery, setPartSearchQuery] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [suggestionsVmrs, setSuggestionsVmrs] = useState<string | null>(null);
+  const [showSignatureDialog, setShowSignatureDialog] = useState(false);
+  const [signatureType, setSignatureType] = useState<"technician" | "customer">("technician");
+  const [pendingStatusChange, setPendingStatusChange] = useState<string | null>(null);
+  
+  const [newLineTirePosition, setNewLineTirePosition] = useState("");
+  const [newLineTireSerialInstalled, setNewLineTireSerialInstalled] = useState("");
+  const [newLineTireSerialRemoved, setNewLineTireSerialRemoved] = useState("");
+  const [newLineTireTreadDepth, setNewLineTireTreadDepth] = useState("");
+  
+  // Request Part dialog state
+  const [showRequestPartDialog, setShowRequestPartDialog] = useState<number | null>(null);
+  const [requestPartSearch, setRequestPartSearch] = useState("");
+  const [requestPartId, setRequestPartId] = useState("");
+  const [requestPartQuantity, setRequestPartQuantity] = useState("1");
+  
+  // Edit Line dialog state
+  const [editLineId, setEditLineId] = useState<number | null>(null);
+  const [editLineDescription, setEditLineDescription] = useState("");
+  const [editLineVmrsCodeId, setEditLineVmrsCodeId] = useState<string>("");
+  const [showEditLineDialog, setShowEditLineDialog] = useState(false);
+  
+  // Close line confirmation dialog
+  const [showCloseLineConfirm, setShowCloseLineConfirm] = useState<number | null>(null);
+  
+  // Checklist state
+  const [showAttachChecklistDialog, setShowAttachChecklistDialog] = useState<number | null>(null);
+  const [selectedChecklistTemplateId, setSelectedChecklistTemplateId] = useState<string>("");
+  const [viewChecklistDialog, setViewChecklistDialog] = useState<{ checklistId: number; lineId: number } | null>(null);
+  const [editingItemNotes, setEditingItemNotes] = useState<{ itemId: number; notes: string } | null>(null);
+  
+  // VMRS selection dialog for checklist items
+  interface VmrsSuggestion {
+    systemCode: string;
+    assemblyCode?: string;
+    title: string;
+    confidence: number;
+    explanation: string;
+    matchedKeywords: string[];
+    aiEnhanced?: boolean;
+  }
+  interface VmrsSelectDialog {
+    itemId: number;
+    itemText: string;
+    suggestions: VmrsSuggestion[];
+    isLoading: boolean;
+  }
+  const [vmrsSelectDialog, setVmrsSelectDialog] = useState<VmrsSelectDialog | null>(null);
+  const [selectedVmrsCode, setSelectedVmrsCode] = useState<string>("");
+  
+  // Linked PM Schedule data for auto-population
+  interface LinkedPmScheduleData {
+    schedule: any;
+    models: any[];
+    kits: any[];
+    checklists: any[];
+  }
+  const [linkedPmData, setLinkedPmData] = useState<LinkedPmScheduleData | null>(null);
+  const [isLoadingPmData, setIsLoadingPmData] = useState(false);
+  
+  const isTireVmrsCode = (code: string | undefined): boolean => {
+    if (!code) return false;
+    const normalized = code.replace(/-/g, "").replace(/^0+/, "");
+    return normalized.startsWith("17");
+  };
 
-  const handleVmrsCodeSelect = (vmrsCodeId: string) => {
+  const handleVmrsCodeSelect = async (vmrsCodeId: string) => {
     setSelectedVmrsCodeId(vmrsCodeId);
+    setLinkedPmData(null);
+    
     if (vmrsCodeId) {
       const selectedCode = vmrsCodes.find(c => c.id.toString() === vmrsCodeId);
       if (selectedCode) {
         setNewLineDescription(selectedCode.description || selectedCode.title);
+        
+        // Try to fetch linked PM schedule data
+        setIsLoadingPmData(true);
+        try {
+          const response = await fetch(`/api/pm-schedules/by-vmrs/${vmrsCodeId}`);
+          if (response.ok) {
+            const data = await response.json();
+            setLinkedPmData(data);
+          }
+        } catch (error) {
+          // No linked PM schedule - that's okay
+        } finally {
+          setIsLoadingPmData(false);
+        }
       }
     } else {
       setNewLineDescription("");
@@ -138,12 +227,18 @@ export default function WorkOrderDetail() {
     queryKey: ["/api/assets"],
   });
 
-  const { data: parts } = useQuery<Part[]>({
+  const { data: partsData } = useQuery<{ parts: Part[]; total: number }>({
     queryKey: ["/api/parts"],
+  });
+  const parts = partsData?.parts;
+
+  const { data: locations } = useQuery<Location[]>({
+    queryKey: ["/api/locations"],
   });
 
   // Compute linked asset early for smart suggestions
   const linkedAsset = assets?.find(a => a.id === workOrder?.assetId);
+  const assetLocation = locations?.find(l => l.id === linkedAsset?.locationId);
 
   // Smart part suggestions based on VMRS code and asset make/model
   const suggestionsQueryParams = suggestionsVmrs ? new URLSearchParams({
@@ -167,6 +262,21 @@ export default function WorkOrderDetail() {
 
   const { data: workOrderLines } = useQuery<WorkOrderLine[]>({
     queryKey: ["/api/work-orders", workOrderId, "lines"],
+    enabled: !!workOrderId,
+  });
+
+  // Checklist templates for attaching to lines
+  const { data: checklistTemplates } = useQuery<ChecklistTemplate[]>({
+    queryKey: ["/api/checklist-templates"],
+  });
+
+  // Work order checklists
+  interface WorkOrderChecklistWithItems extends WorkOrderChecklist {
+    items: WorkOrderChecklistItem[];
+    templateName?: string;
+  }
+  const { data: workOrderChecklists } = useQuery<WorkOrderChecklistWithItems[]>({
+    queryKey: ["/api/work-orders", workOrderId, "checklists"],
     enabled: !!workOrderId,
   });
 
@@ -252,11 +362,57 @@ export default function WorkOrderDetail() {
     },
   });
 
+  const saveSignatureMutation = useMutation({
+    mutationFn: async (data: { type: "technician" | "customer"; signature: string; signedBy?: string }) => {
+      return apiRequest("POST", `/api/work-orders/${workOrderId}/signature`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/work-orders", workOrderId] });
+      toast({
+        title: "Signature Captured",
+        description: `${signatureType === "technician" ? "Technician" : "Customer"} signature has been saved.`,
+      });
+      setShowSignatureDialog(false);
+      
+      if (pendingStatusChange) {
+        form.setValue("status", pendingStatusChange as any);
+        setPendingStatusChange(null);
+      }
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to save signature.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleSignatureSave = (signatureData: string) => {
+    saveSignatureMutation.mutate({ 
+      type: signatureType, 
+      signature: signatureData,
+      signedBy: signatureType === "customer" ? "" : undefined
+    });
+  };
+
+  const handleStatusChange = (newStatus: string) => {
+    if (newStatus === "completed" && !workOrder?.technicianSignature) {
+      setSignatureType("technician");
+      setPendingStatusChange(newStatus);
+      setShowSignatureDialog(true);
+    } else {
+      form.setValue("status", newStatus as any);
+    }
+  };
+
   const createLineMutation = useMutation({
     mutationFn: async (data: { 
       description: string; 
       vmrsCode?: string;
       vmrsTitle?: string;
+      repairCode?: string;
+      repairDescription?: string;
       complaint?: string;
       cause?: string;
       correction?: string;
@@ -279,9 +435,15 @@ export default function WorkOrderDetail() {
       setNewLineCause("");
       setNewLineCorrection("");
       setNewLineNotes("");
+      setNewLineRepairCode("");
+      setNewLineRepairDescription("");
       setNewLinePartId("");
       setNewLineQuantity("1");
       setNewLinePartsCost("");
+      setNewLineTirePosition("");
+      setNewLineTireSerialInstalled("");
+      setNewLineTireSerialRemoved("");
+      setNewLineTireTreadDepth("");
     },
     onError: () => {
       toast({ title: "Error", description: "Failed to add line.", variant: "destructive" });
@@ -357,6 +519,179 @@ export default function WorkOrderDetail() {
     },
   });
 
+  const editLineMutation = useMutation({
+    mutationFn: async ({ lineId, description, vmrsCode, vmrsTitle }: { lineId: number; description: string; vmrsCode: string | null; vmrsTitle: string | null }) => {
+      return apiRequest("PATCH", `/api/work-order-lines/${lineId}`, { description, vmrsCode, vmrsTitle });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/work-orders", workOrderId, "lines"] });
+      toast({ title: "Line Updated", description: "Work order line has been updated." });
+      setShowEditLineDialog(false);
+      setEditLineId(null);
+      setEditLineDescription("");
+      setEditLineVmrsCodeId("");
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to update line.", variant: "destructive" });
+    },
+  });
+
+  // Checklist mutations
+  const attachChecklistMutation = useMutation({
+    mutationFn: async ({ workOrderLineId, templateId }: { workOrderLineId: number; templateId: number }) => {
+      return apiRequest("POST", `/api/work-orders/${workOrderId}/checklists`, { 
+        templateId, 
+        workOrderLineId 
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/work-orders", workOrderId, "checklists"] });
+      toast({ title: "Checklist Attached", description: "Checklist has been added to this line." });
+      setShowAttachChecklistDialog(null);
+      setSelectedChecklistTemplateId("");
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to attach checklist.", variant: "destructive" });
+    },
+  });
+
+  const updateChecklistItemMutation = useMutation({
+    mutationFn: async ({ itemId, status, notes }: { itemId: number; status: string; notes?: string }) => {
+      return apiRequest("PATCH", `/api/work-order-checklist-items/${itemId}`, { status, notes });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/work-orders", workOrderId, "checklists"] });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to update checklist item.", variant: "destructive" });
+    },
+  });
+
+  const suggestVmrsMutation = useMutation({
+    mutationFn: async ({ itemId }: { itemId: number }) => {
+      const response = await apiRequest("POST", `/api/work-order-checklist-items/${itemId}/suggest-vmrs`, {});
+      return response as unknown as {
+        text: string;
+        notes?: string;
+        suggestions: VmrsSuggestion[];
+        topSuggestion?: VmrsSuggestion;
+        needsUserConfirmation: boolean;
+      };
+    },
+  });
+
+  const createWoLineFromChecklistMutation = useMutation({
+    mutationFn: async ({ 
+      itemId, 
+      vmrsCode, 
+      vmrsTitle,
+      wasAutoApplied,
+      suggestedSystemCode,
+      suggestedTitle,
+      suggestedConfidence,
+    }: { 
+      itemId: number; 
+      vmrsCode?: string; 
+      vmrsTitle?: string;
+      wasAutoApplied?: boolean;
+      suggestedSystemCode?: string;
+      suggestedTitle?: string;
+      suggestedConfidence?: number;
+    }) => {
+      return apiRequest("POST", `/api/work-order-checklist-items/${itemId}/create-line`, { 
+        workOrderId,
+        vmrsCode,
+        vmrsTitle,
+        wasAutoApplied,
+        suggestedSystemCode,
+        suggestedTitle,
+        suggestedConfidence,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/work-orders", workOrderId, "lines"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/work-orders", workOrderId, "checklists"] });
+      setVmrsSelectDialog(null);
+      setSelectedVmrsCode("");
+      toast({ title: "Work Order Line Created", description: "A new line was created from the checklist item." });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to create work order line.", variant: "destructive" });
+    },
+  });
+  
+  const handleCreateWoLineWithVmrs = async (itemId: number, itemText: string) => {
+    setVmrsSelectDialog({ itemId, itemText, suggestions: [], isLoading: true });
+    
+    try {
+      const result = await suggestVmrsMutation.mutateAsync({ itemId });
+      
+      if (result.topSuggestion && result.topSuggestion.confidence >= 0.85) {
+        await createWoLineFromChecklistMutation.mutateAsync({
+          itemId,
+          vmrsCode: result.topSuggestion.systemCode,
+          vmrsTitle: result.topSuggestion.title,
+          wasAutoApplied: true,
+          suggestedSystemCode: result.topSuggestion.systemCode,
+          suggestedTitle: result.topSuggestion.title,
+          suggestedConfidence: result.topSuggestion.confidence,
+        });
+        setVmrsSelectDialog(null);
+        toast({ 
+          title: "Work Order Line Created", 
+          description: `Auto-assigned VMRS: ${result.topSuggestion.systemCode} - ${result.topSuggestion.title}` 
+        });
+      } else {
+        setVmrsSelectDialog({
+          itemId,
+          itemText,
+          suggestions: result.suggestions,
+          isLoading: false,
+        });
+        if (result.topSuggestion) {
+          setSelectedVmrsCode(result.topSuggestion.systemCode);
+        }
+      }
+    } catch (error) {
+      setVmrsSelectDialog({
+        itemId,
+        itemText,
+        suggestions: [],
+        isLoading: false,
+      });
+      toast({ title: "Error", description: "Failed to get VMRS suggestions.", variant: "destructive" });
+    }
+  };
+
+  const getChecklistsForLine = (lineId: number) => {
+    return workOrderChecklists?.filter(c => c.workOrderLineId === lineId) || [];
+  };
+
+  const getViewingChecklist = () => {
+    if (!viewChecklistDialog) return null;
+    return workOrderChecklists?.find(c => c.id === viewChecklistDialog.checklistId);
+  };
+
+  const openEditLineDialog = (line: WorkOrderLine) => {
+    setEditLineId(line.id);
+    setEditLineDescription(line.description);
+    // Find the VMRS code ID from the code string
+    const vmrsCodeMatch = vmrsCodes?.find(v => v.code === line.vmrsCode);
+    setEditLineVmrsCodeId(vmrsCodeMatch?.id.toString() || "");
+    setShowEditLineDialog(true);
+  };
+
+  const handleEditLine = () => {
+    if (!editLineId || !editLineDescription.trim()) return;
+    const selectedVmrs = vmrsCodes?.find(v => v.id.toString() === editLineVmrsCodeId);
+    editLineMutation.mutate({
+      lineId: editLineId,
+      description: editLineDescription,
+      vmrsCode: selectedVmrs?.code || null,
+      vmrsTitle: selectedVmrs?.title || null,
+    });
+  };
+
   const updateLineMutation = useMutation({
     mutationFn: async ({ lineId, data }: { lineId: number; data: Partial<{ notes: string; complaint: string; cause: string; correction: string }> }) => {
       return apiRequest("PATCH", `/api/work-order-lines/${lineId}`, data);
@@ -390,6 +725,7 @@ export default function WorkOrderDetail() {
       setAddItemDescription("");
       setAddItemQuantity("1");
       setAddItemUnitCost("");
+      setPartSearchQuery("");
     },
     onError: () => {
       toast({ title: "Error", description: "Failed to add item.", variant: "destructive" });
@@ -439,10 +775,12 @@ export default function WorkOrderDetail() {
     const unitCost = selectedPart?.unitCost || newLinePartsCost || undefined;
     const totalPartsCost = selectedPart && unitCost ? (parseFloat(unitCost) * quantity).toFixed(2) : newLinePartsCost || undefined;
     
-    createLineMutation.mutate({
+    const lineData: any = {
       description: selectedVmrs.description || selectedVmrs.title,
       vmrsCode: selectedVmrs.code,
       vmrsTitle: selectedVmrs.title,
+      repairCode: newLineRepairCode || undefined,
+      repairDescription: newLineRepairDescription || undefined,
       complaint: newLineComplaint || undefined,
       cause: newLineCause || undefined,
       correction: newLineCorrection || undefined,
@@ -451,7 +789,16 @@ export default function WorkOrderDetail() {
       quantity: selectedPart ? quantity : undefined,
       unitCost: unitCost,
       partsCost: totalPartsCost,
-    });
+    };
+    
+    if (isTireVmrsCode(selectedVmrs.code)) {
+      lineData.tirePosition = newLineTirePosition || undefined;
+      lineData.tireSerialInstalled = newLineTireSerialInstalled || undefined;
+      lineData.tireSerialRemoved = newLineTireSerialRemoved || undefined;
+      lineData.tireTreadDepthMeasured = newLineTireTreadDepth ? parseFloat(newLineTireTreadDepth) : undefined;
+    }
+    
+    createLineMutation.mutate(lineData);
   };
 
   const handleAddItem = () => {
@@ -603,7 +950,7 @@ export default function WorkOrderDetail() {
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>Status</FormLabel>
-                          <Select onValueChange={field.onChange} value={field.value}>
+                          <Select onValueChange={handleStatusChange} value={field.value}>
                             <FormControl>
                               <SelectTrigger data-testid="select-status">
                                 <SelectValue />
@@ -782,6 +1129,18 @@ export default function WorkOrderDetail() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
+              {/* Status and Priority Badges */}
+              <div className="flex items-center gap-3 pb-2 border-b">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground">Status:</span>
+                  <StatusBadge status={workOrder.status} />
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground">Priority:</span>
+                  <PriorityBadge priority={workOrder.priority} />
+                </div>
+              </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <p className="text-sm text-muted-foreground">Work Order #</p>
@@ -801,12 +1160,32 @@ export default function WorkOrderDetail() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <p className="text-sm text-muted-foreground">Asset</p>
-                  <p className="font-medium">{linkedAsset ? `${linkedAsset.assetNumber} - ${linkedAsset.name}` : "-"}</p>
+                  <p className="font-medium">
+                    {linkedAsset ? `${linkedAsset.assetNumber} - ${linkedAsset.name}` : "-"}
+                    {assetLocation && (
+                      <span className="text-muted-foreground ml-1">({assetLocation.name})</span>
+                    )}
+                  </p>
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">Due Date</p>
                   <p className="font-medium">
                     {workOrder.dueDate ? new Date(workOrder.dueDate).toLocaleDateString() : "-"}
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-sm text-muted-foreground">Assigned To</p>
+                  <p className="font-medium">{workOrder.assignedToId || "Unassigned"}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Meter Reading</p>
+                  <p className="font-medium">
+                    {workOrder.meterReading != null 
+                      ? `${Number(workOrder.meterReading).toLocaleString()} miles`
+                      : "-"}
                   </p>
                 </div>
               </div>
@@ -894,16 +1273,90 @@ export default function WorkOrderDetail() {
             </CardContent>
           </Card>
 
+          {/* History & Tracking Tabs */}
+          <WorkOrderHistoryTabs workOrderId={workOrder.id} assetId={workOrder.assetId} />
+
+          {/* Asset Manuals & Documentation */}
+          <AssetManuals assetId={workOrder.assetId} assetName={linkedAsset?.name} />
+
+          {/* Deferred Lines Card */}
+          <DeferredLines workOrderId={workOrder.id} />
+
+          {/* Brake & Tire Inspections (for non-vehicle assets only) */}
+          {linkedAsset?.type !== "vehicle" && workOrder.assetId && (
+            <BrakeTireInspection workOrderId={workOrder.id} assetId={workOrder.assetId} />
+          )}
+
+          {/* Signatures Card */}
+          {(workOrder.technicianSignature || workOrder.customerSignature || workOrder.status === "completed" || workOrder.status === "ready_for_review") && (
+            <Card className="glass-card">
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <PenLine className="h-5 w-5" />
+                  Signatures
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {workOrder.technicianSignature ? (
+                    <SignatureDisplay
+                      signatureData={workOrder.technicianSignature}
+                      label="Technician"
+                      signedAt={workOrder.technicianSignedAt}
+                    />
+                  ) : (
+                    <div className="p-4 border border-dashed rounded-lg text-center">
+                      <p className="text-sm text-muted-foreground mb-2">Technician Signature</p>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setSignatureType("technician");
+                          setShowSignatureDialog(true);
+                        }}
+                        data-testid="button-capture-technician-signature"
+                      >
+                        <PenLine className="h-4 w-4 mr-1" />
+                        Capture Signature
+                      </Button>
+                    </div>
+                  )}
+                  
+                  {workOrder.customerSignature ? (
+                    <SignatureDisplay
+                      signatureData={workOrder.customerSignature}
+                      label="Customer"
+                      signedAt={workOrder.customerSignedAt}
+                      signedBy={workOrder.customerSignedBy}
+                    />
+                  ) : (
+                    <div className="p-4 border border-dashed rounded-lg text-center">
+                      <p className="text-sm text-muted-foreground mb-2">Customer Signature</p>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setSignatureType("customer");
+                          setShowSignatureDialog(true);
+                        }}
+                        data-testid="button-capture-customer-signature"
+                      >
+                        <PenLine className="h-4 w-4 mr-1" />
+                        Capture Signature
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           <Card className="glass-card lg:col-span-2">
-            <CardHeader className="flex flex-row items-center justify-between gap-2">
+            <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2">
                 <Wrench className="h-5 w-5" />
                 Work Order Lines
               </CardTitle>
-              <Button size="sm" onClick={() => setShowAddLineDialog(true)} data-testid="button-add-line">
-                <Plus className="h-4 w-4 mr-2" />
-                Add Line
-              </Button>
             </CardHeader>
             <CardContent>
               {workOrderLines && workOrderLines.length > 0 ? (
@@ -924,6 +1377,11 @@ export default function WorkOrderDetail() {
                                 <span className="font-semibold">VMRS:</span> {line.vmrsTitle} ({line.vmrsCode})
                               </p>
                             )}
+                            {line.repairCode && (
+                              <p className="text-sm text-muted-foreground mt-1">
+                                <span className="font-semibold">Repair:</span> {line.repairCode}{line.repairDescription ? ` - ${line.repairDescription}` : ""}
+                              </p>
+                            )}
                           </div>
                           <div className="flex items-center gap-2">
                             <StatusBadge status={line.status} />
@@ -931,8 +1389,18 @@ export default function WorkOrderDetail() {
                               size="icon"
                               variant="ghost"
                               className="h-8 w-8"
+                              onClick={() => openEditLineDialog(line)}
+                              data-testid={`button-edit-line-${line.id}`}
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-8 w-8"
                               onClick={() => deleteLineMutation.mutate(line.id)}
                               disabled={deleteLineMutation.isPending}
+                              data-testid={`button-delete-line-${line.id}`}
                             >
                               <Trash2 className="h-4 w-4 text-destructive" />
                             </Button>
@@ -1009,6 +1477,11 @@ export default function WorkOrderDetail() {
                                 setAddItemDescription("");
                                 setAddItemQuantity("1");
                                 setAddItemUnitCost("");
+                                setPartSearchQuery("");
+                                if (line.vmrsCode) {
+                                  setSuggestionsVmrs(line.vmrsCode);
+                                  setShowSuggestions(true);
+                                }
                               }}
                               data-testid={`button-add-part-${line.id}`}
                             >
@@ -1023,6 +1496,67 @@ export default function WorkOrderDetail() {
                           ) : (
                             <p className="text-sm text-muted-foreground italic">No parts added yet</p>
                           )}
+                        </div>
+
+                        {/* Checklists Section */}
+                        <div className="space-y-2 pt-2 border-t border-border/30">
+                          <div className="flex items-center justify-between">
+                            <p className="text-[10px] uppercase font-bold text-muted-foreground flex items-center gap-1">
+                              <ClipboardList className="h-3 w-3" />
+                              Checklists
+                            </p>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 text-xs"
+                              onClick={() => {
+                                setShowAttachChecklistDialog(line.id);
+                                setSelectedChecklistTemplateId("");
+                              }}
+                              data-testid={`button-attach-checklist-${line.id}`}
+                            >
+                              <Plus className="h-3 w-3 mr-1" />
+                              Attach Checklist
+                            </Button>
+                          </div>
+                          {(() => {
+                            const lineChecklists = getChecklistsForLine(line.id);
+                            if (lineChecklists.length === 0) {
+                              return <p className="text-sm text-muted-foreground italic">No checklists attached</p>;
+                            }
+                            return (
+                              <div className="flex flex-wrap gap-2">
+                                {lineChecklists.map((checklist) => {
+                                  const template = checklistTemplates?.find(t => t.id === checklist.checklistTemplateId);
+                                  const completedCount = checklist.items?.filter(i => i.status !== 'pending').length || 0;
+                                  const totalCount = checklist.items?.length || 0;
+                                  const needsRepairCount = checklist.items?.filter(i => i.status === 'needs_repair').length || 0;
+                                  
+                                  return (
+                                    <Button
+                                      key={checklist.id}
+                                      variant="outline"
+                                      size="sm"
+                                      className="h-8"
+                                      onClick={() => setViewChecklistDialog({ checklistId: checklist.id, lineId: line.id })}
+                                      data-testid={`button-view-checklist-${checklist.id}`}
+                                    >
+                                      <ClipboardList className="h-4 w-4 mr-2 text-primary" />
+                                      <span>{template?.name || "Checklist"}</span>
+                                      <Badge variant="outline" className="ml-2 text-[10px]">
+                                        {completedCount}/{totalCount}
+                                      </Badge>
+                                      {needsRepairCount > 0 && (
+                                        <Badge variant="destructive" className="ml-1 text-[10px]">
+                                          {needsRepairCount} repair
+                                        </Badge>
+                                      )}
+                                    </Button>
+                                  );
+                                })}
+                              </div>
+                            );
+                          })()}
                         </div>
 
                         <div className="flex flex-wrap items-center gap-4 pt-2 border-t border-border/30">
@@ -1071,9 +1605,20 @@ export default function WorkOrderDetail() {
                                 </Button>
                                 <Button
                                   size="sm"
+                                  variant="secondary"
                                   className="h-8"
-                                  onClick={() => stopTimerMutation.mutate({ lineId: line.id, complete: true })}
+                                  onClick={() => stopTimerMutation.mutate({ lineId: line.id, complete: false })}
                                   disabled={stopTimerMutation.isPending}
+                                  data-testid={`button-stop-timer-${line.id}`}
+                                >
+                                  <Square className="h-3 w-3 mr-1" />
+                                  Stop Timer
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  className="h-8"
+                                  onClick={() => setShowCloseLineConfirm(line.id)}
+                                  data-testid={`button-close-line-${line.id}`}
                                 >
                                   <CheckCircle2 className="h-3 w-3 mr-1" />
                                   Close Line
@@ -1094,9 +1639,20 @@ export default function WorkOrderDetail() {
                                 </Button>
                                 <Button
                                   size="sm"
+                                  variant="secondary"
                                   className="h-8"
-                                  onClick={() => stopTimerMutation.mutate({ lineId: line.id, complete: true })}
+                                  onClick={() => stopTimerMutation.mutate({ lineId: line.id, complete: false })}
                                   disabled={stopTimerMutation.isPending}
+                                  data-testid={`button-stop-timer-paused-${line.id}`}
+                                >
+                                  <Square className="h-3 w-3 mr-1" />
+                                  Stop Timer
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  className="h-8"
+                                  onClick={() => setShowCloseLineConfirm(line.id)}
+                                  data-testid={`button-close-line-paused-${line.id}`}
                                 >
                                   <CheckCircle2 className="h-3 w-3 mr-1" />
                                   Close Line
@@ -1136,16 +1692,12 @@ export default function WorkOrderDetail() {
                                 variant="secondary"
                                 className="h-8"
                                 onClick={() => {
-                                  const partId = prompt("Enter Part ID to Request");
-                                  const qty = prompt("Enter Quantity", "1");
-                                  if (partId && qty) {
-                                    requestPartMutation.mutate({ 
-                                      lineId: line.id, 
-                                      partId: parseInt(partId), 
-                                      quantity: parseFloat(qty) 
-                                    });
-                                  }
+                                  setRequestPartSearch("");
+                                  setRequestPartId("");
+                                  setRequestPartQuantity("1");
+                                  setShowRequestPartDialog(line.id);
                                 }}
+                                data-testid={`button-request-part-${line.id}`}
                               >
                                 Request Part
                               </Button>
@@ -1155,16 +1707,12 @@ export default function WorkOrderDetail() {
                                 size="sm"
                                 className="h-8"
                                 onClick={() => {
-                                  const partId = prompt("Enter Part ID to Post");
-                                  const qty = prompt("Enter Quantity", "1");
-                                  if (partId && qty) {
-                                    postPartMutation.mutate({ 
-                                      lineId: line.id, 
-                                      partId: parseInt(partId), 
-                                      quantity: parseFloat(qty) 
-                                    });
-                                  }
+                                  setRequestPartSearch("");
+                                  setRequestPartId("");
+                                  setRequestPartQuantity("1");
+                                  setShowRequestPartDialog(line.id);
                                 }}
+                                data-testid={`button-post-part-${line.id}`}
                               >
                                 Post Part
                               </Button>
@@ -1185,6 +1733,13 @@ export default function WorkOrderDetail() {
               ) : (
                 <p className="text-muted-foreground text-center py-8">No work order lines yet. Add a line to track labor and parts.</p>
               )}
+              
+              <div className="mt-4 pt-4 border-t">
+                <Button onClick={() => setShowAddLineDialog(true)} data-testid="button-add-line">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Line
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </div>
@@ -1254,6 +1809,70 @@ export default function WorkOrderDetail() {
               </div>
             )}
 
+            {isLoadingPmData && (
+              <div className="p-3 bg-muted/50 rounded-md text-sm flex items-center gap-2">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Checking for linked PM schedule...
+              </div>
+            )}
+
+            {linkedPmData && (
+              <Card className="border-primary/30 bg-primary/5">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <Sparkles className="h-4 w-4 text-primary" />
+                    Linked PM Schedule: {linkedPmData.schedule.name}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2 text-sm">
+                  {linkedPmData.schedule.description && (
+                    <p className="text-muted-foreground">{linkedPmData.schedule.description}</p>
+                  )}
+                  {linkedPmData.kits.length > 0 && (
+                    <div>
+                      <span className="font-medium">Part Kits:</span>{" "}
+                      {linkedPmData.kits.map((kit: any) => kit.partKit?.name || `Kit #${kit.partKitId}`).join(", ")}
+                    </div>
+                  )}
+                  {linkedPmData.checklists.length > 0 && (
+                    <div>
+                      <span className="font-medium">Checklists:</span>{" "}
+                      {linkedPmData.checklists.length} linked checklist(s)
+                    </div>
+                  )}
+                  {linkedPmData.schedule.estimatedHours && (
+                    <div>
+                      <span className="font-medium">Est. Hours:</span> {linkedPmData.schedule.estimatedHours}
+                    </div>
+                  )}
+                  <p className="text-xs text-muted-foreground mt-2">
+                    This VMRS code is linked to a PM schedule. The schedule's parts and checklists will be suggested for this work.
+                  </p>
+                </CardContent>
+              </Card>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-[10px] uppercase font-bold text-muted-foreground">Repair Code</label>
+                <Input 
+                  placeholder="e.g., RC-001, BRAKE-001" 
+                  value={newLineRepairCode}
+                  onChange={(e) => setNewLineRepairCode(e.target.value)}
+                  data-testid="input-line-repair-code"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] uppercase font-bold text-muted-foreground">Repair Description</label>
+                <Input 
+                  placeholder="Brief description of repair type" 
+                  value={newLineRepairDescription}
+                  onChange={(e) => setNewLineRepairDescription(e.target.value)}
+                  data-testid="input-line-repair-description"
+                />
+              </div>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="space-y-2">
                 <label className="text-[10px] uppercase font-bold text-muted-foreground">Complaint</label>
@@ -1296,6 +1915,75 @@ export default function WorkOrderDetail() {
                 data-testid="input-line-notes"
               />
             </div>
+
+            {selectedVmrsCodeId && (() => {
+              const selectedCode = vmrsCodes.find(c => c.id.toString() === selectedVmrsCodeId);
+              if (selectedCode && isTireVmrsCode(selectedCode.code)) {
+                return (
+                  <Card className="border-primary/20 bg-primary/5">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm font-medium flex items-center gap-2">
+                        <Package className="h-4 w-4" />
+                        Tire Replacement Details
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <label className="text-[10px] uppercase font-bold text-muted-foreground">Tire Position</label>
+                          <Select value={newLineTirePosition} onValueChange={setNewLineTirePosition}>
+                            <SelectTrigger data-testid="select-tire-position">
+                              <SelectValue placeholder="Select position..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="LF">Left Front (LF)</SelectItem>
+                              <SelectItem value="RF">Right Front (RF)</SelectItem>
+                              <SelectItem value="LR-O">Left Rear Outer (LR-O)</SelectItem>
+                              <SelectItem value="LR-I">Left Rear Inner (LR-I)</SelectItem>
+                              <SelectItem value="RR-O">Right Rear Outer (RR-O)</SelectItem>
+                              <SelectItem value="RR-I">Right Rear Inner (RR-I)</SelectItem>
+                              <SelectItem value="spare">Spare</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-[10px] uppercase font-bold text-muted-foreground">Tread Depth (32nds)</label>
+                          <Input
+                            type="number"
+                            step="0.1"
+                            placeholder="e.g., 8.5"
+                            value={newLineTireTreadDepth}
+                            onChange={(e) => setNewLineTireTreadDepth(e.target.value)}
+                            data-testid="input-tire-tread-depth"
+                          />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <label className="text-[10px] uppercase font-bold text-muted-foreground">New Tire Serial/DOT</label>
+                          <Input
+                            placeholder="Serial of tire installed"
+                            value={newLineTireSerialInstalled}
+                            onChange={(e) => setNewLineTireSerialInstalled(e.target.value)}
+                            data-testid="input-tire-serial-installed"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-[10px] uppercase font-bold text-muted-foreground">Old Tire Serial/DOT</label>
+                          <Input
+                            placeholder="Serial of tire removed"
+                            value={newLineTireSerialRemoved}
+                            onChange={(e) => setNewLineTireSerialRemoved(e.target.value)}
+                            data-testid="input-tire-serial-removed"
+                          />
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              }
+              return null;
+            })()}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowAddLineDialog(false)}>Cancel</Button>
@@ -1310,6 +1998,416 @@ export default function WorkOrderDetail() {
                 <Plus className="h-4 w-4 mr-2" />
               )}
               Add Line
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showEditLineDialog} onOpenChange={(open) => {
+        if (!open) {
+          setShowEditLineDialog(false);
+          setEditLineId(null);
+          setEditLineDescription("");
+          setEditLineVmrsCodeId("");
+        }
+      }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Edit Work Order Line</DialogTitle>
+            <DialogDescription>
+              Update the line description and VMRS code.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <label className="text-[10px] uppercase font-bold text-muted-foreground">Description *</label>
+              <Input
+                value={editLineDescription}
+                onChange={(e) => setEditLineDescription(e.target.value)}
+                placeholder="Enter line description..."
+                data-testid="input-edit-line-description"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-[10px] uppercase font-bold text-muted-foreground">VMRS Code</label>
+              <Select value={editLineVmrsCodeId} onValueChange={setEditLineVmrsCodeId}>
+                <SelectTrigger data-testid="select-edit-line-vmrs">
+                  <SelectValue placeholder="Select VMRS code..." />
+                </SelectTrigger>
+                <SelectContent className="max-h-[300px]">
+                  <SelectItem value="none">No VMRS Code</SelectItem>
+                  {vmrsCodes?.map((code) => (
+                    <SelectItem key={code.id} value={code.id.toString()}>
+                      <span className="font-mono text-xs">{code.code}</span> - {code.title}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowEditLineDialog(false)}>Cancel</Button>
+            <Button 
+              onClick={handleEditLine}
+              disabled={!editLineDescription.trim() || editLineMutation.isPending}
+              data-testid="button-confirm-edit-line"
+            >
+              {editLineMutation.isPending ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Save className="h-4 w-4 mr-2" />
+              )}
+              Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Attach Checklist Dialog */}
+      <Dialog open={showAttachChecklistDialog !== null} onOpenChange={(open) => {
+        if (!open) {
+          setShowAttachChecklistDialog(null);
+          setSelectedChecklistTemplateId("");
+        }
+      }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Attach Checklist</DialogTitle>
+            <DialogDescription>
+              Select a checklist template to attach to this work order line.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <label className="text-[10px] uppercase font-bold text-muted-foreground">Checklist Template</label>
+              <Select value={selectedChecklistTemplateId} onValueChange={setSelectedChecklistTemplateId}>
+                <SelectTrigger data-testid="select-checklist-template">
+                  <SelectValue placeholder="Select a checklist template..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {checklistTemplates?.map((template) => (
+                    <SelectItem key={template.id} value={template.id.toString()}>
+                      {template.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAttachChecklistDialog(null)}>Cancel</Button>
+            <Button 
+              onClick={() => {
+                if (showAttachChecklistDialog && selectedChecklistTemplateId) {
+                  attachChecklistMutation.mutate({
+                    workOrderLineId: showAttachChecklistDialog,
+                    templateId: parseInt(selectedChecklistTemplateId),
+                  });
+                }
+              }}
+              disabled={!selectedChecklistTemplateId || attachChecklistMutation.isPending}
+              data-testid="button-confirm-attach-checklist"
+            >
+              {attachChecklistMutation.isPending ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <ClipboardList className="h-4 w-4 mr-2" />
+              )}
+              Attach Checklist
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* View Checklist Dialog */}
+      <Dialog open={viewChecklistDialog !== null} onOpenChange={(open) => {
+        if (!open) {
+          setViewChecklistDialog(null);
+          setEditingItemNotes(null);
+        }
+      }}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          {(() => {
+            const checklist = getViewingChecklist();
+            if (!checklist) return null;
+            const template = checklistTemplates?.find(t => t.id === checklist.checklistTemplateId);
+            const completedCount = checklist.items?.filter(i => i.status !== 'pending').length || 0;
+            const totalCount = checklist.items?.length || 0;
+            
+            return (
+              <>
+                <DialogHeader>
+                  <DialogTitle className="flex items-center gap-2">
+                    <ClipboardList className="h-5 w-5 text-primary" />
+                    {template?.name || "Checklist"}
+                  </DialogTitle>
+                  <DialogDescription>
+                    Progress: {completedCount} of {totalCount} items completed
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-2 py-4">
+                  {checklist.items?.map((item, idx) => (
+                    <div key={item.id} className="border rounded-lg p-3 space-y-2">
+                      <div className="flex items-start gap-3">
+                        <span className="text-xs text-muted-foreground font-mono w-6">{idx + 1}.</span>
+                        <div className="flex-1">
+                          <p className="text-sm font-medium">{item.itemText}</p>
+                          {item.notes && editingItemNotes?.itemId !== item.id && (
+                            <p className="text-xs text-muted-foreground mt-1 italic">Note: {item.notes}</p>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            size="sm"
+                            variant={item.status === 'pass' ? 'default' : 'outline'}
+                            className="h-8 px-2"
+                            onClick={() => updateChecklistItemMutation.mutate({ itemId: item.id, status: 'pass' })}
+                            disabled={updateChecklistItemMutation.isPending}
+                            data-testid={`button-checklist-pass-${item.id}`}
+                          >
+                            <CircleCheck className="h-4 w-4 text-green-600" />
+                            <span className="ml-1 text-xs">Pass</span>
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant={item.status === 'needs_repair' ? 'destructive' : 'outline'}
+                            className="h-8 px-2"
+                            onClick={() => updateChecklistItemMutation.mutate({ itemId: item.id, status: 'needs_repair' })}
+                            disabled={updateChecklistItemMutation.isPending}
+                            data-testid={`button-checklist-repair-${item.id}`}
+                          >
+                            <CircleX className="h-4 w-4" />
+                            <span className="ml-1 text-xs">Repair</span>
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant={item.status === 'na' ? 'secondary' : 'outline'}
+                            className="h-8 px-2"
+                            onClick={() => updateChecklistItemMutation.mutate({ itemId: item.id, status: 'na' })}
+                            disabled={updateChecklistItemMutation.isPending}
+                            data-testid={`button-checklist-na-${item.id}`}
+                          >
+                            <CircleMinus className="h-4 w-4 text-muted-foreground" />
+                            <span className="ml-1 text-xs">N/A</span>
+                          </Button>
+                        </div>
+                      </div>
+                      
+                      {/* Notes section */}
+                      <div className="pl-9">
+                        {editingItemNotes?.itemId === item.id ? (
+                          <div className="flex gap-2">
+                            <Textarea
+                              placeholder="Add notes..."
+                              value={editingItemNotes.notes}
+                              onChange={(e) => setEditingItemNotes({ ...editingItemNotes, notes: e.target.value })}
+                              className="text-xs min-h-[60px]"
+                              data-testid={`textarea-checklist-notes-${item.id}`}
+                            />
+                            <div className="flex flex-col gap-1">
+                              <Button
+                                size="icon"
+                                variant="default"
+                                className="h-7 w-7"
+                                onClick={() => {
+                                  updateChecklistItemMutation.mutate({ 
+                                    itemId: item.id, 
+                                    status: item.status, 
+                                    notes: editingItemNotes.notes 
+                                  });
+                                  setEditingItemNotes(null);
+                                }}
+                                data-testid={`button-save-notes-${item.id}`}
+                              >
+                                <Save className="h-3 w-3" />
+                              </Button>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="h-7 w-7"
+                                onClick={() => setEditingItemNotes(null)}
+                              >
+                                <X className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          </div>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-6 text-xs text-muted-foreground"
+                            onClick={() => setEditingItemNotes({ itemId: item.id, notes: item.notes || '' })}
+                            data-testid={`button-add-notes-${item.id}`}
+                          >
+                            <FileText className="h-3 w-3 mr-1" />
+                            {item.notes ? 'Edit Notes' : 'Add Notes'}
+                          </Button>
+                        )}
+                      </div>
+                      
+                      {/* Create WO Line button for needs_repair items */}
+                      {item.status === 'needs_repair' && !item.createdWorkOrderLineId && (
+                        <div className="pl-9 pt-1">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-xs border-destructive text-destructive hover:bg-destructive/10"
+                            onClick={() => handleCreateWoLineWithVmrs(item.id, item.itemText)}
+                            disabled={createWoLineFromChecklistMutation.isPending || suggestVmrsMutation.isPending}
+                            data-testid={`button-create-wo-line-${item.id}`}
+                          >
+                            {(suggestVmrsMutation.isPending && vmrsSelectDialog?.itemId === item.id) ? (
+                              <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                            ) : (
+                              <Plus className="h-3 w-3 mr-1" />
+                            )}
+                            Create WO Line
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setViewChecklistDialog(null)}>
+                    Close
+                  </Button>
+                </DialogFooter>
+              </>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
+
+      {/* VMRS Selection Dialog for checklist items */}
+      <Dialog open={vmrsSelectDialog !== null && !vmrsSelectDialog.isLoading} onOpenChange={(open) => {
+        if (!open) {
+          setVmrsSelectDialog(null);
+          setSelectedVmrsCode("");
+        }
+      }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="h-5 w-5 text-primary" />
+              Select VMRS Code
+            </DialogTitle>
+            <DialogDescription>
+              Choose the appropriate VMRS system code for this work order line
+            </DialogDescription>
+          </DialogHeader>
+          
+          {vmrsSelectDialog && (
+            <div className="space-y-4">
+              <div className="bg-muted/50 p-3 rounded-md">
+                <p className="text-sm font-medium">Checklist Item:</p>
+                <p className="text-sm text-muted-foreground">{vmrsSelectDialog.itemText}</p>
+              </div>
+              
+              {!vmrsSelectDialog.suggestions ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                  <span className="ml-2 text-muted-foreground">Analyzing checklist item...</span>
+                </div>
+              ) : vmrsSelectDialog.suggestions.length > 0 ? (
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">AI Suggestions:</p>
+                  <div className="space-y-2 max-h-60 overflow-y-auto">
+                    {vmrsSelectDialog.suggestions.map((suggestion) => (
+                      <div
+                        key={suggestion.systemCode}
+                        className={`p-3 border rounded-md cursor-pointer transition-colors ${
+                          selectedVmrsCode === suggestion.systemCode
+                            ? "border-primary bg-primary/5"
+                            : "hover:bg-muted/50"
+                        }`}
+                        onClick={() => setSelectedVmrsCode(suggestion.systemCode)}
+                        data-testid={`vmrs-suggestion-${suggestion.systemCode}`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-sm font-medium">{suggestion.systemCode}</span>
+                            <span className="text-sm">{suggestion.title}</span>
+                            {suggestion.aiEnhanced && (
+                              <Badge variant="secondary" className="text-xs">
+                                <Sparkles className="h-3 w-3 mr-1" />
+                                AI
+                              </Badge>
+                            )}
+                          </div>
+                          <Badge variant={suggestion.confidence >= 0.8 ? "default" : "secondary"}>
+                            {Math.round(suggestion.confidence * 100)}%
+                          </Badge>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1">{suggestion.explanation}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-4">
+                  <p className="text-muted-foreground">No VMRS suggestions found. Please select manually.</p>
+                </div>
+              )}
+              
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Or enter VMRS code manually:</p>
+                <Input
+                  placeholder="e.g., 013 for Brakes"
+                  value={selectedVmrsCode}
+                  onChange={(e) => setSelectedVmrsCode(e.target.value)}
+                  data-testid="input-vmrs-code-manual"
+                />
+              </div>
+            </div>
+          )}
+          
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => {
+              setVmrsSelectDialog(null);
+              setSelectedVmrsCode("");
+            }}>
+              Cancel
+            </Button>
+            <Button variant="outline" onClick={() => {
+              if (vmrsSelectDialog) {
+                const suggestions = vmrsSelectDialog.suggestions || [];
+                const topSuggestion = suggestions[0];
+                createWoLineFromChecklistMutation.mutate({
+                  itemId: vmrsSelectDialog.itemId,
+                  wasAutoApplied: false,
+                  suggestedSystemCode: topSuggestion?.systemCode,
+                  suggestedTitle: topSuggestion?.title,
+                  suggestedConfidence: topSuggestion?.confidence,
+                });
+              }
+            }}>
+              Skip (No VMRS)
+            </Button>
+            <Button 
+              onClick={() => {
+                if (vmrsSelectDialog && selectedVmrsCode) {
+                  const suggestions = vmrsSelectDialog.suggestions || [];
+                  const suggestion = suggestions.find(s => s.systemCode === selectedVmrsCode);
+                  const topSuggestion = suggestions[0];
+                  createWoLineFromChecklistMutation.mutate({
+                    itemId: vmrsSelectDialog.itemId,
+                    vmrsCode: selectedVmrsCode,
+                    vmrsTitle: suggestion?.title || selectedVmrsCode,
+                    wasAutoApplied: false,
+                    suggestedSystemCode: topSuggestion?.systemCode,
+                    suggestedTitle: topSuggestion?.title,
+                    suggestedConfidence: topSuggestion?.confidence,
+                  });
+                }
+              }}
+              disabled={!selectedVmrsCode || createWoLineFromChecklistMutation.isPending}
+              data-testid="button-confirm-vmrs"
+            >
+              {createWoLineFromChecklistMutation.isPending ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : null}
+              Create with VMRS
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1348,84 +2446,107 @@ export default function WorkOrderDetail() {
                 {(() => {
                   const line = workOrderLines?.find(l => l.id === showAddItemDialog);
                   const lineVmrs = line?.vmrsCode;
-                  if (lineVmrs) {
+                  if (lineVmrs && smartSuggestions?.historical && smartSuggestions.historical.length > 0) {
                     return (
                       <div className="space-y-2">
-                        <div className="flex items-center justify-between">
-                          <label className="text-[10px] uppercase font-bold text-muted-foreground flex items-center gap-1">
-                            <Sparkles className="h-3 w-3 text-primary" />
-                            Smart Suggestions
-                          </label>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-6 text-xs"
-                            onClick={() => {
-                              setSuggestionsVmrs(lineVmrs);
-                              setShowSuggestions(true);
-                            }}
-                            data-testid="button-get-suggestions"
-                          >
-                            <Lightbulb className="h-3 w-3 mr-1" />
-                            Get Suggestions
-                          </Button>
+                        <label className="text-[10px] uppercase font-bold text-muted-foreground flex items-center gap-1">
+                          <Sparkles className="h-3 w-3 text-primary" />
+                          High Probability Parts for {lineVmrs}
+                        </label>
+                        <div className="border rounded-lg overflow-hidden">
+                          <table className="w-full text-xs">
+                            <thead className="bg-muted/50">
+                              <tr>
+                                <th className="text-left p-2 font-medium">Part</th>
+                                <th className="text-right p-2 font-medium">In Stock</th>
+                                <th className="text-right p-2 font-medium">Usage</th>
+                                <th className="p-2"></th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {smartSuggestions.historical.map((suggestion) => {
+                                const partInInventory = parts?.find(p => p.id === suggestion.partId);
+                                const isSelected = addItemPartId === suggestion.partId.toString();
+                                return (
+                                  <tr 
+                                    key={suggestion.partId} 
+                                    className={`border-t hover-elevate cursor-pointer ${isSelected ? 'bg-primary/10' : ''}`}
+                                    onClick={() => setAddItemPartId(suggestion.partId.toString())}
+                                    data-testid={`row-suggestion-${suggestion.partId}`}
+                                  >
+                                    <td className="p-2">
+                                      <div className="font-medium">{suggestion.partNumber}</div>
+                                      <div className="text-muted-foreground">{suggestion.partName}</div>
+                                    </td>
+                                    <td className="text-right p-2">
+                                      {partInInventory ? partInInventory.quantityOnHand || 0 : '-'}
+                                    </td>
+                                    <td className="text-right p-2 text-muted-foreground">
+                                      {suggestion.usageCount}x
+                                    </td>
+                                    <td className="p-2 text-center">
+                                      {isSelected && <CheckCircle className="h-4 w-4 text-primary" />}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
                         </div>
-                        {showSuggestions && suggestionsVmrs === lineVmrs && (
-                          <div className="border rounded-lg p-2 bg-primary/5 space-y-1">
-                            {suggestionsLoading ? (
-                              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                                <Loader2 className="h-3 w-3 animate-spin" />
-                                Finding parts used for {lineVmrs}...
-                              </div>
-                            ) : smartSuggestions?.historical && smartSuggestions.historical.length > 0 ? (
-                              <>
-                                <p className="text-xs text-muted-foreground mb-2">
-                                  Parts commonly used for this VMRS code on similar vehicles:
-                                </p>
-                                {smartSuggestions.historical.map((suggestion) => {
-                                  const partInInventory = parts?.find(p => p.id === suggestion.partId);
-                                  return (
-                                    <button
-                                      key={suggestion.partId}
-                                      onClick={() => setAddItemPartId(suggestion.partId.toString())}
-                                      className="w-full text-left p-2 rounded bg-background hover-elevate text-xs flex items-center justify-between"
-                                      data-testid={`button-suggestion-${suggestion.partId}`}
-                                    >
-                                      <span className="font-medium">{suggestion.partNumber} - {suggestion.partName}</span>
-                                      <span className="text-muted-foreground">
-                                        {partInInventory ? `Qty: ${partInInventory.quantityOnHand || 0}` : ""}
-                                        {suggestion.usageCount > 1 ? ` (used ${suggestion.usageCount}x)` : ""}
-                                      </span>
-                                    </button>
-                                  );
-                                })}
-                              </>
-                            ) : (
-                              <p className="text-xs text-muted-foreground">
-                                No historical part usage found for this VMRS code. Select a part from the list below.
-                              </p>
-                            )}
-                          </div>
-                        )}
                       </div>
                     );
                   }
                   return null;
                 })()}
                 <div className="space-y-2">
-                  <label className="text-[10px] uppercase font-bold text-muted-foreground">Select Part</label>
-                  <Select value={addItemPartId} onValueChange={setAddItemPartId}>
-                    <SelectTrigger data-testid="select-inventory-part">
-                      <SelectValue placeholder="Select a part..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {parts?.map((part) => (
-                        <SelectItem key={part.id} value={part.id.toString()}>
-                          {part.partNumber} - {part.name} (Qty: {part.quantityOnHand || 0}, ${part.unitCost || 0})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <label className="text-[10px] uppercase font-bold text-muted-foreground">Search & Select Part</label>
+                  <Input
+                    placeholder="Search by part number or name..."
+                    value={partSearchQuery}
+                    onChange={(e) => setPartSearchQuery(e.target.value)}
+                    data-testid="input-part-search"
+                  />
+                  <div className="border rounded-lg max-h-48 overflow-y-auto">
+                    {parts?.filter(part => {
+                      if (!partSearchQuery) return true;
+                      const query = partSearchQuery.toLowerCase();
+                      return (
+                        part.partNumber?.toLowerCase().includes(query) ||
+                        part.name?.toLowerCase().includes(query) ||
+                        part.description?.toLowerCase().includes(query)
+                      );
+                    }).slice(0, 50).map((part) => {
+                      const isSelected = addItemPartId === part.id.toString();
+                      return (
+                        <div
+                          key={part.id}
+                          className={`p-2 text-sm cursor-pointer hover-elevate flex items-center justify-between border-b last:border-b-0 ${isSelected ? 'bg-primary/10' : ''}`}
+                          onClick={() => setAddItemPartId(part.id.toString())}
+                          data-testid={`part-option-${part.id}`}
+                        >
+                          <div>
+                            <span className="font-medium">{part.partNumber}</span> - {part.name}
+                            <div className="text-xs text-muted-foreground">
+                              Qty: {part.quantityOnHand || 0} | ${part.unitCost || 0}
+                            </div>
+                          </div>
+                          {isSelected && <CheckCircle className="h-4 w-4 text-primary" />}
+                        </div>
+                      );
+                    })}
+                    {parts?.filter(part => {
+                      if (!partSearchQuery) return true;
+                      const query = partSearchQuery.toLowerCase();
+                      return (
+                        part.partNumber?.toLowerCase().includes(query) ||
+                        part.name?.toLowerCase().includes(query)
+                      );
+                    }).length === 0 && (
+                      <div className="p-3 text-sm text-muted-foreground text-center">
+                        No parts found matching "{partSearchQuery}"
+                      </div>
+                    )}
+                  </div>
                   {addItemPartId && (() => {
                     const selectedPart = parts?.find(p => p.id.toString() === addItemPartId);
                     if (selectedPart && Number(selectedPart.quantityOnHand || 0) === 0) {
@@ -1505,6 +2626,152 @@ export default function WorkOrderDetail() {
                 <Plus className="h-4 w-4 mr-2" />
               )}
               Add Item
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Signature Capture Dialog */}
+      <Dialog open={showSignatureDialog} onOpenChange={setShowSignatureDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <PenLine className="h-5 w-5" />
+              {signatureType === "technician" ? "Technician Signature" : "Customer Signature"}
+            </DialogTitle>
+            <DialogDescription>
+              {signatureType === "technician" 
+                ? "Please sign below to confirm completion of this work order."
+                : "Customer signature to acknowledge work completion."
+              }
+            </DialogDescription>
+          </DialogHeader>
+          <SignatureCapture
+            onSave={handleSignatureSave}
+            onCancel={() => {
+              setShowSignatureDialog(false);
+              setPendingStatusChange(null);
+            }}
+            title={signatureType === "technician" ? "Technician Sign Here" : "Customer Sign Here"}
+          />
+        </DialogContent>
+      </Dialog>
+
+      {/* Request Part Dialog */}
+      <Dialog open={showRequestPartDialog !== null} onOpenChange={(open) => !open && setShowRequestPartDialog(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Package className="h-5 w-5" />
+              Request Part
+            </DialogTitle>
+            <DialogDescription>
+              Search for a part and specify the quantity needed.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Search Parts</label>
+              <Input
+                placeholder="Search by name or part number..."
+                value={requestPartSearch}
+                onChange={(e) => setRequestPartSearch(e.target.value)}
+                data-testid="input-request-part-search"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Select Part</label>
+              <Select value={requestPartId} onValueChange={setRequestPartId}>
+                <SelectTrigger data-testid="select-request-part">
+                  <SelectValue placeholder="Select a part..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {parts
+                    ?.filter((p: Part) => 
+                      !requestPartSearch || 
+                      p.name.toLowerCase().includes(requestPartSearch.toLowerCase()) ||
+                      p.partNumber?.toLowerCase().includes(requestPartSearch.toLowerCase())
+                    )
+                    .slice(0, 20)
+                    .map((p: Part) => (
+                      <SelectItem key={p.id} value={p.id.toString()}>
+                        {p.partNumber ? `${p.partNumber} - ` : ""}{p.name} (Qty: {p.quantityOnHand || 0})
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Quantity</label>
+              <Input
+                type="number"
+                min="1"
+                value={requestPartQuantity}
+                onChange={(e) => setRequestPartQuantity(e.target.value)}
+                data-testid="input-request-part-quantity"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowRequestPartDialog(null)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (showRequestPartDialog && requestPartId) {
+                  const currentLine = workOrderLines?.find((l: WorkOrderLine) => l.id === showRequestPartDialog);
+                  if (currentLine?.partRequestStatus === 'none') {
+                    requestPartMutation.mutate({
+                      lineId: showRequestPartDialog,
+                      partId: parseInt(requestPartId),
+                      quantity: parseFloat(requestPartQuantity) || 1
+                    });
+                  } else {
+                    postPartMutation.mutate({
+                      lineId: showRequestPartDialog,
+                      partId: parseInt(requestPartId),
+                      quantity: parseFloat(requestPartQuantity) || 1
+                    });
+                  }
+                  setShowRequestPartDialog(null);
+                }
+              }}
+              disabled={!requestPartId}
+              data-testid="button-submit-request-part"
+            >
+              Submit
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Close Line Confirmation Dialog */}
+      <Dialog open={showCloseLineConfirm !== null} onOpenChange={(open) => !open && setShowCloseLineConfirm(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CheckCircle2 className="h-5 w-5" />
+              Complete Work Order Line
+            </DialogTitle>
+            <DialogDescription>
+              Are you sure you want to mark this line as completed? Any running timers will be stopped.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowCloseLineConfirm(null)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (showCloseLineConfirm) {
+                  // Stop any running timer first and complete
+                  stopTimerMutation.mutate({ lineId: showCloseLineConfirm, complete: true });
+                  setShowCloseLineConfirm(null);
+                }
+              }}
+              data-testid="button-confirm-close-line"
+            >
+              Complete Line
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -1,15 +1,23 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
-import { Plus, Search, ClipboardList, CheckCircle2, AlertTriangle, XCircle } from "lucide-react";
+import { Plus, Search, ClipboardList, CheckCircle2, AlertTriangle, XCircle, MapPin } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
+import { 
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { PageHeader } from "@/components/PageHeader";
 import { DataTable, Column } from "@/components/DataTable";
 import { StatusBadge } from "@/components/StatusBadge";
 import { EmptyState } from "@/components/EmptyState";
-import type { Dvir } from "@shared/schema";
+import { useMembership } from "@/hooks/use-membership";
+import type { Dvir, Location } from "@shared/schema";
 
 interface DvirWithAsset extends Dvir {
   assetName?: string;
@@ -17,72 +25,105 @@ interface DvirWithAsset extends Dvir {
   defectCount?: number;
 }
 
+interface DvirWithLocation extends DvirWithAsset {
+  assetLocationId?: number | null;
+}
+
 export default function DVIRs() {
   const [, navigate] = useLocation();
   const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [locationFilter, setLocationFilter] = useState<string>("all");
+  const [locationFilterInitialized, setLocationFilterInitialized] = useState(false);
+  const { primaryLocationId, isLoading: membershipLoading } = useMembership();
 
-  const { data: dvirs, isLoading } = useQuery<DvirWithAsset[]>({
+  const { data: dvirs, isLoading } = useQuery<DvirWithLocation[]>({
     queryKey: ["/api/dvirs"],
   });
+
+  const { data: locations } = useQuery<Location[]>({
+    queryKey: ["/api/locations"],
+  });
+
+  useEffect(() => {
+    if (!locationFilterInitialized && !membershipLoading && primaryLocationId) {
+      setLocationFilter(primaryLocationId.toString());
+      setLocationFilterInitialized(true);
+    } else if (!locationFilterInitialized && !membershipLoading && !primaryLocationId) {
+      setLocationFilterInitialized(true);
+    }
+  }, [primaryLocationId, membershipLoading, locationFilterInitialized]);
 
   const mockDvirs: DvirWithAsset[] = [
     {
       id: 1,
+      orgId: 1,
       assetId: 1,
       assetName: "Freightliner Cascadia",
       assetNumber: "TRK-1024",
       inspectorId: "user1",
+      inspectorName: "John Doe",
       inspectionDate: new Date("2024-01-15T08:00:00"),
       status: "safe",
       meterReading: "145230",
       preTrip: true,
       notes: "All systems check out",
       signature: "John Doe",
+      isPublicSubmission: false,
       defectCount: 0,
       createdAt: new Date("2024-01-15"),
     },
     {
       id: 2,
+      orgId: 1,
       assetId: 2,
       assetName: "Ford Transit 350",
       assetNumber: "VAN-3012",
       inspectorId: "user2",
+      inspectorName: "Jane Smith",
       inspectionDate: new Date("2024-01-15T07:30:00"),
       status: "defects_noted",
       meterReading: "78560",
       preTrip: true,
       notes: "Brake warning light on",
       signature: "Jane Smith",
+      isPublicSubmission: false,
       defectCount: 2,
       createdAt: new Date("2024-01-15"),
     },
     {
       id: 3,
+      orgId: 1,
       assetId: 3,
       assetName: "Blue Bird Vision",
       assetNumber: "BUS-5001",
       inspectorId: "user3",
+      inspectorName: "Mike Johnson",
       inspectionDate: new Date("2024-01-14T16:00:00"),
       status: "safe",
       meterReading: "23450",
       preTrip: false,
       notes: "Post-trip inspection complete",
       signature: "Mike Johnson",
+      isPublicSubmission: false,
       defectCount: 0,
       createdAt: new Date("2024-01-14"),
     },
     {
       id: 4,
+      orgId: 1,
       assetId: 4,
       assetName: "Caterpillar GP25N",
       assetNumber: "LIFT-001",
       inspectorId: "user1",
+      inspectorName: "John Doe",
       inspectionDate: new Date("2024-01-14T08:00:00"),
       status: "unsafe",
       meterReading: "3250",
       preTrip: true,
       notes: "Hydraulic leak detected - DO NOT OPERATE",
       signature: "John Doe",
+      isPublicSubmission: false,
       defectCount: 1,
       createdAt: new Date("2024-01-14"),
     },
@@ -90,10 +131,15 @@ export default function DVIRs() {
 
   const displayDvirs = dvirs?.length ? dvirs : mockDvirs;
 
-  const filteredDvirs = displayDvirs.filter((dvir) =>
-    dvir.assetName?.toLowerCase().includes(search.toLowerCase()) ||
-    dvir.assetNumber?.toLowerCase().includes(search.toLowerCase())
-  );
+  const filteredDvirs = displayDvirs.filter((dvir) => {
+    const matchesSearch = dvir.assetName?.toLowerCase().includes(search.toLowerCase()) ||
+      dvir.assetNumber?.toLowerCase().includes(search.toLowerCase());
+    const matchesStatus = statusFilter === "all" || dvir.status === statusFilter;
+    const matchesLocation = locationFilter === "all" || 
+      (locationFilter === "unassigned" ? !(dvir as DvirWithLocation).assetLocationId : 
+        (dvir as DvirWithLocation).assetLocationId?.toString() === locationFilter);
+    return matchesSearch && matchesStatus && matchesLocation;
+  });
 
   const safeCount = displayDvirs.filter((d) => d.status === "safe").length;
   const defectsCount = displayDvirs.filter((d) => d.status === "defects_noted").length;
@@ -226,6 +272,34 @@ export default function DVIRs() {
             className="pl-9"
             data-testid="input-search"
           />
+        </div>
+        <div className="flex gap-2 flex-wrap">
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-[150px]" data-testid="select-status">
+              <SelectValue placeholder="Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Status</SelectItem>
+              <SelectItem value="safe">Safe</SelectItem>
+              <SelectItem value="defects_noted">Defects Noted</SelectItem>
+              <SelectItem value="unsafe">Unsafe</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={locationFilter} onValueChange={setLocationFilter}>
+            <SelectTrigger className="w-[160px]" data-testid="select-location">
+              <MapPin className="h-4 w-4 mr-2" />
+              <SelectValue placeholder="Location" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Locations</SelectItem>
+              <SelectItem value="unassigned">Unassigned</SelectItem>
+              {locations?.map((loc) => (
+                <SelectItem key={loc.id} value={loc.id.toString()}>
+                  {loc.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       </div>
 

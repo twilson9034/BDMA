@@ -1,7 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
-import { Plus, Search, Package, AlertTriangle, BarChart3 } from "lucide-react";
+import { Plus, Search, Package, AlertTriangle, BarChart3, Download, Barcode, ChevronLeft, ChevronRight, MapPin } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { useMembership } from "@/hooks/use-membership";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -17,127 +19,71 @@ import { DataTable, Column } from "@/components/DataTable";
 import { EmptyState } from "@/components/EmptyState";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import type { Part } from "@shared/schema";
+import type { Part, Location } from "@shared/schema";
 
 interface PartWithVendor extends Part {
   vendorName?: string;
   locationName?: string;
 }
 
+interface PaginatedPartsResponse {
+  parts: PartWithVendor[];
+  total: number;
+}
+
 export default function Inventory() {
   const [, navigate] = useLocation();
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [stockFilter, setStockFilter] = useState<string>("all");
+  const [abcFilter, setAbcFilter] = useState<string>("all");
+  const [locationFilter, setLocationFilter] = useState<string>("all");
+  const [locationFilterInitialized, setLocationFilterInitialized] = useState(false);
+  const [page, setPage] = useState(1);
+  const [limit] = useState(50);
+  const { toast } = useToast();
+  const { primaryLocationId, isLoading: membershipLoading } = useMembership();
 
-  const { data: parts, isLoading } = useQuery<PartWithVendor[]>({
-    queryKey: ["/api/parts"],
+  const { data: locations } = useQuery<Location[]>({
+    queryKey: ["/api/locations"],
   });
 
-  const mockParts: PartWithVendor[] = [
-    {
-      id: 1,
-      partNumber: "OIL-15W40-001",
-      name: "Engine Oil 15W-40 (5 Gallon)",
-      description: "Heavy duty diesel engine oil",
-      category: "fluids",
-      abcClass: "A",
-      unitOfMeasure: "gallon",
-      quantityOnHand: "3",
-      quantityReserved: "1",
-      reorderPoint: "10",
-      reorderQuantity: "20",
-      unitCost: "45.99",
-      locationId: 1,
-      locationName: "Main Warehouse",
-      binLocation: "A-01-03",
-      vendorId: 1,
-      vendorName: "Auto Parts Plus",
-      vendorPartNumber: "MOB-15W40-5G",
-      barcode: "123456789012",
-      imageUrl: null,
-      isActive: true,
-      createdAt: new Date("2023-01-15"),
-      updatedAt: new Date("2024-01-15"),
-    },
-    {
-      id: 2,
-      partNumber: "BRK-HD-002",
-      name: "Brake Pads Heavy Duty (Set)",
-      description: "Commercial vehicle brake pads",
-      category: "brakes",
-      abcClass: "A",
-      unitOfMeasure: "set",
-      quantityOnHand: "2",
-      quantityReserved: "0",
-      reorderPoint: "8",
-      reorderQuantity: "12",
-      unitCost: "89.50",
-      locationId: 1,
-      locationName: "Main Warehouse",
-      binLocation: "B-02-01",
-      vendorId: 1,
-      vendorName: "Auto Parts Plus",
-      vendorPartNumber: "BP-HD-COMM",
-      barcode: "123456789013",
-      imageUrl: null,
-      isActive: true,
-      createdAt: new Date("2023-02-10"),
-      updatedAt: new Date("2024-01-14"),
-    },
-    {
-      id: 3,
-      partNumber: "AIR-STD-003",
-      name: "Air Filter Standard",
-      description: "Standard engine air filter",
-      category: "filters",
-      abcClass: "B",
-      unitOfMeasure: "each",
-      quantityOnHand: "5",
-      quantityReserved: "2",
-      reorderPoint: "15",
-      reorderQuantity: "25",
-      unitCost: "24.99",
-      locationId: 1,
-      locationName: "Main Warehouse",
-      binLocation: "A-03-02",
-      vendorId: 2,
-      vendorName: "Fleet Supplies Inc",
-      vendorPartNumber: "AF-STD-001",
-      barcode: "123456789014",
-      imageUrl: null,
-      isActive: true,
-      createdAt: new Date("2023-03-05"),
-      updatedAt: new Date("2024-01-15"),
-    },
-    {
-      id: 4,
-      partNumber: "FUEL-FLT-004",
-      name: "Fuel Filter Premium",
-      description: "Premium diesel fuel filter",
-      category: "filters",
-      abcClass: "A",
-      unitOfMeasure: "each",
-      quantityOnHand: "18",
-      quantityReserved: "3",
-      reorderPoint: "10",
-      reorderQuantity: "20",
-      unitCost: "35.75",
-      locationId: 1,
-      locationName: "Main Warehouse",
-      binLocation: "A-03-04",
-      vendorId: 2,
-      vendorName: "Fleet Supplies Inc",
-      vendorPartNumber: "FF-PREM-001",
-      barcode: "123456789015",
-      imageUrl: null,
-      isActive: true,
-      createdAt: new Date("2023-04-12"),
-      updatedAt: new Date("2024-01-15"),
-    },
-  ];
+  useEffect(() => {
+    if (!locationFilterInitialized && !membershipLoading && primaryLocationId) {
+      setLocationFilter(primaryLocationId.toString());
+      setLocationFilterInitialized(true);
+    } else if (!locationFilterInitialized && !membershipLoading && !primaryLocationId) {
+      setLocationFilterInitialized(true);
+    }
+  }, [primaryLocationId, membershipLoading, locationFilterInitialized]);
 
-  const displayParts = parts?.length ? parts : mockParts;
+  // Debounce search input
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search);
+      setPage(1); // Reset to first page when searching
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  const { data, isLoading } = useQuery<PaginatedPartsResponse>({
+    queryKey: ["/api/parts", { page, limit, search: debouncedSearch }],
+    queryFn: async () => {
+      const params = new URLSearchParams({
+        page: page.toString(),
+        limit: limit.toString(),
+        ...(debouncedSearch && { search: debouncedSearch }),
+      });
+      const res = await fetch(`/api/parts?${params}`);
+      if (!res.ok) throw new Error("Failed to fetch parts");
+      return res.json();
+    },
+  });
+
+  const parts = data?.parts || [];
+  const totalParts = data?.total || 0;
+  const totalPages = Math.ceil(totalParts / limit);
 
   const getStockLevel = (part: PartWithVendor) => {
     const qty = Number(part.quantityOnHand) || 0;
@@ -147,19 +93,82 @@ export default function Inventory() {
     return "normal";
   };
 
-  const filteredParts = displayParts.filter((part) => {
-    const matchesSearch =
-      part.partNumber.toLowerCase().includes(search.toLowerCase()) ||
-      part.name.toLowerCase().includes(search.toLowerCase());
+  // Client-side filtering for category, stock level, ABC class, and location (search is server-side)
+  const filteredParts = parts.filter((part) => {
     const matchesCategory = categoryFilter === "all" || part.category === categoryFilter;
     const stockLevel = getStockLevel(part);
     const matchesStock = stockFilter === "all" || stockLevel === stockFilter;
-    return matchesSearch && matchesCategory && matchesStock;
+    const matchesAbc = abcFilter === "all" || part.abcClass === abcFilter;
+    const matchesLocation = locationFilter === "all" || 
+      (locationFilter === "unassigned" ? !part.locationId : part.locationId?.toString() === locationFilter);
+    return matchesCategory && matchesStock && matchesAbc && matchesLocation;
   });
 
-  const lowStockCount = displayParts.filter((p) => getStockLevel(p) === "low").length;
-  const outOfStockCount = displayParts.filter((p) => getStockLevel(p) === "out").length;
-  const totalValue = displayParts.reduce(
+  const handleExportCSV = () => {
+    const headers = [
+      "Part Number",
+      "Name",
+      "Description",
+      "Category",
+      "ABC Class",
+      "Unit of Measure",
+      "Quantity on Hand",
+      "Quantity Reserved",
+      "Reorder Point",
+      "Reorder Quantity",
+      "Unit Cost",
+      "Bin Location",
+      "Location",
+      "Vendor",
+      "Barcode",
+    ];
+
+    const rows = filteredParts.map((part) => [
+      part.partNumber,
+      part.name,
+      part.description || "",
+      part.category || "",
+      part.abcClass || "",
+      part.unitOfMeasure || "",
+      part.quantityOnHand || "0",
+      part.quantityReserved || "0",
+      part.reorderPoint || "0",
+      part.reorderQuantity || "0",
+      part.unitCost || "0",
+      part.binLocation || "",
+      part.locationName || "",
+      part.vendorName || "",
+      part.barcode || "",
+    ]);
+
+    const csvContent = [
+      headers.join(","),
+      ...rows.map((row) =>
+        row
+          .map((cell) => `"${String(cell).replace(/"/g, '""')}"`)
+          .join(",")
+      ),
+    ].join("\n");
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `inventory_export_${new Date().toISOString().split("T")[0]}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    toast({
+      title: "Export Complete",
+      description: `Exported ${filteredParts.length} parts to CSV`,
+    });
+  };
+
+  const lowStockCount = parts.filter((p) => getStockLevel(p) === "low").length;
+  const outOfStockCount = parts.filter((p) => getStockLevel(p) === "out").length;
+  const totalValue = parts.reduce(
     (sum, p) => sum + (Number(p.quantityOnHand) || 0) * (Number(p.unitCost) || 0),
     0
   );
@@ -186,6 +195,18 @@ export default function Inventory() {
       cell: (part) => (
         <Badge variant="outline" className="capitalize">
           {part.category}
+        </Badge>
+      ),
+    },
+    {
+      key: "abcClass",
+      header: "ABC",
+      cell: (part) => (
+        <Badge 
+          variant={part.abcClass === "A" ? "destructive" : part.abcClass === "B" ? "default" : "secondary"}
+          data-testid={`badge-abc-${part.id}`}
+        >
+          {part.abcClass || "-"}
         </Badge>
       ),
     },
@@ -249,6 +270,22 @@ export default function Inventory() {
         </div>
       ),
     },
+    {
+      key: "barcode",
+      header: "Barcode",
+      cell: (part) => (
+        <div className="flex items-center gap-2">
+          {part.barcode ? (
+            <>
+              <Barcode className="h-4 w-4 text-muted-foreground" />
+              <span className="text-xs font-mono">{part.barcode}</span>
+            </>
+          ) : (
+            <span className="text-xs text-muted-foreground">-</span>
+          )}
+        </div>
+      ),
+    },
   ];
 
   return (
@@ -257,12 +294,18 @@ export default function Inventory() {
         title="Inventory"
         description="Manage parts, supplies, and stock levels"
         actions={
-          <Button asChild data-testid="button-new-part">
-            <Link href="/inventory/new">
-              <Plus className="h-4 w-4 mr-2" />
-              Add Part
-            </Link>
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={handleExportCSV} data-testid="button-export-csv">
+              <Download className="h-4 w-4 mr-2" />
+              Export CSV
+            </Button>
+            <Button asChild data-testid="button-new-part">
+              <Link href="/inventory/new">
+                <Plus className="h-4 w-4 mr-2" />
+                Add Part
+              </Link>
+            </Button>
+          </div>
         }
       />
 
@@ -272,7 +315,7 @@ export default function Inventory() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Total Parts</p>
-                <p className="text-2xl font-bold">{displayParts.length}</p>
+                <p className="text-2xl font-bold">{totalParts}</p>
               </div>
               <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
                 <Package className="h-5 w-5 text-primary" />
@@ -366,6 +409,32 @@ export default function Inventory() {
               <SelectItem value="out">Out of Stock</SelectItem>
             </SelectContent>
           </Select>
+          <Select value={abcFilter} onValueChange={setAbcFilter}>
+            <SelectTrigger className="w-[100px]" data-testid="select-abc">
+              <SelectValue placeholder="ABC Class" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All ABC</SelectItem>
+              <SelectItem value="A">Class A</SelectItem>
+              <SelectItem value="B">Class B</SelectItem>
+              <SelectItem value="C">Class C</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={locationFilter} onValueChange={setLocationFilter}>
+            <SelectTrigger className="w-[160px]" data-testid="select-location">
+              <MapPin className="h-4 w-4 mr-2" />
+              <SelectValue placeholder="Location" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Locations</SelectItem>
+              <SelectItem value="unassigned">Unassigned</SelectItem>
+              {locations?.map((loc) => (
+                <SelectItem key={loc.id} value={loc.id.toString()}>
+                  {loc.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       </div>
 
@@ -382,18 +451,77 @@ export default function Inventory() {
           }}
         />
       ) : (
-        <DataTable
-          columns={columns}
-          data={filteredParts}
-          isLoading={isLoading}
-          onRowClick={(part) => navigate(`/inventory/${part.id}`)}
-          getRowKey={(part) => part.id}
-          emptyMessage="No parts found"
-          rowClassName={(part) => {
-            const level = getStockLevel(part);
-            return level === "out" ? "bg-red-500/5" : level === "low" ? "bg-yellow-500/5" : "";
-          }}
-        />
+        <>
+          <DataTable
+            columns={columns}
+            data={filteredParts}
+            isLoading={isLoading}
+            onRowClick={(part) => navigate(`/inventory/${part.id}`)}
+            getRowKey={(part) => part.id}
+            emptyMessage="No parts found"
+            rowClassName={(part) => {
+              const level = getStockLevel(part);
+              return level === "out" ? "bg-red-500/5" : level === "low" ? "bg-yellow-500/5" : "";
+            }}
+          />
+          
+          {/* Pagination Controls */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between gap-4 flex-wrap mt-4 px-2">
+              <div className="text-sm text-muted-foreground" data-testid="text-pagination-info">
+                Showing {((page - 1) * limit) + 1} - {Math.min(page * limit, totalParts)} of {totalParts} parts
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage(p => Math.max(1, p - 1))}
+                  disabled={page === 1 || isLoading}
+                  data-testid="button-prev-page"
+                >
+                  <ChevronLeft className="h-4 w-4 mr-1" />
+                  Previous
+                </Button>
+                <div className="flex items-center gap-1">
+                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                    let pageNum: number;
+                    if (totalPages <= 5) {
+                      pageNum = i + 1;
+                    } else if (page <= 3) {
+                      pageNum = i + 1;
+                    } else if (page >= totalPages - 2) {
+                      pageNum = totalPages - 4 + i;
+                    } else {
+                      pageNum = page - 2 + i;
+                    }
+                    return (
+                      <Button
+                        key={pageNum}
+                        variant={page === pageNum ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => setPage(pageNum)}
+                        disabled={isLoading}
+                        data-testid={`button-page-${pageNum}`}
+                      >
+                        {pageNum}
+                      </Button>
+                    );
+                  })}
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                  disabled={page === totalPages || isLoading}
+                  data-testid="button-next-page"
+                >
+                  Next
+                  <ChevronRight className="h-4 w-4 ml-1" />
+                </Button>
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

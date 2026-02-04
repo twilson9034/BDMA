@@ -1,10 +1,24 @@
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useState, useEffect, useRef } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
-import { Plus, Search, Truck, Filter } from "lucide-react";
+import { Plus, Search, Truck, Filter, Gauge, Download, MapPin, QrCode, Printer, X } from "lucide-react";
+import { QRCodeSVG } from "qrcode.react";
+import { BatchMeterUpdate } from "@/components/BatchMeterUpdate";
+import { useToast } from "@/hooks/use-toast";
+import { useMembership } from "@/hooks/use-membership";
+import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { 
   Select,
   SelectContent,
@@ -17,7 +31,7 @@ import { DataTable, Column } from "@/components/DataTable";
 import { StatusBadge } from "@/components/StatusBadge";
 import { EmptyState } from "@/components/EmptyState";
 import { Badge } from "@/components/ui/badge";
-import type { Asset } from "@shared/schema";
+import type { Asset, Location } from "@shared/schema";
 
 interface AssetWithLocation extends Asset {
   locationName?: string;
@@ -36,15 +50,39 @@ export default function Assets() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [typeFilter, setTypeFilter] = useState<string>("all");
+  const [lifecycleFilter, setLifecycleFilter] = useState<string>("all");
+  const [locationFilter, setLocationFilter] = useState<string>("all");
+  const [locationFilterInitialized, setLocationFilterInitialized] = useState(false);
   const [viewMode, setViewMode] = useState<"table" | "grid">("table");
+  const [showBatchMeter, setShowBatchMeter] = useState(false);
+  const [selectedAssets, setSelectedAssets] = useState<Set<number>>(new Set());
+  const [showBulkQrDialog, setShowBulkQrDialog] = useState(false);
+  const [qrTokens, setQrTokens] = useState<Record<number, { token: string; assetNumber: string; assetName: string }>>({});
+  const [isGeneratingTokens, setIsGeneratingTokens] = useState(false);
+  const { toast } = useToast();
+  const { primaryLocationId, isLoading: membershipLoading } = useMembership();
 
   const { data: assets, isLoading } = useQuery<AssetWithLocation[]>({
     queryKey: ["/api/assets"],
   });
 
+  const { data: locations } = useQuery<Location[]>({
+    queryKey: ["/api/locations"],
+  });
+
+  useEffect(() => {
+    if (!locationFilterInitialized && !membershipLoading && primaryLocationId) {
+      setLocationFilter(primaryLocationId.toString());
+      setLocationFilterInitialized(true);
+    } else if (!locationFilterInitialized && !membershipLoading && !primaryLocationId) {
+      setLocationFilterInitialized(true);
+    }
+  }, [primaryLocationId, membershipLoading, locationFilterInitialized]);
+
   const mockAssets: AssetWithLocation[] = [
     {
       id: 1,
+      orgId: 1,
       assetNumber: "TRK-1024",
       name: "Freightliner Cascadia",
       description: "Long haul semi truck",
@@ -66,11 +104,19 @@ export default function Assets() {
       imageUrl: null,
       notes: null,
       customFields: null,
+      lifecycleStatus: "active",
+      dispositionDate: null,
+      dispositionReason: null,
+      salvageValue: null,
+      depreciationMethod: null,
+      usefulLifeYears: null,
+      residualValue: null,
       createdAt: new Date("2022-03-15"),
       updatedAt: new Date("2024-01-15"),
     },
     {
       id: 2,
+      orgId: 1,
       assetNumber: "VAN-3012",
       name: "Ford Transit 350",
       description: "Cargo van for local deliveries",
@@ -92,11 +138,19 @@ export default function Assets() {
       imageUrl: null,
       notes: null,
       customFields: null,
+      lifecycleStatus: "active",
+      dispositionDate: null,
+      dispositionReason: null,
+      salvageValue: null,
+      depreciationMethod: null,
+      usefulLifeYears: null,
+      residualValue: null,
       createdAt: new Date("2021-06-20"),
       updatedAt: new Date("2024-01-14"),
     },
     {
       id: 3,
+      orgId: 1,
       assetNumber: "BUS-5001",
       name: "Blue Bird Vision",
       description: "School bus",
@@ -118,11 +172,19 @@ export default function Assets() {
       imageUrl: null,
       notes: null,
       customFields: null,
+      lifecycleStatus: "active",
+      dispositionDate: null,
+      dispositionReason: null,
+      salvageValue: null,
+      depreciationMethod: null,
+      usefulLifeYears: null,
+      residualValue: null,
       createdAt: new Date("2023-01-10"),
       updatedAt: new Date("2024-01-15"),
     },
     {
       id: 4,
+      orgId: 1,
       assetNumber: "LIFT-001",
       name: "Caterpillar GP25N",
       description: "Forklift for warehouse operations",
@@ -144,6 +206,13 @@ export default function Assets() {
       imageUrl: null,
       notes: null,
       customFields: null,
+      lifecycleStatus: "active",
+      dispositionDate: null,
+      dispositionReason: null,
+      salvageValue: null,
+      depreciationMethod: null,
+      usefulLifeYears: null,
+      residualValue: null,
       createdAt: new Date("2020-08-15"),
       updatedAt: new Date("2024-01-15"),
     },
@@ -158,10 +227,223 @@ export default function Assets() {
       (asset.manufacturer?.toLowerCase() || "").includes(search.toLowerCase());
     const matchesStatus = statusFilter === "all" || asset.status === statusFilter;
     const matchesType = typeFilter === "all" || asset.type === typeFilter;
-    return matchesSearch && matchesStatus && matchesType;
+    const matchesLifecycle = lifecycleFilter === "all" || asset.lifecycleStatus === lifecycleFilter;
+    const matchesLocation = locationFilter === "all" || 
+      (locationFilter === "unassigned" ? !asset.locationId : asset.locationId?.toString() === locationFilter);
+    return matchesSearch && matchesStatus && matchesType && matchesLifecycle && matchesLocation;
   });
 
+  const handleExportCSV = () => {
+    const headers = [
+      "Asset Number",
+      "Name",
+      "Description",
+      "Type",
+      "Status",
+      "Lifecycle Status",
+      "Location",
+      "Manufacturer",
+      "Model",
+      "Serial Number",
+      "Year",
+      "Purchase Date",
+      "Purchase Price",
+      "Salvage Value",
+      "Replacement Cost",
+      "Meter Type",
+      "Current Meter",
+      "Last Meter Update",
+    ];
+
+    const rows = filteredAssets.map((asset) => {
+      const purchasePrice = parseFloat(asset.purchasePrice || "0");
+      const salvageValue = parseFloat(asset.salvageValue || "0");
+      const replacementCost = Math.max(0, purchasePrice - salvageValue);
+      return [
+        asset.assetNumber,
+        asset.name,
+        asset.description || "",
+        asset.type || "",
+        asset.status || "",
+        asset.lifecycleStatus || "active",
+        asset.locationName || "",
+        asset.manufacturer || "",
+        asset.model || "",
+        asset.serialNumber || "",
+        asset.year?.toString() || "",
+        asset.purchaseDate ? new Date(asset.purchaseDate).toLocaleDateString() : "",
+        asset.purchasePrice || "0",
+        asset.salvageValue || "",
+        replacementCost.toFixed(2),
+        asset.meterType || "",
+        asset.currentMeterReading || "",
+        asset.lastMeterUpdate ? new Date(asset.lastMeterUpdate).toLocaleDateString() : "",
+      ];
+    });
+
+    const csvContent = [
+      headers.join(","),
+      ...rows.map((row) =>
+        row
+          .map((cell) => `"${String(cell).replace(/"/g, '""')}"`)
+          .join(",")
+      ),
+    ].join("\n");
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `assets_export_${new Date().toISOString().split("T")[0]}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    toast({
+      title: "Export Complete",
+      description: `Exported ${filteredAssets.length} assets to CSV`,
+    });
+  };
+
+  const toggleAssetSelection = (assetId: number) => {
+    setSelectedAssets(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(assetId)) {
+        newSet.delete(assetId);
+      } else {
+        newSet.add(assetId);
+      }
+      return newSet;
+    });
+  };
+
+  const toggleAllAssets = () => {
+    if (selectedAssets.size === filteredAssets.length) {
+      setSelectedAssets(new Set());
+    } else {
+      setSelectedAssets(new Set(filteredAssets.map(a => a.id)));
+    }
+  };
+
+  const handleBulkPrintQrCodes = async () => {
+    if (selectedAssets.size === 0) {
+      toast({
+        title: "No assets selected",
+        description: "Please select at least one asset to print QR codes.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsGeneratingTokens(true);
+    setShowBulkQrDialog(true);
+    const tokens: Record<number, { token: string; assetNumber: string; assetName: string }> = {};
+
+    for (const assetId of selectedAssets) {
+      const asset = displayAssets.find(a => a.id === assetId);
+      if (asset) {
+        try {
+          const res = await apiRequest("POST", `/api/assets/${assetId}/dvir-token`);
+          const data = await res.json();
+          tokens[assetId] = {
+            token: data.token,
+            assetNumber: asset.assetNumber,
+            assetName: asset.name,
+          };
+        } catch (error) {
+          console.error(`Failed to generate token for asset ${assetId}:`, error);
+        }
+      }
+    }
+
+    setQrTokens(tokens);
+    setIsGeneratingTokens(false);
+  };
+
+  const printBulkQrCodes = () => {
+    const printWindow = window.open("", "_blank");
+    if (printWindow) {
+      const qrItems = Object.entries(qrTokens).map(([assetId, data]) => {
+        const url = `${window.location.origin}/dvir/${data.token}`;
+        return `
+          <div class="qr-item">
+            <h2>${data.assetNumber}</h2>
+            <h3>${data.assetName}</h3>
+            <div class="qr-code" id="qr-${assetId}"></div>
+            <p>Scan to submit DVIR</p>
+          </div>
+        `;
+      }).join("");
+
+      printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>DVIR QR Codes - Bulk Print</title>
+          <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"><\/script>
+          <style>
+            body { font-family: Arial, sans-serif; margin: 0; padding: 20px; }
+            .qr-grid { 
+              display: grid; 
+              grid-template-columns: repeat(3, 1fr); 
+              gap: 20px; 
+              page-break-inside: auto;
+            }
+            .qr-item { 
+              border: 2px solid #333; 
+              border-radius: 8px; 
+              padding: 16px; 
+              text-align: center;
+              page-break-inside: avoid;
+            }
+            h2 { margin: 0 0 4px 0; font-size: 16px; }
+            h3 { margin: 0 0 12px 0; font-size: 12px; color: #666; }
+            .qr-code { display: flex; justify-content: center; margin-bottom: 8px; }
+            p { margin: 0; font-size: 10px; color: #666; }
+            @media print {
+              .qr-item { break-inside: avoid; }
+            }
+          </style>
+        </head>
+        <body>
+          <h1 style="text-align: center; margin-bottom: 20px;">DVIR QR Codes</h1>
+          <div class="qr-grid">${qrItems}</div>
+          <script>
+            ${Object.entries(qrTokens).map(([assetId, data]) => {
+              const url = `${window.location.origin}/dvir/${data.token}`;
+              return `QRCode.toCanvas(document.querySelector('#qr-${assetId}'), '${url}', { width: 150 }, function(error) { if (error) console.error(error); });`;
+            }).join("\n")}
+            setTimeout(() => { window.print(); }, 500);
+          <\/script>
+        </body>
+        </html>
+      `);
+      printWindow.document.close();
+    }
+  };
+
   const columns: Column<AssetWithLocation>[] = [
+    {
+      key: "select",
+      header: () => (
+        <Checkbox
+          checked={selectedAssets.size === filteredAssets.length && filteredAssets.length > 0}
+          onCheckedChange={toggleAllAssets}
+          aria-label="Select all"
+          data-testid="checkbox-select-all"
+        />
+      ),
+      cell: (asset) => (
+        <Checkbox
+          checked={selectedAssets.has(asset.id)}
+          onCheckedChange={() => toggleAssetSelection(asset.id)}
+          onClick={(e) => e.stopPropagation()}
+          aria-label={`Select ${asset.assetNumber}`}
+          data-testid={`checkbox-select-asset-${asset.id}`}
+        />
+      ),
+    },
     {
       key: "assetNumber",
       header: "Asset",
@@ -171,8 +453,8 @@ export default function Assets() {
             <Truck className="h-5 w-5 text-primary" />
           </div>
           <div>
-            <p className="font-medium">{asset.assetNumber}</p>
-            <p className="text-xs text-muted-foreground">{asset.name}</p>
+            <p className="font-medium" data-testid={`text-asset-number-${asset.id}`}>{asset.assetNumber}</p>
+            <p className="text-xs text-muted-foreground" data-testid={`text-asset-name-${asset.id}`}>{asset.name}</p>
           </div>
         </div>
       ),
@@ -181,7 +463,7 @@ export default function Assets() {
       key: "type",
       header: "Type",
       cell: (asset) => (
-        <Badge variant="outline" className="capitalize">
+        <Badge variant="outline" className="capitalize" data-testid={`badge-asset-type-${asset.id}`}>
           {asset.type}
         </Badge>
       ),
@@ -192,17 +474,45 @@ export default function Assets() {
       cell: (asset) => <StatusBadge status={asset.status} />,
     },
     {
+      key: "lifecycleStatus",
+      header: "Lifecycle",
+      cell: (asset) => {
+        const lifecycle = asset.lifecycleStatus || "active";
+        const lifecycleVariant = lifecycle === "active" ? "default" : 
+          lifecycle === "disposed" || lifecycle === "scrapped" ? "destructive" : "secondary";
+        return (
+          <Badge variant={lifecycleVariant} className="capitalize" data-testid={`badge-lifecycle-${asset.id}`}>
+            {lifecycle}
+          </Badge>
+        );
+      },
+    },
+    {
       key: "location",
       header: "Location",
       cell: (asset) => (
-        <span className="text-sm">{asset.locationName || "-"}</span>
+        <span className="text-sm" data-testid={`text-asset-location-${asset.id}`}>{asset.locationName || "-"}</span>
       ),
+    },
+    {
+      key: "replacementCost",
+      header: "Replacement Cost",
+      cell: (asset) => {
+        const purchasePrice = parseFloat(asset.purchasePrice || "0");
+        const salvageValue = parseFloat(asset.salvageValue || "0");
+        const replacementCost = Math.max(0, purchasePrice - salvageValue);
+        return (
+          <span className="text-sm font-medium" data-testid={`text-replacement-cost-${asset.id}`}>
+            {replacementCost > 0 ? `$${replacementCost.toLocaleString()}` : "-"}
+          </span>
+        );
+      },
     },
     {
       key: "meterReading",
       header: "Meter",
       cell: (asset) => (
-        <div className="text-sm">
+        <div className="text-sm" data-testid={`text-asset-meter-${asset.id}`}>
           {asset.currentMeterReading ? (
             <>
               <span className="font-medium">{Number(asset.currentMeterReading).toLocaleString()}</span>
@@ -218,7 +528,7 @@ export default function Assets() {
       key: "manufacturer",
       header: "Make/Model",
       cell: (asset) => (
-        <div className="text-sm">
+        <div className="text-sm" data-testid={`text-asset-makemodel-${asset.id}`}>
           <p>{asset.manufacturer || "-"}</p>
           <p className="text-muted-foreground">{asset.model || ""}</p>
         </div>
@@ -232,12 +542,28 @@ export default function Assets() {
         title="Assets"
         description="Manage your fleet vehicles, equipment, and facilities"
         actions={
-          <Button asChild data-testid="button-new-asset">
-            <Link href="/assets/new">
-              <Plus className="h-4 w-4 mr-2" />
-              Add Asset
-            </Link>
-          </Button>
+          <div className="flex gap-2 flex-wrap">
+            {selectedAssets.size > 0 && (
+              <Button variant="outline" onClick={handleBulkPrintQrCodes} data-testid="button-bulk-print-qr">
+                <QrCode className="h-4 w-4 mr-2" />
+                Print QR Codes ({selectedAssets.size})
+              </Button>
+            )}
+            <Button variant="outline" onClick={handleExportCSV} data-testid="button-export-csv">
+              <Download className="h-4 w-4 mr-2" />
+              Export CSV
+            </Button>
+            <Button variant="outline" onClick={() => setShowBatchMeter(true)} data-testid="button-batch-meter">
+              <Gauge className="h-4 w-4 mr-2" />
+              Batch Meters
+            </Button>
+            <Button asChild data-testid="button-new-asset">
+              <Link href="/assets/new">
+                <Plus className="h-4 w-4 mr-2" />
+                Add Asset
+              </Link>
+            </Button>
+          </div>
         }
       />
 
@@ -340,6 +666,34 @@ export default function Assets() {
               <SelectItem value="other">Other</SelectItem>
             </SelectContent>
           </Select>
+          <Select value={lifecycleFilter} onValueChange={setLifecycleFilter}>
+            <SelectTrigger className="w-[140px]" data-testid="select-lifecycle">
+              <SelectValue placeholder="Lifecycle" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Lifecycle</SelectItem>
+              <SelectItem value="active">Active</SelectItem>
+              <SelectItem value="disposed">Disposed</SelectItem>
+              <SelectItem value="sold">Sold</SelectItem>
+              <SelectItem value="transferred">Transferred</SelectItem>
+              <SelectItem value="scrapped">Scrapped</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={locationFilter} onValueChange={setLocationFilter}>
+            <SelectTrigger className="w-[160px]" data-testid="select-location">
+              <MapPin className="h-4 w-4 mr-2" />
+              <SelectValue placeholder="Location" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Locations</SelectItem>
+              <SelectItem value="unassigned">Unassigned</SelectItem>
+              {locations?.map((loc) => (
+                <SelectItem key={loc.id} value={loc.id.toString()}>
+                  {loc.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       </div>
 
@@ -365,6 +719,62 @@ export default function Assets() {
           emptyMessage="No assets found"
         />
       )}
+
+      <BatchMeterUpdate isOpen={showBatchMeter} onClose={() => setShowBatchMeter(false)} />
+
+      <Dialog open={showBulkQrDialog} onOpenChange={setShowBulkQrDialog}>
+        <DialogContent className="max-w-4xl max-h-[80vh] overflow-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <QrCode className="h-5 w-5" />
+              Bulk DVIR QR Codes
+            </DialogTitle>
+            <DialogDescription>
+              QR codes for {selectedAssets.size} selected asset(s). Print these and attach them to vehicles for easy DVIR submission.
+            </DialogDescription>
+          </DialogHeader>
+
+          {isGeneratingTokens ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="text-center space-y-4">
+                <div className="h-8 w-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto" />
+                <p className="text-muted-foreground">Generating QR codes...</p>
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 py-4">
+              {Object.entries(qrTokens).map(([assetId, data]) => (
+                <div key={assetId} className="border rounded-lg p-4 text-center">
+                  <h3 className="font-bold text-sm mb-1">{data.assetNumber}</h3>
+                  <p className="text-xs text-muted-foreground mb-3">{data.assetName}</p>
+                  <div className="flex justify-center bg-white rounded-lg p-2">
+                    <QRCodeSVG 
+                      value={`${window.location.origin}/dvir/${data.token}`} 
+                      size={120} 
+                      level="H" 
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-2">Scan for DVIR</p>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setShowBulkQrDialog(false)}>
+              Close
+            </Button>
+            <Button 
+              onClick={printBulkQrCodes} 
+              disabled={isGeneratingTokens || Object.keys(qrTokens).length === 0}
+              data-testid="button-print-all-qr"
+            >
+              <Printer className="h-4 w-4 mr-2" />
+              Print All
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

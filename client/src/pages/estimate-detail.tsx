@@ -4,7 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation, useRoute } from "wouter";
 import { 
-  ArrowLeft, Save, Loader2, Edit, Trash2, Plus, 
+  ArrowLeft, ArrowRight, Save, Loader2, Edit, Trash2, Plus, 
   Package, DollarSign, AlertTriangle, Calculator, X, Check
 } from "lucide-react";
 import { z } from "zod";
@@ -40,7 +40,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import type { Estimate, EstimateLine, Asset, Part } from "@shared/schema";
+import type { Estimate, EstimateLine, Asset, Part, VmrsCode } from "@shared/schema";
 
 const lineTypeLabels: Record<string, string> = {
   inventory_part: "Inventory Part",
@@ -60,6 +60,8 @@ export default function EstimateDetail() {
   const [lineQuantity, setLineQuantity] = useState("1");
   const [lineUnitCost, setLineUnitCost] = useState("");
   const [linePartNumber, setLinePartNumber] = useState("");
+  const [lineNotes, setLineNotes] = useState("");
+  const [selectedVmrsCode, setSelectedVmrsCode] = useState("");
 
   const estimateId = params?.id ? parseInt(params.id) : null;
 
@@ -77,11 +79,28 @@ export default function EstimateDetail() {
     queryKey: ["/api/assets"],
   });
 
-  const { data: parts } = useQuery<Part[]>({
+  const { data: partsData } = useQuery<{ parts: Part[]; total: number }>({
     queryKey: ["/api/parts"],
+  });
+  const parts = partsData?.parts;
+
+  const { data: organization } = useQuery<{ requireEstimateApproval?: boolean }>({
+    queryKey: ["/api/organizations/current"],
+  });
+
+  const { data: vmrsCodes } = useQuery<VmrsCode[]>({
+    queryKey: ["/api/vmrs-codes"],
   });
 
   const linkedAsset = assets?.find(a => a.id === estimate?.assetId);
+  
+  // Determine if estimate can be converted based on org approval settings
+  // When org is loading (undefined), we wait; when loaded, check if approval is explicitly required
+  const requireApproval = organization?.requireEstimateApproval === true;
+  const hasLines = lines && lines.length > 0;
+  const canConvert = estimate && !estimate.convertedToWorkOrderId && estimate.status !== "rejected" && hasLines && (
+    !requireApproval || estimate.status === "approved"
+  );
 
   const addLineMutation = useMutation({
     mutationFn: async (lineData: any) => {
@@ -135,6 +154,30 @@ export default function EstimateDetail() {
     },
   });
 
+  const convertToWorkOrderMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("POST", `/api/estimates/${estimateId}/convert`, {});
+      return response.json() as Promise<{ workOrderId: number; workOrderNumber: string; message: string }>;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", estimateId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/work-orders"] });
+      toast({
+        title: "Converted to Work Order",
+        description: `Work Order ${data.workOrderNumber} has been created.`,
+      });
+      navigate(`/work-orders/${data.workOrderId}`);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Conversion Failed",
+        description: error.message || "Failed to convert estimate to work order.",
+        variant: "destructive",
+      });
+    },
+  });
+
   const resetLineForm = () => {
     setLineType("inventory_part");
     setSelectedPartId("");
@@ -142,6 +185,8 @@ export default function EstimateDetail() {
     setLineQuantity("1");
     setLineUnitCost("");
     setLinePartNumber("");
+    setLineNotes("");
+    setSelectedVmrsCode("");
   };
 
   const handleAddLine = () => {
@@ -149,6 +194,9 @@ export default function EstimateDetail() {
     const unitCost = parseFloat(lineUnitCost);
     const totalCost = quantity * unitCost;
 
+    // Get selected VMRS code details
+    const selectedVmrs = vmrsCodes?.find(v => v.code === selectedVmrsCode);
+    
     let partData: any = {
       lineNumber: (lines?.length || 0) + 1,
       lineType,
@@ -156,6 +204,9 @@ export default function EstimateDetail() {
       quantity: lineQuantity,
       unitCost: lineUnitCost,
       totalCost: totalCost.toFixed(2),
+      notes: lineNotes || null,
+      vmrsCode: selectedVmrsCode || null,
+      vmrsTitle: selectedVmrs?.title || null,
     };
 
     if (lineType === "inventory_part" && selectedPartId) {
@@ -270,6 +321,31 @@ export default function EstimateDetail() {
             </Button>
           </>
         )}
+        {canConvert && (
+          <Button 
+            size="sm"
+            onClick={() => convertToWorkOrderMutation.mutate()}
+            disabled={convertToWorkOrderMutation.isPending}
+            data-testid="button-convert-to-wo"
+          >
+            {convertToWorkOrderMutation.isPending ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <ArrowRight className="h-4 w-4 mr-2" />
+            )}
+            Convert to Work Order
+          </Button>
+        )}
+        {estimate.convertedToWorkOrderId && (
+          <Button 
+            size="sm"
+            variant="outline"
+            onClick={() => navigate(`/work-orders/${estimate.convertedToWorkOrderId}`)}
+            data-testid="button-view-wo"
+          >
+            View Work Order
+          </Button>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -313,6 +389,9 @@ export default function EstimateDetail() {
                         {line.partNumber && (
                           <p className="text-sm text-muted-foreground">Part #: {line.partNumber}</p>
                         )}
+                        {line.vmrsCode && (
+                          <p className="text-sm text-muted-foreground">Task: {line.vmrsCode}{line.vmrsTitle ? ` - ${line.vmrsTitle}` : ""}</p>
+                        )}
                         <div className="flex gap-4 text-sm text-muted-foreground mt-1">
                           <span>Qty: {line.quantity}</span>
                           <span>@ ${parseFloat(line.unitCost || "0").toFixed(2)}</span>
@@ -320,6 +399,11 @@ export default function EstimateDetail() {
                             <span>On Hand: {line.quantityOnHand}</span>
                           )}
                         </div>
+                        {line.notes && (
+                          <p className="text-sm text-muted-foreground mt-2 italic border-l-2 border-muted-foreground/30 pl-2">
+                            {line.notes}
+                          </p>
+                        )}
                       </div>
                       <div className="flex items-center gap-3">
                         <span className="font-medium">
@@ -397,6 +481,25 @@ export default function EstimateDetail() {
             <DialogTitle>Add Line to Estimate</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Task / VMRS Code *</Label>
+              <Select value={selectedVmrsCode || ""} onValueChange={setSelectedVmrsCode}>
+                <SelectTrigger data-testid="select-vmrs-code">
+                  <SelectValue placeholder="Select a task/VMRS code..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {vmrsCodes?.map((vmrs) => (
+                    <SelectItem key={vmrs.id} value={vmrs.code}>
+                      {vmrs.code} - {vmrs.title}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                VMRS codes categorize the type of maintenance work
+              </p>
+            </div>
+
             <div className="space-y-2">
               <Label>Line Type *</Label>
               <Select value={lineType} onValueChange={(val) => {
@@ -500,6 +603,20 @@ export default function EstimateDetail() {
               </div>
             </div>
 
+            <div className="space-y-2">
+              <Label>Line Notes (Optional)</Label>
+              <Textarea
+                value={lineNotes}
+                onChange={(e) => setLineNotes(e.target.value)}
+                placeholder="Add any notes for this line item (e.g., special instructions, part details)..."
+                rows={2}
+                data-testid="input-line-notes"
+              />
+              <p className="text-xs text-muted-foreground">
+                Notes will be transferred to the work order when this estimate is converted
+              </p>
+            </div>
+
             {lineQuantity && lineUnitCost && (
               <div className="p-3 bg-muted rounded-lg flex justify-between">
                 <span>Line Total</span>
@@ -515,7 +632,7 @@ export default function EstimateDetail() {
             </Button>
             <Button 
               onClick={handleAddLine} 
-              disabled={!lineDescription || !lineQuantity || !lineUnitCost || addLineMutation.isPending}
+              disabled={!selectedVmrsCode || !lineDescription || !lineQuantity || !lineUnitCost || addLineMutation.isPending}
               data-testid="button-confirm-add"
             >
               {addLineMutation.isPending ? (

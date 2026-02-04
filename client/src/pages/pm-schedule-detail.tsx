@@ -6,7 +6,7 @@ import { useLocation, useRoute, Link } from "wouter";
 import { 
   ArrowLeft, Save, Loader2, Edit, Calendar, 
   Clock, DollarSign, X, CheckCircle2, AlertTriangle, Truck,
-  Plus, Sparkles
+  Plus, Sparkles, Car, Package, Trash2, ChevronDown, ChevronRight
 } from "lucide-react";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
@@ -44,6 +44,7 @@ interface PmSchedule {
   description: string | null;
   intervalType: "days" | "miles" | "hours" | "cycles";
   intervalValue: number;
+  vmrsCodeId: number | null;
   estimatedHours: string | null;
   estimatedCost: string | null;
   priority: string;
@@ -51,6 +52,12 @@ interface PmSchedule {
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+interface VmrsCode {
+  id: number;
+  code: string;
+  title: string;
 }
 
 interface PmAssetInstance {
@@ -64,11 +71,140 @@ interface PmAssetInstance {
   isOverdue: boolean;
 }
 
+interface PmScheduleModel {
+  id: number;
+  pmScheduleId: number;
+  make: string;
+  model: string;
+  year: number | null;
+}
+
+interface PartKit {
+  id: number;
+  name: string;
+  description: string | null;
+}
+
+interface PmScheduleKit {
+  id: number;
+  pmScheduleId: number;
+  kitId: number;
+}
+
+interface PmScheduleKitModel {
+  id: number;
+  pmScheduleKitId: number;
+  make: string;
+  model: string;
+}
+
+interface AssetMakeModel {
+  manufacturer: string;
+  model: string | null;
+  year: number | null;
+}
+
+// Component to display and manage kit model restrictions
+function KitModelManager({ 
+  pmScheduleKitId, 
+  onAddModel, 
+  onRemoveModel,
+  isAddPending,
+  isRemovePending,
+  availableModels,
+}: { 
+  pmScheduleKitId: number;
+  onAddModel: (pmScheduleKitId: number, make: string, model: string) => void;
+  onRemoveModel: (kitModelId: number, pmScheduleKitId: number) => void;
+  isAddPending: boolean;
+  isRemovePending: boolean;
+  availableModels: PmScheduleModel[];
+}) {
+  const [selectedModel, setSelectedModel] = useState<string>("");
+
+  const { data: kitModels = [] } = useQuery<PmScheduleKitModel[]>({
+    queryKey: ["/api/pm-schedule-kits", pmScheduleKitId, "models"],
+  });
+
+  const handleAdd = () => {
+    if (selectedModel) {
+      const [make, model] = selectedModel.split("||");
+      if (make && model) {
+        onAddModel(pmScheduleKitId, make, model);
+        setSelectedModel("");
+      }
+    }
+  };
+
+  // Filter out models that are already added
+  const unusedModels = availableModels.filter(
+    (am) => !kitModels.some((km) => km.make === am.make && km.model === am.model)
+  );
+
+  return (
+    <div className="ml-6 mt-2 p-3 rounded-lg bg-muted/50 space-y-3">
+      <p className="text-xs text-muted-foreground">
+        Restrict this kit to specific vehicle makes/models from the schedule. Leave empty to use for all vehicles.
+      </p>
+      {availableModels.length > 0 ? (
+        <div className="flex flex-wrap gap-2">
+          <Select value={selectedModel} onValueChange={setSelectedModel}>
+            <SelectTrigger className="w-48 h-8 text-sm" data-testid={`select-kit-model-${pmScheduleKitId}`}>
+              <SelectValue placeholder="Select model..." />
+            </SelectTrigger>
+            <SelectContent>
+              {unusedModels.map((m) => (
+                <SelectItem key={`${m.make}||${m.model}`} value={`${m.make}||${m.model}`}>
+                  {m.make} {m.model}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button
+            type="button"
+            size="sm"
+            onClick={handleAdd}
+            disabled={!selectedModel || isAddPending}
+            data-testid={`button-add-kit-model-${pmScheduleKitId}`}
+          >
+            {isAddPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
+          </Button>
+        </div>
+      ) : (
+        <p className="text-xs text-amber-600">Add vehicle models to this schedule first to restrict kits.</p>
+      )}
+      {kitModels.length > 0 ? (
+        <div className="flex flex-wrap gap-1">
+          {kitModels.map((km) => (
+            <Badge key={km.id} variant="outline" className="flex items-center gap-1 py-0.5 px-2 text-xs">
+              <span>{km.make} {km.model}</span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-4 w-4 ml-0.5"
+                onClick={() => onRemoveModel(km.id, pmScheduleKitId)}
+                disabled={isRemovePending}
+                data-testid={`button-remove-kit-model-${km.id}`}
+              >
+                <X className="h-2.5 w-2.5" />
+              </Button>
+            </Badge>
+          ))}
+        </div>
+      ) : (
+        <p className="text-xs text-muted-foreground">No model restrictions - this kit applies to all vehicles.</p>
+      )}
+    </div>
+  );
+}
+
 const pmFormSchema = z.object({
   name: z.string().min(1, "Name is required"),
   description: z.string().optional(),
   intervalType: z.enum(["days", "miles", "hours", "cycles"]),
   intervalValue: z.number().min(1, "Interval must be at least 1"),
+  vmrsCodeId: z.number().optional().nullable(),
   estimatedHours: z.string().optional(),
   estimatedCost: z.string().optional(),
   priority: z.enum(["low", "medium", "high", "critical"]),
@@ -97,6 +233,42 @@ export default function PmScheduleDetail() {
     queryKey: ["/api/assets"],
   });
 
+  // Get unique make/model combinations from assets for dropdowns
+  const { data: assetMakeModels = [] } = useQuery<AssetMakeModel[]>({
+    queryKey: ["/api/assets/make-models"],
+  });
+
+  // Vehicle models linked to this PM schedule
+  const { data: scheduleModels = [] } = useQuery<PmScheduleModel[]>({
+    queryKey: ["/api/pm-schedules", pmId, "models"],
+    enabled: !!pmId,
+  });
+
+  // Part kits linked to this PM schedule
+  const { data: scheduleKits = [] } = useQuery<PmScheduleKit[]>({
+    queryKey: ["/api/pm-schedules", pmId, "kits"],
+    enabled: !!pmId,
+  });
+
+  // All available part kits
+  const { data: allKits = [] } = useQuery<PartKit[]>({
+    queryKey: ["/api/part-kits"],
+  });
+
+  // All available VMRS codes for linking
+  const { data: vmrsCodes = [] } = useQuery<VmrsCode[]>({
+    queryKey: ["/api/vmrs-codes"],
+  });
+
+  // State for adding new model (now using dropdown)
+  const [selectedAssetModel, setSelectedAssetModel] = useState<string>("");
+
+  // State for adding new kit
+  const [selectedKitId, setSelectedKitId] = useState<string>("");
+
+  // State for expanded kit (to show model assignments)
+  const [expandedKitId, setExpandedKitId] = useState<number | null>(null);
+
   const form = useForm<PmFormValues>({
     resolver: zodResolver(pmFormSchema),
     defaultValues: {
@@ -104,6 +276,7 @@ export default function PmScheduleDetail() {
       description: "",
       intervalType: "days",
       intervalValue: 30,
+      vmrsCodeId: null,
       estimatedHours: "",
       estimatedCost: "",
       priority: "medium",
@@ -118,6 +291,7 @@ export default function PmScheduleDetail() {
         description: pm.description || "",
         intervalType: pm.intervalType || "days",
         intervalValue: pm.intervalValue || 30,
+        vmrsCodeId: pm.vmrsCodeId || null,
         estimatedHours: pm.estimatedHours || "",
         estimatedCost: pm.estimatedCost || "",
         priority: (pm.priority as any) || "medium",
@@ -142,6 +316,121 @@ export default function PmScheduleDetail() {
     },
     onError: () => {
       toast({ title: "Error", description: "Failed to update schedule", variant: "destructive" });
+    },
+  });
+
+  // Mutation to add a vehicle model to this PM schedule
+  const addModelMutation = useMutation({
+    mutationFn: async (data: { make: string; model: string; year?: number }) => {
+      return apiRequest("POST", `/api/pm-schedules/${pmId}/models`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/pm-schedules", pmId, "models"] });
+      toast({ title: "Model Added", description: "Vehicle model has been added to this schedule." });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to add model", variant: "destructive" });
+    },
+  });
+
+  // Mutation to remove a vehicle model from this PM schedule
+  const removeModelMutation = useMutation({
+    mutationFn: async (modelId: number) => {
+      return apiRequest("DELETE", `/api/pm-schedule-models/${modelId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/pm-schedules", pmId, "models"] });
+      toast({ title: "Model Removed", description: "Vehicle model has been removed from this schedule." });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to remove model", variant: "destructive" });
+    },
+  });
+
+  // Mutation to add a part kit to this PM schedule
+  const addKitMutation = useMutation({
+    mutationFn: async (kitId: number) => {
+      return apiRequest("POST", `/api/pm-schedules/${pmId}/kits`, { kitId });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/pm-schedules", pmId, "kits"] });
+      toast({ title: "Kit Added", description: "Part kit has been added to this schedule." });
+      setSelectedKitId("");
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to add kit", variant: "destructive" });
+    },
+  });
+
+  // Mutation to remove a part kit from this PM schedule
+  const removeKitMutation = useMutation({
+    mutationFn: async (linkId: number) => {
+      return apiRequest("DELETE", `/api/pm-schedule-kits/${linkId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/pm-schedules", pmId, "kits"] });
+      toast({ title: "Kit Removed", description: "Part kit has been removed from this schedule." });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to remove kit", variant: "destructive" });
+    },
+  });
+
+  const handleAddModel = () => {
+    if (selectedAssetModel) {
+      const [manufacturer, model, yearStr] = selectedAssetModel.split("||");
+      if (manufacturer && model) {
+        addModelMutation.mutate({
+          make: manufacturer,
+          model: model,
+          year: yearStr && yearStr !== "null" ? parseInt(yearStr) : undefined,
+        });
+        setSelectedAssetModel("");
+      }
+    }
+  };
+
+  // Get unique make/model combinations not yet assigned to this schedule
+  const availableAssetModels = assetMakeModels.filter(
+    (am) => !scheduleModels.some(
+      (sm) => sm.make === am.manufacturer && sm.model === am.model
+    )
+  );
+
+  const handleAddKit = () => {
+    if (selectedKitId) {
+      addKitMutation.mutate(parseInt(selectedKitId));
+    }
+  };
+
+  // Mutation to add a model restriction to a kit within this PM schedule
+  const addKitModelMutation = useMutation({
+    mutationFn: async (data: { pmScheduleKitId: number; make: string; model: string }) => {
+      return apiRequest("POST", `/api/pm-schedule-kits/${data.pmScheduleKitId}/models`, {
+        make: data.make,
+        model: data.model,
+      });
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/pm-schedule-kits", variables.pmScheduleKitId, "models"] });
+      toast({ title: "Model Added", description: "Vehicle model restriction added to this kit." });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to add model to kit", variant: "destructive" });
+    },
+  });
+
+  // Mutation to remove a model restriction from a kit
+  const removeKitModelMutation = useMutation({
+    mutationFn: async (data: { kitModelId: number; pmScheduleKitId: number }) => {
+      return apiRequest("DELETE", `/api/pm-schedule-kit-models/${data.kitModelId}`);
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/pm-schedule-kits", variables.pmScheduleKitId, "models"] });
+      toast({ title: "Model Removed", description: "Vehicle model restriction removed from this kit." });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to remove model from kit", variant: "destructive" });
     },
   });
 
@@ -338,6 +627,38 @@ export default function PmScheduleDetail() {
                       </FormItem>
                     )}
                   />
+                  <FormField
+                    control={form.control}
+                    name="vmrsCodeId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>VMRS Code (Optional)</FormLabel>
+                        <Select 
+                          value={field.value?.toString() || "none"} 
+                          onValueChange={(v) => field.onChange(v === "none" ? null : parseInt(v))} 
+                          disabled={!isEditing}
+                        >
+                          <FormControl>
+                            <SelectTrigger data-testid="select-vmrs-code">
+                              <SelectValue placeholder="Link to VMRS code..." />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="none">No VMRS Code</SelectItem>
+                            {vmrsCodes.map((vmrs) => (
+                              <SelectItem key={vmrs.id} value={vmrs.id.toString()}>
+                                {vmrs.code} - {vmrs.title}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormDescription>
+                          When this VMRS code is added to a work order line, the schedule's linked parts and checklists will be pulled in automatically.
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
                   <div className="grid gap-4 sm:grid-cols-2">
                     <FormField
                       control={form.control}
@@ -525,6 +846,164 @@ export default function PmScheduleDetail() {
               </Card>
             </form>
           </Form>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between gap-2">
+              <CardTitle className="flex items-center gap-2">
+                <Car className="h-4 w-4" />
+                Vehicle Models
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Assign this PM schedule to specific vehicle makes/models from your asset list. When left empty, it can apply to any asset.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Select value={selectedAssetModel} onValueChange={setSelectedAssetModel}>
+                  <SelectTrigger className="w-64" data-testid="select-vehicle-model">
+                    <SelectValue placeholder="Select a vehicle make/model..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableAssetModels
+                      .filter(am => am.model) // Only show assets with both make and model
+                      .map((am) => (
+                        <SelectItem 
+                          key={`${am.manufacturer}||${am.model || ""}||${am.year || ""}`} 
+                          value={`${am.manufacturer}||${am.model || ""}||${am.year || ""}`}
+                        >
+                          {am.manufacturer} {am.model}{am.year ? ` (${am.year})` : ""}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+                <Button 
+                  type="button" 
+                  onClick={handleAddModel} 
+                  disabled={!selectedAssetModel || addModelMutation.isPending}
+                  data-testid="button-add-model"
+                >
+                  {addModelMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                </Button>
+              </div>
+              {scheduleModels.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {scheduleModels.map((model) => (
+                    <Badge key={model.id} variant="secondary" className="flex items-center gap-1 py-1 px-2">
+                      <span>{model.make} {model.model}{model.year ? ` (${model.year})` : ""}</span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-4 w-4 ml-1"
+                        onClick={() => removeModelMutation.mutate(model.id)}
+                        disabled={removeModelMutation.isPending}
+                        data-testid={`button-remove-model-${model.id}`}
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
+                    </Badge>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground text-center py-2">
+                  No vehicle models assigned. This schedule can apply to any asset.
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between gap-2">
+              <CardTitle className="flex items-center gap-2">
+                <Package className="h-4 w-4" />
+                Part Kits
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Link part kits to automatically include required parts when this PM generates a work order.
+              </p>
+              <div className="flex gap-2">
+                <Select value={selectedKitId} onValueChange={setSelectedKitId}>
+                  <SelectTrigger className="w-64" data-testid="select-kit">
+                    <SelectValue placeholder="Select a part kit..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {allKits.filter(kit => !scheduleKits.some(sk => sk.kitId === kit.id)).map((kit) => (
+                      <SelectItem key={kit.id} value={kit.id.toString()}>
+                        {kit.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button 
+                  type="button" 
+                  onClick={handleAddKit} 
+                  disabled={!selectedKitId || addKitMutation.isPending}
+                  data-testid="button-add-kit"
+                >
+                  {addKitMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                </Button>
+              </div>
+              {scheduleKits.length > 0 ? (
+                <div className="space-y-2">
+                  {scheduleKits.map((link) => {
+                    const kit = allKits.find(k => k.id === link.kitId);
+                    const isExpanded = expandedKitId === link.id;
+                    return (
+                      <div key={link.id} className="rounded-lg border">
+                        <div className="flex items-center justify-between p-2">
+                          <button
+                            type="button"
+                            className="flex items-center gap-2 hover:bg-muted/50 rounded p-1 -m-1"
+                            onClick={() => setExpandedKitId(isExpanded ? null : link.id)}
+                            data-testid={`button-expand-kit-${link.id}`}
+                          >
+                            {isExpanded ? (
+                              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                            ) : (
+                              <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                            )}
+                            <Package className="h-4 w-4 text-muted-foreground" />
+                            <span className="text-sm font-medium">{kit?.name || `Kit #${link.kitId}`}</span>
+                          </button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={() => removeKitMutation.mutate(link.id)}
+                            disabled={removeKitMutation.isPending}
+                            data-testid={`button-remove-kit-${link.id}`}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                        {isExpanded && (
+                          <KitModelManager
+                            pmScheduleKitId={link.id}
+                            onAddModel={(pkId, make, model) => {
+                              addKitModelMutation.mutate({ pmScheduleKitId: pkId, make, model });
+                            }}
+                            onRemoveModel={(kitModelId, pkId) => {
+                              removeKitModelMutation.mutate({ kitModelId, pmScheduleKitId: pkId });
+                            }}
+                            isAddPending={addKitModelMutation.isPending}
+                            isRemovePending={removeKitModelMutation.isPending}
+                            availableModels={scheduleModels}
+                          />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground text-center py-2">
+                  No part kits linked to this schedule.
+                </p>
+              )}
+            </CardContent>
+          </Card>
         </div>
 
         <div className="space-y-6">

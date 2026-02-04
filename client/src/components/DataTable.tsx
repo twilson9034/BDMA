@@ -11,7 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 export interface Column<T> {
   key: string;
-  header: string;
+  header: string | (() => React.ReactNode);
   cell: (item: T) => React.ReactNode;
   className?: string;
   headerClassName?: string;
@@ -46,7 +46,7 @@ export function DataTable<T>({
             <TableRow>
               {columns.map((column) => (
                 <TableHead key={column.key} className={column.headerClassName}>
-                  {column.header}
+                  {typeof column.header === 'function' ? column.header() : column.header}
                 </TableHead>
               ))}
             </TableRow>
@@ -75,7 +75,7 @@ export function DataTable<T>({
             <TableRow>
               {columns.map((column) => (
                 <TableHead key={column.key} className={column.headerClassName}>
-                  {column.header}
+                  {typeof column.header === 'function' ? column.header() : column.header}
                 </TableHead>
               ))}
             </TableRow>
@@ -99,7 +99,7 @@ export function DataTable<T>({
           <TableRow>
             {columns.map((column) => (
               <TableHead key={column.key} className={column.headerClassName}>
-                {column.header}
+                {typeof column.header === 'function' ? column.header() : column.header}
               </TableHead>
             ))}
           </TableRow>

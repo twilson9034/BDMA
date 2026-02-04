@@ -1,3 +1,4 @@
+import { useState, useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { 
@@ -11,7 +12,15 @@ import {
   CheckCircle2,
   ArrowRight,
   Calculator,
-  ShoppingCart
+  ShoppingCart,
+  Timer,
+  Activity,
+  Target,
+  DollarSign,
+  FileText,
+  Bell,
+  MapPin,
+  Settings
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -23,6 +32,7 @@ import { PageLoader } from "@/components/LoadingSpinner";
 import { EmptyState } from "@/components/EmptyState";
 import { FleetHealthWidget } from "@/components/FleetHealthWidget";
 import { PredictionsWidget } from "@/components/PredictionsWidget";
+import { TireHealthWidget } from "@/components/TireHealthWidget";
 import {
   AreaChart,
   Area,
@@ -34,6 +44,11 @@ import {
   PieChart,
   Pie,
   Cell,
+  LineChart,
+  Line,
+  Legend,
+  BarChart,
+  Bar,
 } from "recharts";
 
 interface DashboardStats {
@@ -66,6 +81,33 @@ interface UnfulfilledPart {
   lineType: string;
 }
 
+interface KpiMetrics {
+  mttr: number | null;
+  mtbf: number | null;
+  assetUptime: number;
+  pmCompliance: number;
+  emergencyWoRatio: number;
+  avgCostPerWo: number;
+}
+
+interface ProcurementOverview {
+  pendingRequisitions: number;
+  activePurchaseOrders: number;
+  reorderAlerts: number;
+  pendingPartRequests: number;
+}
+
+interface PartsAnalytics {
+  topUsedParts: Array<{
+    partId: number;
+    partNumber: string;
+    partName: string;
+    usageCount: number;
+    totalCost: number;
+  }>;
+  lowStockCritical: number;
+}
+
 const workOrderTrendData = [
   { month: "Jan", completed: 45, opened: 52 },
   { month: "Feb", completed: 52, opened: 48 },
@@ -75,24 +117,143 @@ const workOrderTrendData = [
   { month: "Jun", completed: 78, opened: 75 },
 ];
 
+// Historical KPI trend data for analytics
+const kpiTrendData = [
+  { month: "Jan", mttr: 4.2, uptime: 92, pmCompliance: 85, avgCost: 285 },
+  { month: "Feb", mttr: 3.8, uptime: 93, pmCompliance: 88, avgCost: 275 },
+  { month: "Mar", mttr: 3.5, uptime: 94, pmCompliance: 90, avgCost: 260 },
+  { month: "Apr", mttr: 3.9, uptime: 91, pmCompliance: 87, avgCost: 290 },
+  { month: "May", mttr: 3.2, uptime: 95, pmCompliance: 92, avgCost: 245 },
+  { month: "Jun", mttr: 2.8, uptime: 96, pmCompliance: 94, avgCost: 230 },
+];
+
+// Tire prediction data
+const tirePredictionData = [
+  { tireId: 1, position: "Front Left", asset: "Truck #1024", predictedReplacement: "14 days", confidence: 92, treadDepth: 4.2 },
+  { tireId: 2, position: "Rear Right", asset: "Van #3012", predictedReplacement: "21 days", confidence: 87, treadDepth: 5.1 },
+  { tireId: 3, position: "Front Right", asset: "Truck #1025", predictedReplacement: "30 days", confidence: 78, treadDepth: 6.0 },
+];
+
 const assetStatusData = [
   { name: "Operational", value: 47, color: "#22c55e" },
   { name: "In Maintenance", value: 8, color: "#f59e0b" },
   { name: "Down", value: 3, color: "#ef4444" },
 ];
 
+interface Location {
+  id: number;
+  name: string;
+  city?: string;
+  state?: string;
+}
+
+interface Membership {
+  id: number;
+  primaryLocationId: number | null;
+  role: string;
+}
+
 export default function Dashboard() {
+  // Track location preference in state for reactivity
+  const [locationPref, setLocationPref] = useState<string>(() => {
+    return localStorage.getItem("bdma_dashboard_location") || "assigned";
+  });
+  
+  // Listen for localStorage changes (from settings page or other tabs)
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === "bdma_dashboard_location") {
+        setLocationPref(e.newValue || "assigned");
+      }
+    };
+    
+    // Also check on focus in case settings was changed in same tab
+    const handleFocus = () => {
+      const current = localStorage.getItem("bdma_dashboard_location") || "assigned";
+      if (current !== locationPref) {
+        setLocationPref(current);
+      }
+    };
+    
+    window.addEventListener("storage", handleStorageChange);
+    window.addEventListener("focus", handleFocus);
+    
+    return () => {
+      window.removeEventListener("storage", handleStorageChange);
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, [locationPref]);
+  
+  // Get user's membership to determine their assigned location
+  const { data: membership } = useQuery<Membership>({
+    queryKey: ["/api/organizations/current/my-membership"],
+  });
+  
+  // Fetch locations for display
+  const { data: locations } = useQuery<Location[]>({
+    queryKey: ["/api/locations"],
+  });
+
+  // Calculate effective location ID based on user preference
+  const effectiveLocationId = useMemo(() => {
+    if (locationPref === "all") {
+      return null; // Show all locations
+    } else if (locationPref === "assigned") {
+      // Use user's assigned location, or null if not assigned
+      return membership?.primaryLocationId || null;
+    } else {
+      // Specific location ID selected
+      const locationId = parseInt(locationPref);
+      return isNaN(locationId) ? null : locationId;
+    }
+  }, [locationPref, membership?.primaryLocationId]);
+
+  // Build URL with location filter
+  const buildUrl = (baseUrl: string) => {
+    return effectiveLocationId ? `${baseUrl}?locationId=${effectiveLocationId}` : baseUrl;
+  };
+  
   const { data: stats, isLoading: statsLoading } = useQuery<DashboardStats>({
-    queryKey: ["/api/dashboard/stats"],
+    queryKey: [buildUrl("/api/dashboard/stats")],
   });
 
   const { data: recentWorkOrders, isLoading: workOrdersLoading } = useQuery<RecentWorkOrder[]>({
-    queryKey: ["/api/work-orders/recent"],
+    queryKey: [buildUrl("/api/work-orders/recent")],
   });
 
   const { data: unfulfilledParts } = useQuery<UnfulfilledPart[]>({
     queryKey: ["/api/estimates/unfulfilled-parts"],
   });
+
+  const { data: kpis } = useQuery<KpiMetrics>({
+    queryKey: [buildUrl("/api/dashboard/kpis")],
+  });
+
+  const { data: procurement } = useQuery<ProcurementOverview>({
+    queryKey: [buildUrl("/api/dashboard/procurement")],
+  });
+
+  const { data: partsAnalytics } = useQuery<PartsAnalytics>({
+    queryKey: [buildUrl("/api/dashboard/parts-analytics")],
+  });
+
+  // Determine location display name (uses state for reactivity)
+  // NOTE: This useMemo must be before any early returns to maintain hook order
+  const locationDisplay = useMemo(() => {
+    if (locationPref === "all") {
+      return "All Locations";
+    } else if (locationPref === "assigned") {
+      if (membership?.primaryLocationId) {
+        const loc = locations?.find(l => l.id === membership.primaryLocationId);
+        return loc?.name || "Assigned Location";
+      }
+      return "All Locations"; // No assignment = show all
+    } else {
+      const locationId = parseInt(locationPref);
+      const loc = locations?.find(l => l.id === locationId);
+      return loc?.name || "Unknown Location";
+    }
+  }, [locationPref, membership?.primaryLocationId, locations]);
 
   if (statsLoading) {
     return <PageLoader />;
@@ -122,14 +283,27 @@ export default function Dashboard() {
     <div className="space-y-6 fade-in">
       <PageHeader 
         title="Dashboard" 
-        description="Overview of your maintenance operations"
-        actions={
-          <Button asChild data-testid="button-new-work-order">
-            <Link href="/work-orders/new">
-              <Wrench className="h-4 w-4 mr-2" />
-              New Work Order
+        description={
+          <span className="flex items-center gap-2 flex-wrap">
+            Overview of your maintenance operations
+            <span className="inline-flex items-center gap-1 font-medium">
+              <MapPin className="h-3 w-3" />
+              {locationDisplay}
+            </span>
+            <Link href="/settings" className="text-xs text-muted-foreground hover:underline">
+              Change
             </Link>
-          </Button>
+          </span>
+        }
+        actions={
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button asChild data-testid="button-new-work-order">
+              <Link href="/work-orders/new">
+                <Wrench className="h-4 w-4 mr-2" />
+                New Work Order
+              </Link>
+            </Button>
+          </div>
         }
       />
 
@@ -161,9 +335,36 @@ export default function Dashboard() {
         />
       </div>
 
+      {/* KPI Metrics Row */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <KPICard
+          title="MTTR"
+          value={kpis?.mttr !== null ? `${kpis?.mttr}h` : "N/A"}
+          icon={<Timer className="h-4 w-4" />}
+          changeLabel="Mean Time To Repair"
+        />
+        <KPICard
+          title="Asset Uptime"
+          value={`${kpis?.assetUptime || 0}%`}
+          icon={<Activity className="h-4 w-4" />}
+          change={kpis?.assetUptime && kpis.assetUptime >= 90 ? 0 : undefined}
+        />
+        <KPICard
+          title="PM Compliance"
+          value={`${kpis?.pmCompliance || 0}%`}
+          icon={<Target className="h-4 w-4" />}
+          className={kpis?.pmCompliance && kpis.pmCompliance < 80 ? "border-amber-500/50" : ""}
+        />
+        <KPICard
+          title="Avg Cost/WO"
+          value={`$${kpis?.avgCostPerWo?.toLocaleString() || 0}`}
+          icon={<DollarSign className="h-4 w-4" />}
+        />
+      </div>
+
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-2">
+          <CardHeader className="flex flex-row items-center justify-between gap-2 flex-wrap">
             <CardTitle className="text-base font-medium">Work Order Trend</CardTitle>
             <Button variant="ghost" size="sm" asChild>
               <Link href="/reports">View Report</Link>
@@ -216,7 +417,7 @@ export default function Dashboard() {
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-2">
+          <CardHeader className="flex flex-row items-center justify-between gap-2 flex-wrap">
             <CardTitle className="text-base font-medium">Asset Status</CardTitle>
             <Button variant="ghost" size="sm" asChild>
               <Link href="/assets">View All</Link>
@@ -245,7 +446,7 @@ export default function Dashboard() {
               </div>
               <div className="flex-1 space-y-3">
                 {assetStatusData.map((item) => (
-                  <div key={item.name} className="flex items-center justify-between">
+                  <div key={item.name} className="flex items-center justify-between gap-2 flex-wrap">
                     <div className="flex items-center gap-2">
                       <div
                         className="h-3 w-3 rounded-full"
@@ -262,9 +463,74 @@ export default function Dashboard() {
         </Card>
       </div>
 
+      {/* KPI Trends Analytics Section */}
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Card data-testid="card-kpi-trends">
+          <CardHeader className="flex flex-row items-center justify-between gap-2 flex-wrap">
+            <CardTitle className="text-base font-medium" data-testid="text-kpi-trends-title">KPI Trends (6 Months)</CardTitle>
+            <Button variant="ghost" size="sm" asChild data-testid="link-kpi-drill-down">
+              <Link href="/reports">Drill Down</Link>
+            </Button>
+          </CardHeader>
+          <CardContent>
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={kpiTrendData}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                  <XAxis dataKey="month" className="text-xs" />
+                  <YAxis yAxisId="left" className="text-xs" />
+                  <YAxis yAxisId="right" orientation="right" className="text-xs" />
+                  <Tooltip 
+                    contentStyle={{ 
+                      backgroundColor: "hsl(var(--card))", 
+                      borderColor: "hsl(var(--border))",
+                      borderRadius: "8px"
+                    }} 
+                  />
+                  <Legend />
+                  <Line yAxisId="left" type="monotone" dataKey="uptime" stroke="hsl(var(--chart-1))" strokeWidth={2} name="Uptime %" />
+                  <Line yAxisId="left" type="monotone" dataKey="pmCompliance" stroke="hsl(var(--chart-2))" strokeWidth={2} name="PM Compliance %" />
+                  <Line yAxisId="right" type="monotone" dataKey="mttr" stroke="hsl(var(--chart-3))" strokeWidth={2} name="MTTR (hrs)" />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card data-testid="card-tire-predictions">
+          <CardHeader className="flex flex-row items-center justify-between gap-2 flex-wrap">
+            <CardTitle className="text-base font-medium" data-testid="text-tire-predictions-title">Tire Replacement Predictions</CardTitle>
+            <Button variant="ghost" size="sm" asChild data-testid="link-tire-management">
+              <Link href="/tires">View All Tires</Link>
+            </Button>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {tirePredictionData.map((tire) => (
+                <div key={tire.tireId} className="p-3 rounded-lg border border-border hover-elevate" data-testid={`tire-prediction-${tire.tireId}`}>
+                  <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
+                    <div>
+                      <span className="font-medium text-sm" data-testid={`text-tire-asset-${tire.tireId}`}>{tire.asset}</span>
+                      <span className="text-muted-foreground text-xs ml-2" data-testid={`text-tire-position-${tire.tireId}`}>({tire.position})</span>
+                    </div>
+                    <span className={`text-sm font-medium ${tire.confidence >= 90 ? 'text-green-600 dark:text-green-400' : tire.confidence >= 80 ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'}`} data-testid={`text-tire-confidence-${tire.tireId}`}>
+                      {tire.confidence}% confidence
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2 text-xs flex-wrap">
+                    <span className="text-muted-foreground" data-testid={`text-tire-tread-${tire.tireId}`}>Tread Depth: <span className="font-medium text-foreground">{tire.treadDepth}/32"</span></span>
+                    <span className="text-amber-600 dark:text-amber-400 font-medium" data-testid={`text-tire-replacement-${tire.tireId}`}>Replace in {tire.predictedReplacement}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
       <div className="grid gap-6 lg:grid-cols-3">
         <Card className="lg:col-span-2">
-          <CardHeader className="flex flex-row items-center justify-between gap-2">
+          <CardHeader className="flex flex-row items-center justify-between gap-2 flex-wrap">
             <CardTitle className="text-base font-medium">Recent Work Orders</CardTitle>
             <Button variant="ghost" size="sm" asChild>
               <Link href="/work-orders" className="flex items-center gap-1">
@@ -290,7 +556,7 @@ export default function Dashboard() {
                   <Link
                     key={wo.id}
                     href={`/work-orders/${wo.id}`}
-                    className="flex items-center justify-between p-3 rounded-lg border border-border hover-elevate transition-all"
+                    className="flex items-center justify-between gap-4 flex-wrap p-3 rounded-lg border border-border hover-elevate transition-all"
                     data-testid={`work-order-${wo.id}`}
                   >
                     <div className="flex items-center gap-4">
@@ -354,7 +620,7 @@ export default function Dashboard() {
 
       <div className="grid gap-6 lg:grid-cols-3">
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-2">
+          <CardHeader className="flex flex-row items-center justify-between gap-2 flex-wrap">
             <CardTitle className="text-base font-medium flex items-center gap-2">
               <ShoppingCart className="h-4 w-4" />
               Parts Fulfillment
@@ -375,7 +641,7 @@ export default function Dashboard() {
                   <Link
                     key={part.id}
                     href={`/estimates/${part.estimateId}`}
-                    className="flex items-center justify-between p-3 rounded-lg bg-orange-500/10 border border-orange-500/20 hover-elevate"
+                    className="flex items-center justify-between gap-4 flex-wrap p-3 rounded-lg bg-orange-500/10 border border-orange-500/20 hover-elevate"
                     data-testid={`unfulfilled-part-${part.id}`}
                   >
                     <div>
@@ -405,9 +671,85 @@ export default function Dashboard() {
         <FleetHealthWidget />
 
         <PredictionsWidget />
+        
+        <TireHealthWidget />
+
+        {/* Procurement Overview Widget */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between gap-2 flex-wrap">
+            <CardTitle className="text-base font-medium flex items-center gap-2">
+              <FileText className="h-4 w-4" />
+              Procurement Overview
+            </CardTitle>
+            <Button variant="ghost" size="sm" asChild>
+              <Link href="/requisitions">View All</Link>
+            </Button>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 gap-4">
+              <Link href="/requisitions" className="p-3 rounded-lg border border-border hover-elevate text-center" data-testid="link-pending-requisitions">
+                <p className="text-2xl font-bold">{procurement?.pendingRequisitions || 0}</p>
+                <p className="text-xs text-muted-foreground">Pending Requisitions</p>
+              </Link>
+              <Link href="/purchase-orders" className="p-3 rounded-lg border border-border hover-elevate text-center" data-testid="link-active-pos">
+                <p className="text-2xl font-bold">{procurement?.activePurchaseOrders || 0}</p>
+                <p className="text-xs text-muted-foreground">Active POs</p>
+              </Link>
+              <Link href="/reorder-alerts" className="p-3 rounded-lg border border-border hover-elevate text-center" data-testid="link-reorder-alerts">
+                <p className="text-2xl font-bold text-amber-600 dark:text-amber-400">{procurement?.reorderAlerts || 0}</p>
+                <p className="text-xs text-muted-foreground">Reorder Alerts</p>
+              </Link>
+              <Link href="/part-requests" className="p-3 rounded-lg border border-border hover-elevate text-center" data-testid="link-part-requests">
+                <p className="text-2xl font-bold">{procurement?.pendingPartRequests || 0}</p>
+                <p className="text-xs text-muted-foreground">Part Requests</p>
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Parts Analytics Widget */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between gap-2 flex-wrap">
+            <CardTitle className="text-base font-medium flex items-center gap-2">
+              <Package className="h-4 w-4" />
+              Top Used Parts
+            </CardTitle>
+            <Button variant="ghost" size="sm" asChild>
+              <Link href="/inventory">View Inventory</Link>
+            </Button>
+          </CardHeader>
+          <CardContent>
+            {(!partsAnalytics?.topUsedParts || partsAnalytics.topUsedParts.length === 0) ? (
+              <div className="flex flex-col items-center justify-center py-6 text-muted-foreground">
+                <Package className="h-8 w-8 mb-2" />
+                <p className="text-sm">No usage data yet</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {partsAnalytics.topUsedParts.map((part, index) => (
+                  <div key={part.partId} className="flex items-center justify-between gap-4 flex-wrap p-2 rounded-lg border border-border">
+                    <div className="flex items-center gap-3">
+                      <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-sm font-medium">
+                        {index + 1}
+                      </div>
+                      <div>
+                        <p className="font-medium text-sm">{part.partNumber}</p>
+                        <p className="text-xs text-muted-foreground truncate max-w-[150px]">{part.partName}</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-medium text-sm">{part.usageCount} used</p>
+                      <p className="text-xs text-muted-foreground">${part.totalCost.toLocaleString()}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-2">
+          <CardHeader className="flex flex-row items-center justify-between gap-2 flex-wrap">
             <CardTitle className="text-base font-medium">Upcoming PM</CardTitle>
             <Button variant="ghost" size="sm" asChild>
               <Link href="/pm-schedules">View All</Link>
@@ -420,7 +762,7 @@ export default function Dashboard() {
                 { name: "Brake Inspection", asset: "Van #3012", dueIn: "5 days", type: "days" },
                 { name: "Tire Rotation", asset: "Bus #5001", dueIn: "1 week", type: "miles" },
               ].map((pm, index) => (
-                <div key={index} className="flex items-center justify-between p-3 rounded-lg border border-border">
+                <div key={index} className="flex items-center justify-between gap-4 flex-wrap p-3 rounded-lg border border-border">
                   <div className="flex items-center gap-3">
                     <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
                       <Clock className="h-5 w-5 text-primary" />

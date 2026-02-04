@@ -1,8 +1,8 @@
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { ArrowLeft, Save, Loader2, Package } from "lucide-react";
+import { ArrowLeft, Save, Loader2, Package, Circle } from "lucide-react";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -45,6 +45,16 @@ const partFormSchema = z.object({
   vendorId: z.number().optional().nullable(),
   vendorPartNumber: z.string().optional(),
   barcode: z.string().optional(),
+  isTire: z.boolean().optional(),
+  tireSize: z.string().optional(),
+  tireDotCode: z.string().optional(),
+  tirePsiRating: z.string().optional(),
+  tireLoadIndex: z.string().optional(),
+  tireSpeedRating: z.string().optional(),
+  tireTreadDepthNew: z.string().optional(),
+  tireBrand: z.string().optional(),
+  tireModel: z.string().optional(),
+  tireType: z.enum(["new", "retread", "used"]).optional(),
 });
 
 type PartFormValues = z.infer<typeof partFormSchema>;
@@ -79,8 +89,21 @@ export default function PartNew() {
       vendorId: null,
       vendorPartNumber: "",
       barcode: "",
+      isTire: false,
+      tireSize: "",
+      tireDotCode: "",
+      tirePsiRating: "",
+      tireLoadIndex: "",
+      tireSpeedRating: "",
+      tireTreadDepthNew: "",
+      tireBrand: "",
+      tireModel: "",
+      tireType: undefined,
     },
   });
+
+  const selectedCategory = useWatch({ control: form.control, name: "category" });
+  const isTireCategory = selectedCategory === "tires";
 
   const createMutation = useMutation({
     mutationFn: async (data: PartFormValues) => {
@@ -98,7 +121,11 @@ export default function PartNew() {
   });
 
   const onSubmit = (data: PartFormValues) => {
-    createMutation.mutate(data);
+    const submitData = {
+      ...data,
+      isTire: data.category === "tires",
+    };
+    createMutation.mutate(submitData);
   };
 
   return (
@@ -236,6 +263,153 @@ export default function PartNew() {
                   </div>
                 </CardContent>
               </Card>
+
+              {isTireCategory && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Circle className="h-5 w-5" />
+                      Tire Specifications
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <FormField
+                        control={form.control}
+                        name="tireBrand"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Brand</FormLabel>
+                            <FormControl>
+                              <Input {...field} placeholder="e.g., Michelin, Goodyear" data-testid="input-tire-brand" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="tireModel"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Model</FormLabel>
+                            <FormControl>
+                              <Input {...field} placeholder="e.g., X Multi Energy D" data-testid="input-tire-model" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                    <div className="grid gap-4 sm:grid-cols-3">
+                      <FormField
+                        control={form.control}
+                        name="tireSize"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Size</FormLabel>
+                            <FormControl>
+                              <Input {...field} placeholder="e.g., 295/75R22.5" data-testid="input-tire-size" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="tireType"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Type</FormLabel>
+                            <Select value={field.value} onValueChange={field.onChange}>
+                              <FormControl>
+                                <SelectTrigger data-testid="select-tire-type">
+                                  <SelectValue placeholder="Select type" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="new">New</SelectItem>
+                                <SelectItem value="retread">Retread</SelectItem>
+                                <SelectItem value="used">Used</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="tireDotCode"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>DOT Code</FormLabel>
+                            <FormControl>
+                              <Input {...field} placeholder="e.g., DOT 1234" data-testid="input-tire-dot" />
+                            </FormControl>
+                            <FormDescription>Manufacturing date code</FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                    <div className="grid gap-4 sm:grid-cols-4">
+                      <FormField
+                        control={form.control}
+                        name="tirePsiRating"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>PSI Rating</FormLabel>
+                            <FormControl>
+                              <Input {...field} type="number" placeholder="e.g., 110" data-testid="input-tire-psi" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="tireLoadIndex"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Load Index</FormLabel>
+                            <FormControl>
+                              <Input {...field} placeholder="e.g., 144/142" data-testid="input-tire-load" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="tireSpeedRating"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Speed Rating</FormLabel>
+                            <FormControl>
+                              <Input {...field} placeholder="e.g., L" data-testid="input-tire-speed" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="tireTreadDepthNew"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>New Tread Depth</FormLabel>
+                            <FormControl>
+                              <Input {...field} type="number" step="0.1" placeholder="e.g., 18" data-testid="input-tire-tread" />
+                            </FormControl>
+                            <FormDescription>In 32nds of an inch</FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
 
               <Card>
                 <CardHeader>

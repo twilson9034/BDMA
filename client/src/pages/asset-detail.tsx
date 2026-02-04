@@ -7,8 +7,9 @@ import {
   ArrowLeft, Save, Loader2, Edit, Trash2, Truck, 
   MapPin, Calendar, Settings, FileText, Wrench, X,
   Gauge, Fuel, Thermometer, Battery, AlertTriangle, Activity, Radio,
-  Brain, Sparkles, RefreshCw
+  Brain, Sparkles, RefreshCw, QrCode, Printer, Copy, Check
 } from "lucide-react";
+import { QRCodeSVG } from "qrcode.react";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -42,7 +43,11 @@ import { PageHeader } from "@/components/PageHeader";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import type { Asset, Location, WorkOrder, TelematicsData, FaultCode, Prediction } from "@shared/schema";
+import type { Asset, Location, WorkOrder, TelematicsData, FaultCode, Prediction, DVIR, PmAssetInstance, InventoryTransaction } from "@shared/schema";
+import { AssetImages, AssetDocuments } from "@/components/AssetImagesDocuments";
+import { BrakeTireSettings } from "@/components/BrakeTireSettings";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ClipboardList, Package, History, Plus, Disc, CircleDot } from "lucide-react";
 
 const assetFormSchema = z.object({
   name: z.string().min(1, "Name is required"),
@@ -57,9 +62,232 @@ const assetFormSchema = z.object({
   meterType: z.string().optional(),
   currentMeterReading: z.string().optional(),
   notes: z.string().optional(),
+  customFields: z.record(z.any()).optional(),
 });
 
 type AssetFormValues = z.infer<typeof assetFormSchema>;
+
+interface DvirQrCodeSectionProps {
+  assetId: number;
+  assetName: string;
+  assetNumber: string;
+}
+
+function DvirQrCodeSection({ assetId, assetName, assetNumber }: DvirQrCodeSectionProps) {
+  const { toast } = useToast();
+  const [copied, setCopied] = useState(false);
+  const [showQrDialog, setShowQrDialog] = useState(false);
+
+  const { data: tokenData, isLoading: isLoadingToken } = useQuery<{ token: string; expiresAt: string }>({
+    queryKey: ["/api/assets", assetId, "dvir-token"],
+    enabled: !!assetId,
+  });
+
+  const generateTokenMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/assets/${assetId}/dvir-token`);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/assets", assetId, "dvir-token"] });
+      toast({
+        title: "QR Code Generated",
+        description: "A new QR code has been generated for public DVIR submissions.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const dvirUrl = tokenData?.token 
+    ? `${window.location.origin}/dvir/${tokenData.token}`
+    : null;
+
+  const handleCopyUrl = async () => {
+    if (dvirUrl) {
+      await navigator.clipboard.writeText(dvirUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+      toast({
+        title: "Copied",
+        description: "DVIR URL copied to clipboard.",
+      });
+    }
+  };
+
+  const handlePrint = () => {
+    const printWindow = window.open("", "_blank");
+    if (printWindow && dvirUrl) {
+      printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>DVIR QR Code - ${assetNumber}</title>
+          <style>
+            body { 
+              font-family: Arial, sans-serif; 
+              text-align: center; 
+              padding: 40px; 
+            }
+            .qr-container { 
+              display: inline-block; 
+              padding: 20px; 
+              border: 2px solid #333; 
+              border-radius: 8px; 
+            }
+            h1 { margin-bottom: 8px; font-size: 24px; }
+            h2 { margin-bottom: 24px; font-size: 18px; color: #666; }
+            p { margin-top: 16px; font-size: 14px; color: #666; }
+            .asset-info { margin-bottom: 16px; }
+          </style>
+        </head>
+        <body>
+          <div class="qr-container">
+            <h1>Scan for DVIR</h1>
+            <div class="asset-info">
+              <h2>${assetNumber} - ${assetName}</h2>
+            </div>
+            <img src="data:image/svg+xml;base64,${btoa(document.getElementById("dvir-qr-svg")?.outerHTML || "")}" width="200" height="200" />
+            <p>Scan this QR code to submit a Driver Vehicle Inspection Report</p>
+          </div>
+          <script>window.print(); window.close();</script>
+        </body>
+        </html>
+      `);
+      printWindow.document.close();
+    }
+  };
+
+  const isExpired = tokenData?.expiresAt 
+    ? new Date(tokenData.expiresAt) < new Date() 
+    : false;
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between gap-2 flex-wrap">
+        <CardTitle className="flex items-center gap-2">
+          <QrCode className="h-5 w-5" />
+          DVIR QR Code
+        </CardTitle>
+        {tokenData?.token && !isExpired && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleCopyUrl}
+              data-testid="button-copy-dvir-url"
+            >
+              {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+              <span className="ml-1">{copied ? "Copied" : "Copy URL"}</span>
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowQrDialog(true)}
+              data-testid="button-view-qr"
+            >
+              <QrCode className="h-4 w-4 mr-1" />
+              View QR
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handlePrint}
+              data-testid="button-print-qr"
+            >
+              <Printer className="h-4 w-4 mr-1" />
+              Print
+            </Button>
+          </div>
+        )}
+      </CardHeader>
+      <CardContent>
+        {isLoadingToken ? (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          </div>
+        ) : tokenData?.token && !isExpired ? (
+          <div className="space-y-4">
+            <div className="flex items-center justify-center p-4 bg-white rounded-lg">
+              <div id="dvir-qr-svg">
+                <QRCodeSVG value={dvirUrl!} size={180} level="H" />
+              </div>
+            </div>
+            <div className="text-center space-y-2">
+              <p className="text-sm text-muted-foreground">
+                Scan this QR code to submit a Driver Vehicle Inspection Report
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Valid until: {new Date(tokenData.expiresAt).toLocaleDateString()} at {new Date(tokenData.expiresAt).toLocaleTimeString()}
+              </p>
+            </div>
+            <div className="flex justify-center">
+              <Button
+                variant="outline"
+                onClick={() => generateTokenMutation.mutate()}
+                disabled={generateTokenMutation.isPending}
+                data-testid="button-regenerate-qr"
+              >
+                {generateTokenMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Regenerate QR Code
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="text-center py-8 space-y-4">
+            <QrCode className="h-12 w-12 mx-auto text-muted-foreground" />
+            <div>
+              <p className="text-muted-foreground mb-2">
+                {isExpired 
+                  ? "The QR code has expired. Generate a new one to allow public DVIR submissions."
+                  : "Generate a QR code to allow anyone to submit DVIRs for this asset without logging in."}
+              </p>
+            </div>
+            <Button
+              onClick={() => generateTokenMutation.mutate()}
+              disabled={generateTokenMutation.isPending}
+              data-testid="button-generate-qr"
+            >
+              {generateTokenMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              <QrCode className="h-4 w-4 mr-2" />
+              Generate QR Code
+            </Button>
+          </div>
+        )}
+      </CardContent>
+
+      <Dialog open={showQrDialog} onOpenChange={setShowQrDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>DVIR QR Code</DialogTitle>
+            <DialogDescription>
+              {assetNumber} - {assetName}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex items-center justify-center p-8 bg-white rounded-lg">
+            <QRCodeSVG value={dvirUrl || ""} size={280} level="H" />
+          </div>
+          <DialogFooter className="flex-row gap-2 justify-center">
+            <Button variant="outline" onClick={handleCopyUrl} data-testid="dialog-button-copy-url">
+              {copied ? <Check className="h-4 w-4 mr-2" /> : <Copy className="h-4 w-4 mr-2" />}
+              {copied ? "Copied" : "Copy URL"}
+            </Button>
+            <Button onClick={handlePrint} data-testid="dialog-button-print">
+              <Printer className="h-4 w-4 mr-2" />
+              Print
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </Card>
+  );
+}
 
 export default function AssetDetail() {
   const [, params] = useRoute("/assets/:id");
@@ -67,6 +295,8 @@ export default function AssetDetail() {
   const { toast } = useToast();
   const [isEditing, setIsEditing] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [newFieldKey, setNewFieldKey] = useState("");
+  const [newFieldValue, setNewFieldValue] = useState("");
 
   const assetId = params?.id ? parseInt(params.id) : null;
 
@@ -93,7 +323,22 @@ export default function AssetDetail() {
     enabled: !!assetId,
   });
 
+  const { data: dvirs } = useQuery<DVIR[]>({
+    queryKey: ["/api/dvirs"],
+  });
+
+  const { data: pmInstances } = useQuery<PmAssetInstance[]>({
+    queryKey: ["/api/pm-asset-instances"],
+  });
+
+  const { data: inventoryTransactions } = useQuery<InventoryTransaction[]>({
+    queryKey: ["/api/inventory-transactions"],
+  });
+
   const assetWorkOrders = workOrders?.filter(wo => wo.assetId === assetId) || [];
+  const assetDvirs = dvirs?.filter(d => d.assetId === assetId) || [];
+  const assetPmInstances = pmInstances?.filter(pm => pm.assetId === assetId) || [];
+  const assetInventoryTransactions = inventoryTransactions?.filter(t => t.assetId === assetId) || [];
   const activeFaults = faultCodes?.filter(fc => fc.status === "active") || [];
 
   const form = useForm<AssetFormValues>({
@@ -129,9 +374,12 @@ export default function AssetDetail() {
         meterType: asset.meterType || "",
         currentMeterReading: asset.currentMeterReading || "",
         notes: asset.notes || "",
+        customFields: asset.customFields || {},
       });
     }
   }, [asset, form]);
+
+  const customFields = form.watch("customFields") || {};
 
   const updateMutation = useMutation({
     mutationFn: async (data: AssetFormValues) => {
@@ -139,6 +387,7 @@ export default function AssetDetail() {
         ...data,
         year: data.year ? parseInt(data.year) : null,
         locationId: data.locationId || null,
+        customFields: data.customFields,
       });
     },
     onSuccess: () => {
@@ -194,7 +443,7 @@ export default function AssetDetail() {
       toast({
         title: "AI Analysis Complete",
         description: prediction 
-          ? `Generated ${prediction.severity} severity prediction: ${prediction.title}`
+          ? `Generated ${prediction.severity} severity prediction: ${prediction.predictionType}`
           : `Generated ${data.count} prediction(s)`,
       });
     },
@@ -209,6 +458,30 @@ export default function AssetDetail() {
 
   const onSubmit = (data: AssetFormValues) => {
     updateMutation.mutate(data);
+  };
+
+  const addCustomField = () => {
+    if (newFieldKey.trim() && !customFields[newFieldKey.trim()]) {
+      form.setValue("customFields", {
+        ...customFields,
+        [newFieldKey.trim()]: newFieldValue,
+      }, { shouldDirty: true });
+      setNewFieldKey("");
+      setNewFieldValue("");
+    }
+  };
+
+  const removeCustomField = (key: string) => {
+    const updated = { ...customFields };
+    delete updated[key];
+    form.setValue("customFields", updated, { shouldDirty: true });
+  };
+
+  const updateCustomFieldValue = (key: string, value: string) => {
+    form.setValue("customFields", {
+      ...customFields,
+      [key]: value,
+    }, { shouldDirty: true });
   };
 
   if (isLoading) {
@@ -533,6 +806,76 @@ export default function AssetDetail() {
                   />
                 </CardContent>
               </Card>
+
+              <Card className="glass-card">
+                <CardHeader>
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <Settings className="h-5 w-5" />
+                    Custom Fields
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {Object.entries(customFields).length > 0 && (
+                    <div className="space-y-2">
+                      {Object.entries(customFields).map(([key, value]) => (
+                        <div key={key} className="flex items-center gap-2">
+                          <Input
+                            value={key}
+                            disabled
+                            className="flex-1"
+                            data-testid={`input-custom-field-key-${key}`}
+                          />
+                          <Input
+                            value={value as string}
+                            onChange={(e) => updateCustomFieldValue(key, e.target.value)}
+                            className="flex-1"
+                            placeholder="Value"
+                            data-testid={`input-custom-field-value-${key}`}
+                          />
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => removeCustomField(key)}
+                            data-testid={`button-remove-field-${key}`}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="flex items-center gap-2">
+                    <Input
+                      value={newFieldKey}
+                      onChange={(e) => setNewFieldKey(e.target.value)}
+                      placeholder="Field name"
+                      className="flex-1"
+                      data-testid="input-new-field-key"
+                    />
+                    <Input
+                      value={newFieldValue}
+                      onChange={(e) => setNewFieldValue(e.target.value)}
+                      placeholder="Value"
+                      className="flex-1"
+                      data-testid="input-new-field-value"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      onClick={addCustomField}
+                      disabled={!newFieldKey.trim()}
+                      data-testid="button-add-custom-field"
+                    >
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Add custom fields to track additional information specific to this asset.
+                  </p>
+                </CardContent>
+              </Card>
             </div>
 
             <div className="flex justify-end">
@@ -548,6 +891,7 @@ export default function AssetDetail() {
           </form>
         </Form>
       ) : (
+        <>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <Card className="glass-card">
             <CardHeader>
@@ -650,41 +994,178 @@ export default function AssetDetail() {
                   </div>
                 </div>
               )}
+
+              {asset.customFields && Object.keys(asset.customFields).length > 0 && (
+                <div className="space-y-2 pt-4 border-t">
+                  <p className="text-sm font-medium">Custom Fields</p>
+                  <div className="grid grid-cols-2 gap-4">
+                    {Object.entries(asset.customFields).map(([key, value]) => (
+                      <div key={key}>
+                        <p className="text-sm text-muted-foreground">{key}</p>
+                        <p className="font-medium">{String(value) || "-"}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
+
+          {asset.type !== "vehicle" && (
+            <div className="lg:col-span-2" data-testid="section-brake-tire-settings">
+              <BrakeTireSettings assetId={asset.id} assetType={asset.type} />
+            </div>
+          )}
 
           <Card className="glass-card lg:col-span-2">
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2">
-                <Wrench className="h-5 w-5" />
-                Work Order History
+                <History className="h-5 w-5" />
+                Asset History
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {assetWorkOrders.length > 0 ? (
-                <div className="space-y-3">
-                  {assetWorkOrders.slice(0, 5).map((wo) => (
-                    <div 
-                      key={wo.id} 
-                      className="p-4 rounded-lg bg-muted/50 flex items-center justify-between cursor-pointer hover-elevate"
-                      onClick={() => navigate(`/work-orders/${wo.id}`)}
-                    >
-                      <div>
-                        <p className="font-medium">{wo.workOrderNumber}</p>
-                        <p className="text-sm text-muted-foreground">{wo.title}</p>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <StatusBadge status={wo.status} />
-                        <span className="text-sm text-muted-foreground">
-                          {wo.createdAt ? new Date(wo.createdAt).toLocaleDateString() : ""}
-                        </span>
-                      </div>
+              <Tabs defaultValue="work-orders" className="w-full">
+                <TabsList className="w-full justify-start mb-4">
+                  <TabsTrigger value="work-orders" className="flex items-center gap-2" data-testid="tab-work-orders">
+                    <Wrench className="h-4 w-4" />
+                    Work Orders ({assetWorkOrders.length})
+                  </TabsTrigger>
+                  <TabsTrigger value="pm-schedules" className="flex items-center gap-2" data-testid="tab-pm-schedules">
+                    <Calendar className="h-4 w-4" />
+                    PM History ({assetPmInstances.length})
+                  </TabsTrigger>
+                  <TabsTrigger value="parts" className="flex items-center gap-2" data-testid="tab-parts">
+                    <Package className="h-4 w-4" />
+                    Parts Used ({assetInventoryTransactions.length})
+                  </TabsTrigger>
+                  <TabsTrigger value="dvirs" className="flex items-center gap-2" data-testid="tab-dvirs">
+                    <ClipboardList className="h-4 w-4" />
+                    DVIRs ({assetDvirs.length})
+                  </TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="work-orders">
+                  {assetWorkOrders.length > 0 ? (
+                    <div className="space-y-3 max-h-96 overflow-auto">
+                      {assetWorkOrders.map((wo) => (
+                        <div 
+                          key={wo.id} 
+                          className="p-4 rounded-lg bg-muted/50 flex items-center justify-between cursor-pointer hover-elevate"
+                          onClick={() => navigate(`/work-orders/${wo.id}`)}
+                        >
+                          <div>
+                            <p className="font-medium">{wo.workOrderNumber}</p>
+                            <p className="text-sm text-muted-foreground">{wo.title}</p>
+                          </div>
+                          <div className="flex items-center gap-3 flex-wrap">
+                            <StatusBadge status={wo.status} />
+                            <span className="text-sm text-muted-foreground">
+                              {wo.createdAt ? new Date(wo.createdAt).toLocaleDateString() : ""}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-muted-foreground text-center py-8">No work orders for this asset</p>
-              )}
+                  ) : (
+                    <p className="text-muted-foreground text-center py-8">No work orders for this asset</p>
+                  )}
+                </TabsContent>
+
+                <TabsContent value="pm-schedules">
+                  {assetPmInstances.length > 0 ? (
+                    <div className="space-y-3 max-h-96 overflow-auto">
+                      {assetPmInstances.map((pm) => (
+                        <div 
+                          key={pm.id} 
+                          className="p-4 rounded-lg bg-muted/50 flex items-center justify-between"
+                        >
+                          <div>
+                            <p className="font-medium">PM Schedule #{pm.pmScheduleId}</p>
+                            <p className="text-sm text-muted-foreground">
+                              Next Due: {pm.nextDueDate ? new Date(pm.nextDueDate).toLocaleDateString() : 'Not set'}
+                              {pm.nextDueMeter && ` or ${pm.nextDueMeter} ${asset?.meterType || 'units'}`}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-3 flex-wrap">
+                            <Badge variant={pm.lastCompletedDate ? "default" : "secondary"}>
+                              {pm.lastCompletedDate ? "Completed" : "Pending"}
+                            </Badge>
+                            {pm.lastCompletedDate && (
+                              <span className="text-sm text-muted-foreground">
+                                Last: {new Date(pm.lastCompletedDate).toLocaleDateString()}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-muted-foreground text-center py-8">No PM schedules for this asset</p>
+                  )}
+                </TabsContent>
+
+                <TabsContent value="parts">
+                  {assetInventoryTransactions.length > 0 ? (
+                    <div className="space-y-3 max-h-96 overflow-auto">
+                      {assetInventoryTransactions.map((tx) => (
+                        <div 
+                          key={tx.id} 
+                          className="p-4 rounded-lg bg-muted/50 flex items-center justify-between"
+                        >
+                          <div>
+                            <p className="font-medium">Part #{tx.partId}</p>
+                            <p className="text-sm text-muted-foreground">
+                              {tx.transactionType === 'consume' ? 'Used' : tx.transactionType} - Qty: {tx.quantity}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-3 flex-wrap">
+                            <Badge variant={tx.transactionType === 'consume' ? "destructive" : "default"}>
+                              {tx.transactionType}
+                            </Badge>
+                            <span className="text-sm text-muted-foreground">
+                              {tx.createdAt ? new Date(tx.createdAt).toLocaleDateString() : ""}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-muted-foreground text-center py-8">No parts used for this asset</p>
+                  )}
+                </TabsContent>
+
+                <TabsContent value="dvirs">
+                  {assetDvirs.length > 0 ? (
+                    <div className="space-y-3 max-h-96 overflow-auto">
+                      {assetDvirs.map((dvir) => (
+                        <div 
+                          key={dvir.id} 
+                          className="p-4 rounded-lg bg-muted/50 flex items-center justify-between cursor-pointer hover-elevate"
+                          onClick={() => navigate(`/dvirs/${dvir.id}`)}
+                        >
+                          <div>
+                            <p className="font-medium">{dvir.inspectionType} Inspection</p>
+                            <p className="text-sm text-muted-foreground">
+                              By: {dvir.driverName || 'Unknown'} - {dvir.defectCount || 0} defect(s)
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-3 flex-wrap">
+                            <Badge variant={dvir.overallStatus === 'pass' ? "default" : "destructive"}>
+                              {dvir.overallStatus}
+                            </Badge>
+                            <span className="text-sm text-muted-foreground">
+                              {dvir.inspectionDate ? new Date(dvir.inspectionDate).toLocaleDateString() : ""}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-muted-foreground text-center py-8">No DVIRs for this asset</p>
+                  )}
+                </TabsContent>
+              </Tabs>
             </CardContent>
           </Card>
 
@@ -804,6 +1285,14 @@ export default function AssetDetail() {
             </CardContent>
           </Card>
         </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <AssetImages assetId={assetId!} />
+          <AssetDocuments assetId={assetId!} />
+        </div>
+
+        <DvirQrCodeSection assetId={assetId!} assetName={asset.name} assetNumber={asset.assetNumber} />
+        </>
       )}
 
       <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>

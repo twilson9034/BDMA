@@ -1,0 +1,586 @@
+How Each System Operates
+1. Dashboard System
+Operation: Centralized command center that aggregates data from multiple entities to provide real-time operational visibility.
+
+Workflow:
+
+On load, simultaneously fetches statistics from multiple entities (Assets, WorkOrders, Parts, PurchaseRequisitions, etc.)
+Uses fetchXxxTotalCount functions with filtered queries to get counts (e.g., assets with status 'down', work orders with status 'open')
+Uses fetchXxxPage functions to get recent records (last 10 work orders, critical assets)
+Widget system allows customization - layout stored in localStorage per user
+Stats are clickable, applying filters to underlying data views
+Background polling keeps data fresh without full page reloads
+Key Metrics Calculated:
+
+Assets Down: Count of assets where status = 'down'
+Assets Needing Maintenance: Count where status = 'maintenance_required'
+Open Work Orders: Count where status IN ['open', 'in_progress', 'pending_parts']
+Urgent Work Orders: Open WOs where priority IN ['urgent', 'emergency']
+Completed This Week: WOs with status = 'completed' and completed_date >= startOfWeek
+2. Work Order System
+Operation: Complete lifecycle management from task creation through execution to closure, with granular task-level tracking.
+
+Core Workflow:
+
+Creation Phase:
+
+Auto-generates unique WO number (format: WO-YYYY-###)
+Associates with an Asset (pulls in asset location, meter reading)
+Sets priority, type, assigned technician
+Initial status: open
+Execution Phase - Work Order Lines:
+
+Each WO can have multiple lines (individual tasks)
+Each line gets a sequential line_number
+Per-line tracking:
+Status: pending → in_progress → completed → closed
+VMRS Code: For standardized categorization
+3Cs: Complaint, Cause, Correction documentation
+Timer System: Multiple technicians can run concurrent timers on a single line
+Timer starts: Adds entry to active_timers array with {user_email, started_at, hourly_rate}
+Timer stops: Calculates elapsed minutes, removes from active_timers, adds to timer_minutes
+Creates WorkOrderTransaction of type time_entry
+Manual Time: Technicians can log time without timer (adds to manual_time_minutes)
+Parts Consumption:
+Select parts from inventory or enter manually
+Deducts quantity_on_hand from Part entity
+Creates part_consumption transaction
+Creates PartUsageHistory record
+Adds to line's parts_used array
+Status Propagation Logic:
+
+Line to WO: If ANY line is in_progress, WO becomes in_progress
+Line to Asset: If line status is on_hold with a reason_for_hold, this reason aggregates to the parent Asset's reason_for_status field
+WO to Asset: If WO status changes to pending_parts, Asset status updates to waiting_on_parts
+Cost Calculation:
+
+Labor Cost per Line: (timer_minutes + manual_time_minutes) / 60 * hourly_rate
+Parts Cost per Line: Sum of (quantity_used * unit_cost) for all parts in parts_used[]
+Total Line Cost: labor_cost + parts_cost + outside_repair_cost + misc_cost
+Total WO Cost: Sum of all line costs + outside_service_cost
+Completion Phase:
+
+Technician marks line as completed
+If line is linked to a PM (pm_id exists), triggers PM update:
+Updates PMAssetInstance.last_done_date and last_done_reading
+Calculates next_due_date and next_due_reading based on PM interval
+Manager reviews completed WO in "Ready for Review"
+Manager closes WO (sets status to closed, locks all lines)
+Optional: Signature capture on closure for proof of completion
+Transaction Ledger:
+
+Immutable audit log of ALL actions
+Every part consumption, time entry, status change creates a transaction
+Reversals: Don't delete original transaction, create a new part_reversal or time_reversal transaction with negative values
+Provides complete forensic trail
+Deferred Work Flow:
+
+Technician identifies a task that can't be completed now
+Opens "Defer Line" dialog
+Options:
+Defer to specific future date
+Defer to a PM (associates with a PM schedule for future execution)
+Enter defer reason
+Line status changes to deferred, removed from current WO
+Appears in "Deferred Lines" tab for future assignment
+Part Request Flow (from WO Line):
+
+Technician realizes they need a part not in inventory
+Clicks "Request Parts" on a line
+Creates PartRequest entity linked to the WO line
+Part request status: pending
+Parts clerk sees request in Part Requests page
+Can order part, create requisition, or mark as fulfilled
+When fulfilled, technician is notified to complete the line
+3. Estimate System
+Operation: Pre-work cost estimation with approval workflow, nearly identical to work orders but without inventory deduction.
+
+Key Differences from Work Orders:
+
+Status workflow: draft → open → in_progress → pending_review → approved/rejected
+Parts added to lines do NOT deduct from inventory (uses parts_used array but no transaction created)
+Used for customer quotes, manager approval before work
+Can be converted to Work Order upon approval (copies all lines, parts, notes)
+Outside vendor cost estimation is more prominent (used for RFQs)
+4. Asset System
+Operation: Central registry of all physical equipment with status tracking and hierarchical organization.
+
+Hierarchy Logic:
+
+Assets can have a parent_asset_id (e.g., a pump is child of a production line)
+asset_hierarchy_path stores full path (e.g., /production_line/pump_station/pump_1)
+hierarchy_level indicates depth (0 = root, 1 = child, 2 = grandchild, etc.)
+Enables reporting at any level (all work orders for a production line includes child assets)
+Status Management:
+
+Operational: Asset is working normally
+Maintenance Required: Triggered by PM due or manual flag
+Performing Maintenance: Auto-set when WO status is in_progress
+Waiting on Parts: Auto-set when WO status is pending_parts
+Down: Manual flag for non-operational assets, highest priority
+Retired: Asset no longer in service
+Reason for Status:
+
+Aggregated from all WorkOrderLine records for this asset where status = 'on_hold'
+Concatenates all reason_for_hold values
+Example: "Waiting for hydraulic seal, Needs electrical inspection"
+Gives at-a-glance view of WHY an asset is in its current state
+Meter Reading System:
+
+Tracks usage (hours for equipment, miles for vehicles)
+Used for PM scheduling (e.g., PM due every 5,000 miles)
+Captured at WO creation as asset_meter_reading for historical context
+Batch update feature allows updating multiple assets at once
+Custom Fields:
+
+Schema defined in CustomField entity
+Stored as JSON in custom_fields object on Asset
+Allows industry-specific data (e.g., tonnage for cranes, BTU for HVAC)
+5. Inventory & Parts System
+Operation: Real-time inventory tracking with automated reorder alerts and multi-location support.
+
+Stock Level Management:
+
+Quantity on Hand: Current inventory count
+Reorder Point: When to trigger alert (e.g., 5 units)
+Min Quantity: Absolute minimum stock level
+Max Quantity: Maximum to order up to
+When quantity_on_hand <= reorder_point, creates ReorderAlert
+Part Consumption Flow:
+
+Technician posts parts on WO line
+System checks if quantity_on_hand >= quantity_requested
+If yes:
+Deducts from Part.quantity_on_hand
+Creates WorkOrderTransaction (type: part_consumption)
+Creates PartUsageHistory record
+Adds to WorkOrderLine.parts_used[]
+If no: Shows error, prompts to create Part Request
+ABC Classification:
+
+A-Parts: High value, 20% of items, 80% of value (tight control, frequent cycle counts)
+B-Parts: Medium value, 30% of items, 15% of value
+C-Parts: Low value, 50% of items, 5% of value (loose control, infrequent counts)
+Calculated by backend function based on annual_usage_quantity * unit_cost
+Cycle Counting:
+
+Scheduled: Each part has cycle_count_frequency_days based on ABC class
+Next Count Date: last_cycle_count_date + cycle_count_frequency_days
+Execution: User enters actual counted quantity, system reconciles difference
+Creates CycleCount record with variance tracking
+Serial Number Tracking:
+
+If is_serialized = true, each unit has a unique serial number
+PartSerialNumber entity tracks each unit's lifecycle
+On consumption, serial number is marked as "used" with WO reference
+6. Procurement System
+Operation: Full procure-to-pay workflow with multi-level approval and vendor management.
+
+End-to-End Flow:
+
+Part Request (Technician → Parts Clerk)
+
+Created from WO line: "I need 2x hydraulic seals"
+Status: pending
+Urgency: standard, urgent, or critical
+Can include estimated cost, vendor preference
+Purchase Requisition (Parts Clerk → Manager)
+
+Parts clerk reviews multiple part requests
+Consolidates similar requests into a requisition
+Requisition contains:
+Multiple line items (each with part, quantity, estimated cost)
+Requesting location
+Justification notes
+Submits for approval (status: submitted)
+Manager reviews and approves/rejects
+If approved, status: approved
+Purchase Order (Parts Clerk → Vendor)
+
+Approved requisition converts to PO
+PO number auto-generated (format: PO-YYYY-###)
+Assigned to specific vendor
+Line items with final quantities and prices
+Payment terms, expected delivery date
+Status: sent (email/fax to vendor)
+Vendor acknowledges: Status becomes acknowledged
+Receiving (Parts Clerk)
+
+When shipment arrives, clerk initiates receiving
+Selects PO to receive against
+For each line item:
+Enter quantity received
+If different from ordered, log discrepancy and reason
+On save:
+Creates ReceivingTransaction for each line
+Updates Part.quantity_on_hand (+= quantity_received)
+If all lines received, PO status: received
+If partial, PO status: partially_received
+Updates linked PartRequest records to fulfilled
+Vendor Performance Tracking:
+
+On-Time Delivery %: (POs delivered on/before expected_date / total POs) * 100
+Quality Score: Manual rating (1-5 stars) after receipt inspection
+Average Lead Time: avg(actual_delivery_date - order_date) across all POs
+Used for vendor selection and performance reviews
+Reorder Alerts:
+
+Automated Generation: Runs nightly (or on-demand)
+For each Part where quantity_on_hand <= reorder_point:
+Creates ReorderAlert if one doesn't exist
+Sets criticality based on is_critical flag and stock level
+Status: pending
+Parts clerk reviews alerts
+Can bulk-create POs from multiple alerts:
+Groups alerts by preferred vendor
+Creates one PO per vendor with multiple line items
+Sets alert status to ordered
+7. Preventive Maintenance System
+Operation: Schedule-driven recurring maintenance to prevent failures, with automatic due date calculation.
+
+PM Schedule Configuration:
+
+Interval Types:
+Days: PM due every X days (e.g., 90 days)
+Miles: PM due every X miles (e.g., 5,000 miles) - uses asset.current_meter_reading
+Hours: PM due every X hours (e.g., 500 engine hours)
+Tolerance: How early PM can be completed (e.g., 500 miles before due)
+Grace: How late before marked overdue (e.g., 100 miles after due)
+PM Instance Tracking (PMAssetInstance):
+
+Each Asset + PM Schedule combination creates an instance
+Tracks:
+last_done_date and last_done_reading
+due_date and due_reading (calculated)
+current_status: not_due, due_soon, overdue
+Status Logic:
+overdue if current_date > (due_date + grace) OR current_reading > (due_reading + grace)
+due_soon if within tolerance window
+not_due otherwise
+PM Completion Flow:
+
+User creates WO for PM (or adds PM to existing WO)
+Adds WO line with pm_id reference
+Line includes checklist if PM has checklist_template_id
+Technician completes checklist, marks line complete
+Backend function triggers:
+Finds PMAssetInstance for this asset + PM
+Updates last_done_date = today
+Updates last_done_reading = current asset meter reading
+Calculates next due:
+If interval type = days: due_date = last_done_date + interval_value
+If interval type = miles/hours: due_reading = last_done_reading + interval_value
+Updates current_status based on new due date/reading
+Nested PMs:
+
+Parent PM (e.g., "Annual Inspection") can have child PMs (e.g., "Q1 Inspection", "Q2 Inspection")
+Completing a child PM doesn't affect parent's due date
+Used for complex multi-stage maintenance
+8. Manual System
+Operation: Digital library with AI-powered content extraction for instant access to service information.
+
+Upload & Processing Flow:
+
+User uploads PDF manual
+Metadata entered: make, model, year range
+Status: processing
+Backend AI Function (extractManualSections):
+Extracts text from each page using OCR/PDF parser
+Stores in ManualPageText entity
+Uses LLM to identify sections:
+Looks for table of contents
+Identifies chapter/section headers
+Extracts page ranges
+Assigns VMRS codes where applicable
+Creates ManualSection entities for each detected section
+Calculates confidence score per section
+Status: completed
+Search & Retrieval:
+
+Global Search: Full-text search across all ManualPageText records
+Asset-Specific: Filters manuals by asset's make/model/year
+VMRS-Based: When viewing WO line with VMRS code, suggests relevant manual sections
+VIN-Based: Links manuals to specific VIN patterns via ManualVIN entity
+Service Info Integration:
+
+From WO detail, technician opens "Service Info" drawer
+Searches: "how to replace hydraulic seal on CAT 420"
+System:
+Finds manuals matching asset's make/model
+Searches for VMRS codes in ManualSection.vmrs_codes_tagged[]
+Returns ranked results with page numbers
+Technician clicks result, PDF opens in modal to exact page
+9. Messages System
+Operation: Internal team communication with entity linking for context-aware discussions.
+
+Conversation Types:
+
+Direct Message (DM): 2 participants
+Group: Multiple participants, has a name
+Message Flow:
+
+User initiates conversation (selects participants)
+System checks if DM already exists between these 2 users (prevents duplicates)
+Creates Conversation entity with:
+participants[] array of user emails
+type: 'dm' or 'group'
+User sends message
+Creates Message entity:
+conversation_id
+sender_email
+content
+read_by[] starts as empty array
+Updates parent Conversation:
+last_message_text
+last_message_date
+last_message_sender
+unread_by[] = all participants except sender
+Real-time subscription updates all connected users
+Unread Tracking:
+
+When user opens conversation, adds their email to all Message.read_by[] arrays
+Updates Conversation.unread_by to remove their email
+Badge count in nav shows conversations.filter(c => c.unread_by.includes(user.email)).length
+Entity Tagging (Schema Defined, UI Pending):
+
+Message can have tagged_entities[] array
+Each tag: {type: 'WorkOrder', id: 'wo_123', name: 'WO-2024-001'}
+Enables: "Discussed this issue in [WO-2024-001]" with clickable link
+10. Reports & Analytics System
+Operation: Data aggregation and visualization with pre-built templates and custom builder.
+
+Pre-Built Reports:
+
+Work Order Cost by Asset:
+
+Groups all WorkOrder records by asset_id
+Sums total_cost per asset
+Sorts by highest cost
+Output: Asset Name, Total WOs, Total Cost, Avg Cost per WO
+Asset Downtime Report:
+
+For each asset, finds all WOs where status was down or maintenance_required
+Calculates: downtime_hours = (completed_date - started_date) / 3600
+Output: Asset Name, Total Downtime Hours, Number of Incidents, Avg Downtime per Incident
+Parts Consumption:
+
+Queries PartUsageHistory
+Groups by part_id
+Sums quantity_used and total_cost
+Output: Part Number, Part Name, Total Qty Used, Total Cost, Avg Cost per Unit
+Advanced Report Builder (Schema Exists, UI Pending):
+
+User selects entity (e.g., WorkOrder)
+Selects fields to display (e.g., work_order_number, asset_name, total_cost)
+Builds filters (e.g., status = 'completed', created_date >= '2024-01-01')
+Chooses grouping (e.g., group by asset_id)
+Adds calculated fields (e.g., avg_cost = sum(total_cost) / count(id))
+Selects visualization (table, bar chart, line chart)
+Saves as ReportConfiguration
+Report Scheduling:
+
+User creates schedule: "Run Asset Downtime Report every Monday at 8am"
+Creates ReportSchedule entity with cron expression
+Backend automation triggers at scheduled time
+Runs report, saves results to ReportRun
+Emails PDF/Excel to specified recipients
+11. Analytics & KPI System
+Operation: Automated calculation of operational metrics with historical trending.
+
+KPI Calculation (Backend Function calculateKPIs):
+
+MTTR (Mean Time To Repair):
+
+Query: All closed WOs with started_date and completed_date
+Calculation: avg(completed_date - started_date)
+Expressed in hours
+MTBF (Mean Time Between Failures):
+
+For each asset, find all emergency/corrective WOs
+Calculate time between each failure: (failure_date - previous_failure_date)
+Average across all assets
+Asset Uptime %:
+
+Total hours in period (e.g., 720 hours in 30 days)
+Downtime hours (sum of WO durations where asset was down)
+Uptime % = ((total_hours - downtime_hours) / total_hours) * 100
+PM Compliance %:
+
+Count: PMs completed within tolerance window
+Count: Total PMs due in period
+Compliance % = (completed_on_time / total_due) * 100
+Predictive Maintenance (functions/predictFailures):
+
+Runs weekly or on-demand
+For each asset:
+Analyzes work order history (last 2 years)
+Counts corrective vs preventive WOs
+Identifies repeated part failures
+Calculates failure frequency trend (increasing/decreasing)
+Measures days since last failure
+Assigns risk score (0-100)
+For high-risk assets (score > 60):
+Sends asset data + history to LLM
+LLM analyzes and returns:
+Most likely failure mode (e.g., "Hydraulic pump seal failure")
+Recommended preventive actions (e.g., "Inspect pump seals, replace if worn")
+Parts to stock (e.g., "P/N 12345 Seal Kit")
+Probability percentage
+Stores prediction in database
+Manager reviews predictions, can create preventive WOs directly
+12. Inspection & DVIR System
+Operation: Structured data collection with automatic work order generation from defects.
+
+Inspection Form Execution:
+
+Technician selects asset and inspection form template
+App displays each field sequentially
+Field types:
+Text input
+Numeric measurement
+Pass/Fail checkbox
+Date selector
+Signature capture
+Photo upload
+GPS coordinate capture
+For each field, can add notes
+On submit:
+Creates Inspection entity
+Creates InspectionResult for each field response
+If any "Fail" responses, prompts: "Create Work Order?"
+If yes, auto-creates WO with inspection results in description
+DVIR (Driver Vehicle Inspection Report) Flow:
+
+Driver performs pre-trip inspection
+Fills out DVIR form (similar to inspection)
+Finds defects (e.g., "Left front tire low pressure", "Brake fluid low")
+For each defect:
+Creates DVIRDefect entity
+Assigns VMRS code if known
+Status: reported
+Creates parent DVIR entity:
+Status: defects_found if any defects, else no_defects
+Auto-WO Creation:
+System automatically creates WO with type: 'dvir'
+Creates one WorkOrderLine per defect
+Each line links back to DVIRDefect via work_order_line_id
+Asset status updated to maintenance_required
+Technician completes lines
+On completion, DVIRDefect.status updates to addressed
+When all defects addressed, DVIR.status becomes resolved
+13. Tire Management System
+Operation: Complete lifecycle tracking from purchase through installation to disposal, with AI failure prediction.
+
+Tire Lifecycle:
+
+Purchase:
+
+Create Tire entity with specs (size, brand, model, DOT code)
+Initial status: in_stock
+Tread depth recorded
+Installation (TireAssignment):
+
+Select tire from inventory
+Select asset and position (e.g., "Left Front")
+Creates TireAssignment entity:
+tire_id
+asset_id
+position
+installed_date
+installed_meter_reading
+status: 'active'
+Tire status: installed
+Monitoring:
+
+TPMS readings (TPMSReading entity) track pressure/temp
+Alerts if pressure drops below threshold
+Periodic tread depth measurements stored on Tire
+Removal:
+
+Triggered from WO line or asset tire management
+Enter removal reason (e.g., "Worn tread", "Puncture", "Rotation")
+Updates TireAssignment:
+removed_date
+removed_meter_reading
+removal_reason
+status: 'removed'
+AI Prediction Trigger:
+Backend function predictTireFailure called
+Sends: Asset data, tire data, removal reason, recent WO history
+LLM analyzes and predicts:
+Underlying issues (e.g., "Possible alignment problem causing uneven wear")
+Confidence score
+Recommended WOs (e.g., "Schedule alignment check")
+Creates TirePrediction entity
+UI displays prediction dialog
+User can create suggested WOs with one click
+Rotation:
+
+Swap tire positions (e.g., Left Front ↔ Right Rear)
+Creates new TireAssignment for new position
+Updates previous assignment with removal info
+Disposal:
+
+Tire status: disposed
+Tracks disposal date and reason
+Tire Inventory Alerts:
+
+Tracks quantity of each tire size/type in stock
+Alerts when count drops below threshold
+Integrated with reorder system
+14. Telematics Integration System
+Operation: Real-time data ingestion from external systems with webhook processing.
+
+Integration Setup:
+
+Admin configures in Settings → Integrations
+Creates IntegrationConnection:
+Provider (e.g., "Samsara")
+API credentials
+Active status
+Sets up webhook endpoint:
+Creates IntegrationWebhook
+URL: https://yourapp.base44.com/functions/integrationWebhookHandler
+Registers URL with provider
+Data Flow:
+
+GPS Data:
+
+Webhook receives: {vehicle_id, lat, lng, timestamp, speed, heading}
+Creates GPSReading entity
+Checks geofences: If vehicle exits designated area, creates alert
+Fault Codes:
+
+Webhook receives: {vehicle_id, fault_code, description, severity, timestamp}
+Creates FaultCode entity
+If severity = 'critical', auto-creates WO
+TPMS:
+
+Webhook receives tire pressure/temp data
+Creates TPMSReading entity
+If pressure < threshold, creates alert and suggests inspection WO
+15. Security & Permission System
+Operation: Multi-layered security with row-level data isolation and role-based feature access.
+
+Row-Level Security (RLS):
+
+Every user has assigned_location_ids[] array
+Entity queries automatically filter:
+Asset.location_id IN user.assigned_location_ids
+WorkOrder.location_id IN user.assigned_location_ids
+Part.location_id IN user.assigned_location_ids
+Users only see data for their assigned locations
+Multi-location users see combined dataset
+Role-Based Access Control:
+
+Admin: Full access, can modify all settings, view all locations
+Manager: Approve requisitions, close WOs, view analytics, manage users at assigned locations
+Technician: Create/edit WOs they're assigned to, post parts, log time
+Parts Clerk: Manage inventory, approve part requests, create POs
+Viewer: Read-only access to all data at assigned locations
+Permission Guards:
+
+UI components wrapped in <PermissionGuard requiredRoles={['admin', 'manager']}>
+Buttons/actions hidden if user lacks permission
+Backend validates permissions on write operations
+This explains the operational workflows of each major system without diving into code implementation. Each system is designed to work independently while integrating seamlessly with related systems through shared entities and data flows.

@@ -3,7 +3,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { ArrowLeft, Save, Loader2, ClipboardCheck, Plus, Trash2, AlertTriangle } from "lucide-react";
+import { ArrowLeft, Save, Loader2, ClipboardCheck, Plus, Trash2, AlertTriangle, MapPin, Camera, Navigation } from "lucide-react";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -65,6 +65,12 @@ const inspectionCategories = [
   "Other",
 ];
 
+interface GpsLocation {
+  latitude: number;
+  longitude: number;
+  accuracy?: number;
+}
+
 export default function DvirNew() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
@@ -74,6 +80,45 @@ export default function DvirNew() {
     description: "",
     severity: "minor",
   });
+  const [gpsLocation, setGpsLocation] = useState<GpsLocation | null>(null);
+  const [isCapturingGps, setIsCapturingGps] = useState(false);
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [unsafeOverride, setUnsafeOverride] = useState(false);
+
+  const captureGpsLocation = () => {
+    if (!navigator.geolocation) {
+      toast({ title: "GPS Not Available", description: "Your browser doesn't support GPS location.", variant: "destructive" });
+      return;
+    }
+    setIsCapturingGps(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setGpsLocation({
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          accuracy: position.coords.accuracy,
+        });
+        setIsCapturingGps(false);
+        toast({ title: "Location Captured", description: `GPS coordinates recorded.` });
+      },
+      (error) => {
+        setIsCapturingGps(false);
+        toast({ title: "GPS Error", description: error.message, variant: "destructive" });
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
+
+  const handlePhotoCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setPhotoFile(file);
+      const reader = new FileReader();
+      reader.onload = () => setPhotoPreview(reader.result as string);
+      reader.readAsDataURL(file);
+    }
+  };
 
   const { data: assets } = useQuery<Asset[]>({
     queryKey: ["/api/assets"],
@@ -93,7 +138,9 @@ export default function DvirNew() {
 
   const createMutation = useMutation({
     mutationFn: async (data: DvirFormValues) => {
-      const status = defects.length === 0 ? "safe" 
+      // Use the calculated overallStatus which includes unsafeOverride
+      const status = unsafeOverride ? "unsafe"
+        : defects.length === 0 ? "safe" 
         : defects.some(d => d.severity === "critical") ? "unsafe" 
         : "defects_noted";
       
@@ -160,7 +207,9 @@ export default function DvirNew() {
     }
   };
 
-  const overallStatus = defects.length === 0 ? "safe" 
+  // Calculate overall status - unsafeOverride takes precedence
+  const overallStatus = unsafeOverride ? "unsafe"
+    : defects.length === 0 ? "safe" 
     : defects.some(d => d.severity === "critical") ? "unsafe" 
     : "defects_noted";
 
@@ -252,6 +301,85 @@ export default function DvirNew() {
                         </FormItem>
                       )}
                     />
+                  </div>
+
+                  {/* GPS and Photo Capture - Mobile Friendly */}
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="rounded-lg border p-4 space-y-3" data-testid="section-gps-capture">
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <span className="text-sm font-medium flex items-center gap-2" data-testid="label-gps-location">
+                          <MapPin className="h-4 w-4" />
+                          GPS Location
+                        </span>
+                        <Button 
+                          type="button" 
+                          variant="outline" 
+                          size="sm"
+                          onClick={captureGpsLocation}
+                          disabled={isCapturingGps}
+                          data-testid="button-capture-gps"
+                        >
+                          {isCapturingGps ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Navigation className="h-4 w-4" />
+                          )}
+                          <span className="ml-2">{isCapturingGps ? "Getting..." : "Capture"}</span>
+                        </Button>
+                      </div>
+                      {gpsLocation ? (
+                        <div className="text-xs text-muted-foreground bg-muted p-2 rounded" data-testid="text-gps-location">
+                          <p data-testid="text-gps-lat">Lat: {gpsLocation.latitude.toFixed(6)}</p>
+                          <p data-testid="text-gps-lng">Lng: {gpsLocation.longitude.toFixed(6)}</p>
+                          {gpsLocation.accuracy && <p data-testid="text-gps-accuracy">Accuracy: ±{Math.round(gpsLocation.accuracy)}m</p>}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-muted-foreground" data-testid="text-gps-empty">Tap to capture current location</p>
+                      )}
+                    </div>
+
+                    <div className="rounded-lg border p-4 space-y-3" data-testid="section-photo-capture">
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <span className="text-sm font-medium flex items-center gap-2" data-testid="label-photo-evidence">
+                          <Camera className="h-4 w-4" />
+                          Photo Evidence
+                        </span>
+                        <label htmlFor="photo-capture">
+                          <Button type="button" variant="outline" size="sm" asChild>
+                            <span data-testid="button-capture-photo">
+                              <Camera className="h-4 w-4 mr-2" />
+                              {photoFile ? "Change" : "Add Photo"}
+                            </span>
+                          </Button>
+                        </label>
+                        <input 
+                          id="photo-capture" 
+                          type="file" 
+                          accept="image/*" 
+                          capture="environment"
+                          className="hidden" 
+                          onChange={handlePhotoCapture}
+                          data-testid="input-photo"
+                        />
+                      </div>
+                      {photoPreview ? (
+                        <div className="relative" data-testid="container-photo-preview">
+                          <img src={photoPreview} alt="Inspection photo" className="w-full h-24 object-cover rounded" data-testid="img-photo-preview" />
+                          <Button 
+                            type="button" 
+                            variant="destructive" 
+                            size="icon" 
+                            className="absolute top-1 right-1"
+                            onClick={() => { setPhotoFile(null); setPhotoPreview(null); }}
+                            data-testid="button-remove-photo"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-muted-foreground" data-testid="text-photo-empty">Take a photo for documentation</p>
+                      )}
+                    </div>
                   </div>
                 </CardContent>
               </Card>
@@ -392,6 +520,23 @@ export default function DvirNew() {
                         {defects.length} defect{defects.length > 1 ? "s" : ""} reported
                       </p>
                     )}
+                  </div>
+                  
+                  <div className="flex items-center justify-between p-4 rounded-lg border border-border bg-red-500/5">
+                    <div className="space-y-0.5">
+                      <p className="text-sm font-medium flex items-center gap-2">
+                        <AlertTriangle className="h-4 w-4 text-red-500" />
+                        Mark as Unsafe
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Override status to "Do Not Operate"
+                      </p>
+                    </div>
+                    <Switch
+                      checked={unsafeOverride}
+                      onCheckedChange={setUnsafeOverride}
+                      data-testid="switch-unsafe-override"
+                    />
                   </div>
 
                   <Button 

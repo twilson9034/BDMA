@@ -31,11 +31,19 @@ import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { ChecklistTemplate } from "@shared/schema";
 
+interface VmrsCode {
+  id: number;
+  code: string;
+  title: string;
+  description?: string;
+}
+
 const pmFormSchema = z.object({
   name: z.string().min(1, "Name is required"),
   description: z.string().optional(),
   intervalType: z.enum(["days", "miles", "hours", "cycles"]),
   intervalValue: z.number().min(1, "Interval must be at least 1"),
+  vmrsCodeId: z.number().optional(),
   estimatedHours: z.string().optional(),
   estimatedCost: z.string().optional(),
   priority: z.enum(["low", "medium", "high", "critical"]),
@@ -53,6 +61,10 @@ export default function PmScheduleNew() {
 
   const { data: templates } = useQuery<ChecklistTemplate[]>({
     queryKey: ["/api/checklist-templates"],
+  });
+
+  const { data: vmrsCodes = [] } = useQuery<VmrsCode[]>({
+    queryKey: ["/api/vmrs-codes"],
   });
 
   const form = useForm<PmFormValues>({
@@ -191,6 +203,34 @@ export default function PmScheduleNew() {
                         <FormControl>
                           <Textarea {...field} rows={3} placeholder="Details about this maintenance task..." data-testid="input-description" />
                         </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="vmrsCodeId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>VMRS Code</FormLabel>
+                        <Select 
+                          value={field.value?.toString() || ""} 
+                          onValueChange={(val) => field.onChange(val ? parseInt(val) : undefined)}
+                        >
+                          <FormControl>
+                            <SelectTrigger data-testid="select-vmrs-code">
+                              <SelectValue placeholder="Select a VMRS code..." />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {vmrsCodes.map((code) => (
+                              <SelectItem key={code.id} value={code.id.toString()}>
+                                <span className="font-mono">{code.code}</span> - {code.title}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormDescription>Link this PM to a VMRS code for automatic association with work order lines</FormDescription>
                         <FormMessage />
                       </FormItem>
                     )}

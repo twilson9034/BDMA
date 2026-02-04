@@ -1,0 +1,129 @@
+Build an “Auto-Assign VMRS” feature inside our CMMS that suggests VMRS codes for parts using:
+- rules-first keyword matching (deterministic)
+- optional learning mode using our accepted historical mappings (smart)
+We must return: suggested VMRS system/assembly/component, safety_system category, confidence score 0.00–1.00, and an explanation.
+
+IMPORTANT CONTEXT
+VMRS system codes are 3-digit “Code Key 31” system codes (e.g., 013=Brakes, 015=Steering, 016=Suspension, 017=Tires, 018=Wheels/Rims/Hubs/Bearings, 032=Cranking System, etc.). Use these as the backbone of suggestions. (See TMC/ATA VMRS intro for system code examples and structure.) 
+Also note: VMRS supports System-Assembly-Component in 3-3-3 format, e.g., 013-001-015. (Front brakes/drums & brake lining example.)
+
+DATA MODEL
+1) parts
+- id (pk)
+- part_number (unique)
+- name
+- description
+- manufacturer
+- unit_cost
+- vmrs_system_code (nullable string)
+- vmrs_assembly_code (nullable string)
+- vmrs_component_code (nullable string)
+- safety_system (enum: BRAKES, STEERING, TIRES_WHEELS, SUSPENSION, ELECTRICAL, HVAC, ENGINE_POWERPLANT, DRIVETRAIN, BODY_DOORS, OTHER)
+- failure_severity (1-5 default 1)
+- vmrs_suggestion_last (json)
+- vmrs_confidence_last (decimal)
+- vmrs_last_suggested_at (datetime)
+
+2) vmrs_dictionary (supports full official list if we import it)
+- id
+- system_code (string “013”)
+- assembly_code (string “001”, nullable)
+- component_code (string “015”, nullable)
+- title (friendly name)
+- keywords_json (array of keywords/synonyms)
+- source (text)  // e.g. “TMC licensed import”, “starter”, etc.
+
+3) vmrs_mapping_feedback
+- id
+- part_id
+- suggested_system/assembly/component
+- confidence
+- accepted (bool)
+- accepted_system/assembly/component
+- accepted_by_user_id
+- accepted_at
+- notes
+
+RULES-FIRST ENGINE
+1) Normalize input text:
+- lowercase, strip punctuation
+- expand abbreviations: “brk”->“brake”, “chmbr”->“chamber”, “adj”->“adjuster”, “svc”->“service”, “rr”->“rear”, “fr”->“front”
+- tokenize, remove stop words
+
+2) Scoring:
+- Each mapping rule produces a candidate (system + optional assembly/component) with a base confidence.
+- Add confidence for multiple corroborating terms; subtract for ambiguity (e.g., “valve” alone).
+- If we have vmrs_dictionary populated, prefer matching by dictionary keywords/title; otherwise fall back to system-only.
+
+3) Output:
+Return top 3 suggestions:
+- vmrs_system_code + optional assembly/component
+- safety_system
+- confidence
+- explanation (matched keywords + rule ids)
+If confidence >= 0.90 (configurable), we may auto-apply; otherwise present in UI for approval.
+
+LEARNING MODE (SMART, OPTIONAL BUT DESIRED)
+- Train a lightweight text model from accepted mappings (TF-IDF + linear classifier) OR embedding nearest-neighbor over accepted mappings.
+- Use rules-first if rules confidence is high; otherwise use model.
+- Blend results and return top 3.
+
+UI / WORKFLOW
+- Part detail: “Suggest VMRS” button. Show top suggestions with Accept/Edit/Reject.
+- Bulk job: “Suggest VMRS for all parts missing VMRS system code.”
+- On accept: write codes to parts + write vmrs_mapping_feedback.
+- Use accepted feedback to expand vmrs_dictionary.keywords_json and improve learning mode.
+
+STARTER KEYWORD → VMRS MAPPING (SHIP THIS IN CODE AS SEEDED DATA)
+Seed vmrs_dictionary with system-level entries (high confidence), plus a handful of common brake sub-assemblies/components.
+Use these rules even before importing the full VMRS list:
+
+A) SYSTEM-LEVEL (3-digit) – HIGH CONFIDENCE
+- 001 HVAC: keywords ["hvac","a/c","ac","air conditioning","heater core","blower motor","vent","compressor hvac","evaporator","condenser","defroster","climate"]
+- 002 Cab/Body Sheet Metal: ["body panel","sheet metal","windshield frame","cowl","mirror bracket","hood latch","compartment door skin"]
+- 003 Instruments/Gauges: ["gauge","speedometer","tach","instrument cluster","warning lamp","indicator","sensor gauge"]
+- 011 Front axle non-driven: ["front axle beam","spindle","knuckle (non-driven)","front axle non-driven"]
+- 012 Rear axle non-driven: ["tag axle","pusher axle","rear non-driven axle","dead axle"]
+- 013 Brakes: ["brake","brakes","slack adjuster","brake chamber","s-cam","caliper","rotor","drum","shoe","lining","abs modulator","abs sensor","gladhand service","air brake"]
+- 014 Frame: ["frame rail","crossmember","outrigger","body mount","subframe","crack repair frame"]
+- 015 Steering: ["steering","tie rod","drag link","pitman arm","idler arm","steering gear","steering box","king pin","power steering pump","column","steer axle alignment"]
+- 016 Suspension: ["air spring","air bag","shock","suspension","u-bolt","torque rod","radius rod","tracking bar","height control valve","leveling valve","bushing","spring hanger"]
+- 017 Tires: ["tire","tyre","tread","sidewall","dual","valve stem","tire inflation","ctis","atis","flat repair"]
+- 018 Wheels/Rims/Hubs/Bearings: ["wheel","rim","hub","bearing","seal","lug nut","stud","wheel end","brake hub (wheel end)"]
+- 031 Charging system: ["alternator","voltage regulator","charge","charging","battery isolator"]
+- 032 Cranking system: ["starter","cranking","starter solenoid","ignition start","no crank"]
+- 034 Lighting system: ["headlamp","taillight","marker light","turn signal","strobe","clearance light","lamp","bulb","lighting harness","fog light"]
+- 041 Air intake: ["air filter","intake","charge air","cac","intercooler","boost leak","intake manifold"]
+- 042 Cooling system: ["radiator","water pump","thermostat","coolant hose","surge tank","fan clutch","coolant"]
+- 043 Exhaust system: ["exhaust","muffler","pipe","aftertreatment","dpf","scr","doc","exhaust brake"]
+- 044 Fuel system: ["fuel filter","injector","fuel pump","lift pump","rail","diesel","fuel line"]
+- 045 Power plant: ["engine","long block","short block","cylinder head","oil pan","valvetrain"]
+- 048 Powertrain electric/hybrid: ["inverter","dc-dc","battery pack","traction motor","hybrid","regen","hv cable","bms","e-axle"]
+
+B) BRAKE SUBCODES (OPTIONAL ASSIGNMENTS IF DICTIONARY MATCHES)
+If vmrs_dictionary contains matching assembly/component entries, enable these:
+- Keywords ["brake chamber","service chamber","spring brake"] → prefer 013 + assembly/component match for “Brake Chamber”
+- ["slack adjuster"] → 013 + match “Slack Adjuster”
+- ["brake shoe"] → 013 + match “Brake Shoe”
+- ["brake lining"] → 013 + match “Brake Lining”
+- ["rotor"] → 013 + match “Brake Rotor”
+- ["caliper"] → 013 + match “Brake Caliper”
+- ["abs sensor"] → 013 + match “ABS Sensor”
+(Do not hardcode 6/9-digit values unless present in vmrs_dictionary; use dictionary lookup by title/keywords to avoid wrong codes.)
+
+C) SAFETY_SYSTEM DERIVATION (used elsewhere too)
+- if vmrs_system_code in ["013"] → BRAKES
+- if in ["015"] → STEERING
+- if in ["017","018"] → TIRES_WHEELS
+- if in ["016"] → SUSPENSION
+- if in ["001"] → HVAC
+- if in ["031","032","034"] → ELECTRICAL
+- if in ["041","042","043","044","045"] → ENGINE_POWERPLANT
+- else OTHER
+
+DELIVERABLES
+- DB migrations + seed data for vmrs_dictionary starter rules
+- Suggestion service + bulk endpoints
+- UI for review/accept/reject
+- Tests: ambiguity, multi-match, new parts, and dictionary-not-loaded fallback behavior
+- Documentation page: how confidence works, and how to import a full VMRS dictionary if we license it

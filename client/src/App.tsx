@@ -10,6 +10,9 @@ import { AuthProvider, useAuth } from "@/hooks/use-auth";
 import { AppSidebar } from "@/components/AppSidebar";
 import { PageLoader } from "@/components/LoadingSpinner";
 import { BarcodeScanner } from "@/components/BarcodeScanner";
+import { NotificationBell } from "@/components/NotificationBell";
+import { OrganizationSwitcher } from "@/components/OrganizationSwitcher";
+import { GlobalSearch } from "@/components/GlobalSearch";
 
 import LandingPage from "@/pages/landing";
 import DemoPage from "@/pages/demo";
@@ -33,6 +36,7 @@ import Predictions from "@/pages/predictions";
 import Requisitions from "@/pages/requisitions";
 import RequisitionDetail from "@/pages/requisition-detail";
 import RequisitionNew from "@/pages/requisition-new";
+import ProcurementAnalytics from "@/pages/procurement-analytics";
 import PurchaseOrders from "@/pages/purchase-orders";
 import PurchaseOrderDetail from "@/pages/purchase-order-detail";
 import PurchaseOrderNew from "@/pages/purchase-order-new";
@@ -41,6 +45,7 @@ import VendorDetail from "@/pages/vendor-detail";
 import VendorNew from "@/pages/vendor-new";
 import Manuals from "@/pages/manuals";
 import ManualDetail from "@/pages/manual-detail";
+import ManualUpload from "@/pages/manual-upload";
 import Reports from "@/pages/reports";
 import ReportDetail from "@/pages/report-detail";
 import Feedback from "@/pages/feedback";
@@ -52,6 +57,26 @@ import ChecklistTemplates from "@/pages/checklist-templates";
 import ChecklistTemplateNew from "@/pages/checklist-template-new";
 import ChecklistTemplateDetail from "@/pages/checklist-template-detail";
 import BulkImport from "@/pages/bulk-import";
+import Receiving from "@/pages/receiving";
+import PartRequests from "@/pages/part-requests";
+import ReadyForReview from "@/pages/ready-for-review";
+import ReorderAlerts from "@/pages/reorder-alerts";
+import PartKits from "@/pages/part-kits";
+import PartKitDetail from "@/pages/part-kit-detail";
+import CycleCounts from "@/pages/cycle-counts";
+import SmartClassification from "@/pages/smart-classification";
+import VmrsAutoAssign from "@/pages/vmrs-auto-assign";
+import OosStandards from "@/pages/oos-standards";
+import PmDues from "@/pages/pm-dues";
+import Tires from "@/pages/tires";
+import Messages from "@/pages/messages";
+import PublicDashboards from "@/pages/public-dashboards";
+import AdminTools from "@/pages/admin-tools";
+import PublicDvir from "@/pages/public-dvir";
+import PublicDashboardView from "@/pages/public-dashboard-view";
+import LaborRateCalculator from "@/pages/labor-rate-calculator";
+import KnowledgeBase from "@/pages/knowledge-base";
+import TechnicianManagement from "@/pages/technician-management";
 import NotFound from "@/pages/not-found";
 
 function AuthenticatedRouter() {
@@ -77,6 +102,7 @@ function AuthenticatedRouter() {
       <Route path="/requisitions" component={Requisitions} />
       <Route path="/requisitions/new" component={RequisitionNew} />
       <Route path="/requisitions/:id" component={RequisitionDetail} />
+      <Route path="/procurement-analytics" component={ProcurementAnalytics} />
       <Route path="/purchase-orders" component={PurchaseOrders} />
       <Route path="/purchase-orders/new" component={PurchaseOrderNew} />
       <Route path="/purchase-orders/:id" component={PurchaseOrderDetail} />
@@ -84,18 +110,37 @@ function AuthenticatedRouter() {
       <Route path="/vendors/new" component={VendorNew} />
       <Route path="/vendors/:id" component={VendorDetail} />
       <Route path="/manuals" component={Manuals} />
+      <Route path="/manuals/upload" component={ManualUpload} />
       <Route path="/manuals/:id" component={ManualDetail} />
       <Route path="/reports" component={Reports} />
       <Route path="/reports/:reportName" component={ReportDetail} />
       <Route path="/feedback" component={Feedback} />
+      <Route path="/tires" component={Tires} />
+      <Route path="/messages" component={Messages} />
       <Route path="/estimates" component={Estimates} />
       <Route path="/estimates/:id" component={EstimateDetail} />
       <Route path="/checklist-templates" component={ChecklistTemplates} />
       <Route path="/checklist-templates/new" component={ChecklistTemplateNew} />
       <Route path="/checklist-templates/:id" component={ChecklistTemplateDetail} />
       <Route path="/import" component={BulkImport} />
+      <Route path="/receiving" component={Receiving} />
+      <Route path="/part-requests" component={PartRequests} />
+      <Route path="/ready-for-review" component={ReadyForReview} />
+      <Route path="/reorder-alerts" component={ReorderAlerts} />
+      <Route path="/part-kits" component={PartKits} />
+      <Route path="/part-kits/:id" component={PartKitDetail} />
+      <Route path="/cycle-counts" component={CycleCounts} />
+      <Route path="/smart-classification" component={SmartClassification} />
+      <Route path="/vmrs-auto-assign" component={VmrsAutoAssign} />
+      <Route path="/oos-standards" component={OosStandards} />
+      <Route path="/pm-dues" component={PmDues} />
       <Route path="/settings" component={Settings} />
       <Route path="/settings/vmrs" component={VmrsSettings} />
+      <Route path="/public-dashboards" component={PublicDashboards} />
+      <Route path="/admin-tools" component={AdminTools} />
+      <Route path="/labor-rate-calculator" component={LaborRateCalculator} />
+      <Route path="/knowledge-base" component={KnowledgeBase} />
+      <Route path="/technician-management" component={TechnicianManagement} />
       <Route path="/landing" component={LandingPage} />
       <Route component={NotFound} />
     </Switch>
@@ -114,9 +159,14 @@ function AuthenticatedLayout() {
         <AppSidebar />
         <div className="flex flex-col flex-1 overflow-hidden">
           <header className="flex items-center justify-between gap-2 px-4 py-2 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-            <SidebarTrigger data-testid="button-sidebar-toggle" />
             <div className="flex items-center gap-2">
+              <SidebarTrigger data-testid="button-sidebar-toggle" />
+              <GlobalSearch />
+            </div>
+            <div className="flex items-center gap-2">
+              <OrganizationSwitcher />
               <BarcodeScanner />
+              <NotificationBell />
               <ThemeToggle />
             </div>
           </header>
@@ -132,6 +182,19 @@ function AuthenticatedLayout() {
 function AppContent() {
   const { isAuthenticated, isLoading } = useAuth();
   const [location] = useLocation();
+<<<<<<< HEAD
+=======
+
+  // Public routes that don't require authentication
+  if (location.startsWith("/dvir/")) {
+    return <PublicDvir />;
+  }
+  
+  if (location.startsWith("/public/dashboard/")) {
+    return <PublicDashboardView />;
+  }
+
+>>>>>>> 53a290ef7c4012e41845d036061039a2fa276e75
   if (isLoading) {
     return (
       <div className="h-screen w-screen flex items-center justify-center">
