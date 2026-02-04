@@ -666,10 +666,6 @@ export default function Settings() {
   });
   
   // Customization tab state
-  const [vmrsDialogOpen, setVmrsDialogOpen] = useState(false);
-  const [vmrsEditCode, setVmrsEditCode] = useState<{ code: string; description: string } | null>(null);
-  const [newVmrsCode, setNewVmrsCode] = useState("");
-  const [newVmrsDescription, setNewVmrsDescription] = useState("");
   const [customFieldDialogOpen, setCustomFieldDialogOpen] = useState(false);
   const [newFieldName, setNewFieldName] = useState("");
   const [newFieldType, setNewFieldType] = useState("Text");
@@ -677,6 +673,18 @@ export default function Settings() {
   const [dropdownDialogOpen, setDropdownDialogOpen] = useState(false);
   const [dropdownCategory, setDropdownCategory] = useState("");
   const [newDropdownOption, setNewDropdownOption] = useState("");
+  
+  // Repair Reason Codes state
+  const [repairReasonDialogOpen, setRepairReasonDialogOpen] = useState(false);
+  const [repairReasonEdit, setRepairReasonEdit] = useState<{ id: number; code: string; description: string } | null>(null);
+  const [newRepairReasonCode, setNewRepairReasonCode] = useState("");
+  const [newRepairReasonDescription, setNewRepairReasonDescription] = useState("");
+  
+  // Cause Codes state
+  const [causeCodeDialogOpen, setCauseCodeDialogOpen] = useState(false);
+  const [causeCodeEdit, setCauseCodeEdit] = useState<{ id: number; code: string; description: string } | null>(null);
+  const [newCauseCodeCode, setNewCauseCodeCode] = useState("");
+  const [newCauseCodeDescription, setNewCauseCodeDescription] = useState("");
 
   const { data: organization, isLoading: orgLoading } = useQuery<Organization>({
     queryKey: ["/api/organizations/current"],
@@ -688,6 +696,118 @@ export default function Settings() {
 
   const { data: locations = [] } = useQuery<Location[]>({
     queryKey: ["/api/locations"],
+  });
+
+  // Repair Reason Codes
+  interface RepairReasonCode {
+    id: number;
+    code: string;
+    description: string;
+    orgId?: number;
+    isActive?: boolean;
+  }
+  const { data: repairReasonCodes = [], isLoading: repairReasonLoading } = useQuery<RepairReasonCode[]>({
+    queryKey: ["/api/repair-reason-codes"],
+  });
+
+  const createRepairReasonMutation = useMutation({
+    mutationFn: async (data: { code: string; description: string }) => {
+      return apiRequest("POST", "/api/repair-reason-codes", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/repair-reason-codes"] });
+      toast({ title: "Repair Reason Code Added", description: "The repair reason code has been created." });
+      setRepairReasonDialogOpen(false);
+      setNewRepairReasonCode("");
+      setNewRepairReasonDescription("");
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to create repair reason code.", variant: "destructive" });
+    },
+  });
+
+  const updateRepairReasonMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: { code?: string; description?: string } }) => {
+      return apiRequest("PATCH", `/api/repair-reason-codes/${id}`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/repair-reason-codes"] });
+      toast({ title: "Repair Reason Code Updated", description: "The repair reason code has been updated." });
+      setRepairReasonDialogOpen(false);
+      setRepairReasonEdit(null);
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to update repair reason code.", variant: "destructive" });
+    },
+  });
+
+  const deleteRepairReasonMutation = useMutation({
+    mutationFn: async (id: number) => {
+      return apiRequest("DELETE", `/api/repair-reason-codes/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/repair-reason-codes"] });
+      toast({ title: "Repair Reason Code Deleted", description: "The repair reason code has been removed." });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to delete repair reason code.", variant: "destructive" });
+    },
+  });
+
+  // Cause Codes
+  interface CauseCode {
+    id: number;
+    code: string;
+    description: string;
+    orgId?: number;
+    isActive?: boolean;
+  }
+  const { data: causeCodes = [], isLoading: causeCodeLoading } = useQuery<CauseCode[]>({
+    queryKey: ["/api/cause-codes"],
+  });
+
+  const createCauseCodeMutation = useMutation({
+    mutationFn: async (data: { code: string; description: string }) => {
+      return apiRequest("POST", "/api/cause-codes", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/cause-codes"] });
+      toast({ title: "Cause Code Added", description: "The cause code has been created." });
+      setCauseCodeDialogOpen(false);
+      setNewCauseCodeCode("");
+      setNewCauseCodeDescription("");
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to create cause code.", variant: "destructive" });
+    },
+  });
+
+  const updateCauseCodeMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: { code?: string; description?: string } }) => {
+      return apiRequest("PATCH", `/api/cause-codes/${id}`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/cause-codes"] });
+      toast({ title: "Cause Code Updated", description: "The cause code has been updated." });
+      setCauseCodeDialogOpen(false);
+      setCauseCodeEdit(null);
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to update cause code.", variant: "destructive" });
+    },
+  });
+
+  const deleteCauseCodeMutation = useMutation({
+    mutationFn: async (id: number) => {
+      return apiRequest("DELETE", `/api/cause-codes/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/cause-codes"] });
+      toast({ title: "Cause Code Deleted", description: "The cause code has been removed." });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to delete cause code.", variant: "destructive" });
+    },
   });
 
   useEffect(() => {
@@ -1499,113 +1619,280 @@ export default function Settings() {
 
         <TabsContent value="customization">
           <div className="grid gap-6">
-            {/* VMRS Codes Management */}
-            <Card data-testid="card-vmrs-codes">
+            {/* Repair Reason Codes Management */}
+            <Card data-testid="card-repair-reason-codes">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <Code2 className="h-5 w-5" />
-                  VMRS Codes
+                  <Wrench className="h-5 w-5" />
+                  Repair Reason Codes
                 </CardTitle>
                 <CardDescription>
-                  Manage Vehicle Maintenance Reporting Standards codes for categorization
+                  Define standardized repair reason codes for work order lines
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="grid gap-3 sm:grid-cols-2">
-                  {[
-                    { code: "001", description: "Engine Systems" },
-                    { code: "002", description: "Electrical Systems" },
-                    { code: "003", description: "Frame/Chassis" },
-                    { code: "004", description: "Suspension" },
-                    { code: "005", description: "Brake Systems" },
-                    { code: "006", description: "Wheels/Tires" },
-                  ].map((vmrs) => (
-                    <div key={vmrs.code} className="flex items-center justify-between p-3 rounded-lg border" data-testid={`vmrs-${vmrs.code}`}>
-                      <div>
-                        <Badge variant="outline" className="font-mono">{vmrs.code}</Badge>
-                        <span className="ml-2 text-sm">{vmrs.description}</span>
+                {repairReasonLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                  </div>
+                ) : repairReasonCodes.length > 0 ? (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {repairReasonCodes.map((rr) => (
+                      <div key={rr.id} className="flex items-center justify-between p-3 rounded-lg border" data-testid={`repair-reason-${rr.id}`}>
+                        <div>
+                          <Badge variant="outline" className="font-mono">{rr.code}</Badge>
+                          <span className="ml-2 text-sm">{rr.description}</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            data-testid={`button-edit-repair-reason-${rr.id}`}
+                            onClick={() => {
+                              setRepairReasonEdit(rr);
+                              setNewRepairReasonCode(rr.code);
+                              setNewRepairReasonDescription(rr.description);
+                              setRepairReasonDialogOpen(true);
+                            }}
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            data-testid={`button-delete-repair-reason-${rr.id}`}
+                            onClick={() => deleteRepairReasonMutation.mutate(rr.id)}
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </div>
                       </div>
-                      <Button 
-                        variant="ghost" 
-                        size="icon" 
-                        data-testid={`button-edit-vmrs-${vmrs.code}`}
-                        onClick={() => {
-                          setVmrsEditCode(vmrs);
-                          setNewVmrsCode(vmrs.code);
-                          setNewVmrsDescription(vmrs.description);
-                          setVmrsDialogOpen(true);
-                        }}
-                      >
-                        <ChevronRight className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-muted-foreground text-center py-4">No repair reason codes yet. Add one to get started.</p>
+                )}
                 <Button 
                   variant="outline" 
                   className="w-full" 
-                  data-testid="button-add-vmrs"
+                  data-testid="button-add-repair-reason"
                   onClick={() => {
-                    setVmrsEditCode(null);
-                    setNewVmrsCode("");
-                    setNewVmrsDescription("");
-                    setVmrsDialogOpen(true);
+                    setRepairReasonEdit(null);
+                    setNewRepairReasonCode("");
+                    setNewRepairReasonDescription("");
+                    setRepairReasonDialogOpen(true);
                   }}
                 >
                   <Plus className="h-4 w-4 mr-2" />
-                  Add VMRS Code
+                  Add Repair Reason Code
                 </Button>
               </CardContent>
             </Card>
 
-            {/* VMRS Dialog */}
-            <Dialog open={vmrsDialogOpen} onOpenChange={setVmrsDialogOpen}>
+            {/* Repair Reason Code Dialog */}
+            <Dialog open={repairReasonDialogOpen} onOpenChange={setRepairReasonDialogOpen}>
               <DialogContent>
                 <DialogHeader>
-                  <DialogTitle data-testid="dialog-vmrs-title">{vmrsEditCode ? "Edit VMRS Code" : "Add VMRS Code"}</DialogTitle>
+                  <DialogTitle data-testid="dialog-repair-reason-title">{repairReasonEdit ? "Edit Repair Reason Code" : "Add Repair Reason Code"}</DialogTitle>
                   <DialogDescription>
-                    {vmrsEditCode ? "Update the VMRS code details below." : "Enter the details for the new VMRS code."}
+                    {repairReasonEdit ? "Update the repair reason code details below." : "Enter the details for the new repair reason code."}
                   </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4 py-4">
                   <div className="space-y-2">
                     <Label>Code</Label>
                     <Input 
-                      value={newVmrsCode}
-                      onChange={(e) => setNewVmrsCode(e.target.value)}
-                      placeholder="e.g., 007"
-                      data-testid="input-vmrs-code"
+                      value={newRepairReasonCode}
+                      onChange={(e) => setNewRepairReasonCode(e.target.value)}
+                      placeholder="e.g., R01"
+                      data-testid="input-repair-reason-code"
                     />
                   </div>
                   <div className="space-y-2">
                     <Label>Description</Label>
                     <Input 
-                      value={newVmrsDescription}
-                      onChange={(e) => setNewVmrsDescription(e.target.value)}
-                      placeholder="e.g., Fuel Systems"
-                      data-testid="input-vmrs-description"
+                      value={newRepairReasonDescription}
+                      onChange={(e) => setNewRepairReasonDescription(e.target.value)}
+                      placeholder="e.g., Scheduled Maintenance"
+                      data-testid="input-repair-reason-description"
                     />
                   </div>
                 </div>
                 <DialogFooter>
-                  <Button variant="outline" onClick={() => setVmrsDialogOpen(false)} data-testid="button-vmrs-cancel">
+                  <Button variant="outline" onClick={() => setRepairReasonDialogOpen(false)} data-testid="button-repair-reason-cancel">
                     Cancel
                   </Button>
                   <Button 
                     onClick={() => {
-                      toast({ 
-                        title: vmrsEditCode ? "VMRS Code Updated" : "VMRS Code Added", 
-                        description: `VMRS code ${newVmrsCode} - ${newVmrsDescription} has been ${vmrsEditCode ? "updated" : "added"}.` 
-                      });
-                      setVmrsDialogOpen(false);
+                      if (repairReasonEdit) {
+                        updateRepairReasonMutation.mutate({
+                          id: repairReasonEdit.id,
+                          data: { code: newRepairReasonCode, description: newRepairReasonDescription }
+                        });
+                      } else {
+                        createRepairReasonMutation.mutate({
+                          code: newRepairReasonCode,
+                          description: newRepairReasonDescription
+                        });
+                      }
                     }}
-                    data-testid="button-vmrs-save"
+                    disabled={!newRepairReasonCode.trim() || !newRepairReasonDescription.trim() || createRepairReasonMutation.isPending || updateRepairReasonMutation.isPending}
+                    data-testid="button-repair-reason-save"
                   >
-                    {vmrsEditCode ? "Update" : "Add"}
+                    {(createRepairReasonMutation.isPending || updateRepairReasonMutation.isPending) && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                    {repairReasonEdit ? "Update" : "Add"}
                   </Button>
                 </DialogFooter>
               </DialogContent>
             </Dialog>
+
+            {/* Cause Codes Management */}
+            <Card data-testid="card-cause-codes">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Tags className="h-5 w-5" />
+                  Cause Codes
+                </CardTitle>
+                <CardDescription>
+                  Define standardized cause codes to track why repairs were needed
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {causeCodeLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                  </div>
+                ) : causeCodes.length > 0 ? (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {causeCodes.map((cc) => (
+                      <div key={cc.id} className="flex items-center justify-between p-3 rounded-lg border" data-testid={`cause-code-${cc.id}`}>
+                        <div>
+                          <Badge variant="outline" className="font-mono">{cc.code}</Badge>
+                          <span className="ml-2 text-sm">{cc.description}</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            data-testid={`button-edit-cause-code-${cc.id}`}
+                            onClick={() => {
+                              setCauseCodeEdit(cc);
+                              setNewCauseCodeCode(cc.code);
+                              setNewCauseCodeDescription(cc.description);
+                              setCauseCodeDialogOpen(true);
+                            }}
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            data-testid={`button-delete-cause-code-${cc.id}`}
+                            onClick={() => deleteCauseCodeMutation.mutate(cc.id)}
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-muted-foreground text-center py-4">No cause codes yet. Add one to get started.</p>
+                )}
+                <Button 
+                  variant="outline" 
+                  className="w-full" 
+                  data-testid="button-add-cause-code"
+                  onClick={() => {
+                    setCauseCodeEdit(null);
+                    setNewCauseCodeCode("");
+                    setNewCauseCodeDescription("");
+                    setCauseCodeDialogOpen(true);
+                  }}
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Cause Code
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* Cause Code Dialog */}
+            <Dialog open={causeCodeDialogOpen} onOpenChange={setCauseCodeDialogOpen}>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle data-testid="dialog-cause-code-title">{causeCodeEdit ? "Edit Cause Code" : "Add Cause Code"}</DialogTitle>
+                  <DialogDescription>
+                    {causeCodeEdit ? "Update the cause code details below." : "Enter the details for the new cause code."}
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4 py-4">
+                  <div className="space-y-2">
+                    <Label>Code</Label>
+                    <Input 
+                      value={newCauseCodeCode}
+                      onChange={(e) => setNewCauseCodeCode(e.target.value)}
+                      placeholder="e.g., C01"
+                      data-testid="input-cause-code-code"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Description</Label>
+                    <Input 
+                      value={newCauseCodeDescription}
+                      onChange={(e) => setNewCauseCodeDescription(e.target.value)}
+                      placeholder="e.g., Wear and Tear"
+                      data-testid="input-cause-code-description"
+                    />
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setCauseCodeDialogOpen(false)} data-testid="button-cause-code-cancel">
+                    Cancel
+                  </Button>
+                  <Button 
+                    onClick={() => {
+                      if (causeCodeEdit) {
+                        updateCauseCodeMutation.mutate({
+                          id: causeCodeEdit.id,
+                          data: { code: newCauseCodeCode, description: newCauseCodeDescription }
+                        });
+                      } else {
+                        createCauseCodeMutation.mutate({
+                          code: newCauseCodeCode,
+                          description: newCauseCodeDescription
+                        });
+                      }
+                    }}
+                    disabled={!newCauseCodeCode.trim() || !newCauseCodeDescription.trim() || createCauseCodeMutation.isPending || updateCauseCodeMutation.isPending}
+                    data-testid="button-cause-code-save"
+                  >
+                    {(createCauseCodeMutation.isPending || updateCauseCodeMutation.isPending) && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                    {causeCodeEdit ? "Update" : "Add"}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+
+            {/* Note about VMRS Codes */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Code2 className="h-5 w-5" />
+                  VMRS Codes
+                </CardTitle>
+                <CardDescription>
+                  Vehicle Maintenance Reporting Standards codes are managed in the Organization tab
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Link href="/settings/vmrs">
+                  <Button variant="outline" className="w-full justify-between" data-testid="button-goto-vmrs">
+                    Manage VMRS Codes
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </Link>
+              </CardContent>
+            </Card>
 
             {/* Custom Fields */}
             <Card data-testid="card-custom-fields">

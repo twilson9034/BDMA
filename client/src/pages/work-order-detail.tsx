@@ -1734,14 +1734,23 @@ export default function WorkOrderDetail() {
                 <p className="text-muted-foreground text-center py-8">No work order lines yet. Add a line to track labor and parts.</p>
               )}
               
-              <div className="mt-4 pt-4 border-t">
-                <Button onClick={() => setShowAddLineDialog(true)} data-testid="button-add-line">
-                  <Plus className="h-4 w-4 mr-2" />
-                  Add Line
-                </Button>
-              </div>
             </CardContent>
           </Card>
+        </div>
+      )}
+
+      {/* Floating Add Line Button - scrolls with page */}
+      {workOrder && !isEditing && (
+        <div className="sticky bottom-4 z-50 flex justify-end pointer-events-none">
+          <Button 
+            onClick={() => setShowAddLineDialog(true)} 
+            data-testid="button-add-line"
+            className="pointer-events-auto shadow-lg"
+            size="lg"
+          >
+            <Plus className="h-5 w-5 mr-2" />
+            Add Line
+          </Button>
         </div>
       )}
 

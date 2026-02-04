@@ -1453,6 +1453,100 @@ export async function registerRoutes(
   });
 
   // ============================================================
+  // REPAIR REASON CODES (tenant-scoped)
+  // ============================================================
+  app.get("/api/repair-reason-codes", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      if (!orgId) return res.status(403).json({ error: "Organization context required" });
+      const codes = await storage.getRepairReasonCodes(orgId);
+      res.json(codes);
+    } catch (error) {
+      console.error("Error fetching repair reason codes:", error);
+      res.status(500).json({ error: "Failed to fetch repair reason codes" });
+    }
+  });
+
+  app.post("/api/repair-reason-codes", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      if (!orgId) return res.status(403).json({ error: "Organization context required" });
+      const code = await storage.createRepairReasonCode({ ...req.body, orgId });
+      res.status(201).json(code);
+    } catch (error) {
+      console.error("Error creating repair reason code:", error);
+      res.status(500).json({ error: "Failed to create repair reason code" });
+    }
+  });
+
+  app.patch("/api/repair-reason-codes/:id", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const code = await storage.updateRepairReasonCode(parseInt(req.params.id), req.body);
+      res.json(code);
+    } catch (error) {
+      console.error("Error updating repair reason code:", error);
+      res.status(500).json({ error: "Failed to update repair reason code" });
+    }
+  });
+
+  app.delete("/api/repair-reason-codes/:id", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      await storage.deleteRepairReasonCode(parseInt(req.params.id));
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting repair reason code:", error);
+      res.status(500).json({ error: "Failed to delete repair reason code" });
+    }
+  });
+
+  // ============================================================
+  // CAUSE CODES (tenant-scoped)
+  // ============================================================
+  app.get("/api/cause-codes", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      if (!orgId) return res.status(403).json({ error: "Organization context required" });
+      const codes = await storage.getCauseCodes(orgId);
+      res.json(codes);
+    } catch (error) {
+      console.error("Error fetching cause codes:", error);
+      res.status(500).json({ error: "Failed to fetch cause codes" });
+    }
+  });
+
+  app.post("/api/cause-codes", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const orgId = getOrgId(req);
+      if (!orgId) return res.status(403).json({ error: "Organization context required" });
+      const code = await storage.createCauseCode({ ...req.body, orgId });
+      res.status(201).json(code);
+    } catch (error) {
+      console.error("Error creating cause code:", error);
+      res.status(500).json({ error: "Failed to create cause code" });
+    }
+  });
+
+  app.patch("/api/cause-codes/:id", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      const code = await storage.updateCauseCode(parseInt(req.params.id), req.body);
+      res.json(code);
+    } catch (error) {
+      console.error("Error updating cause code:", error);
+      res.status(500).json({ error: "Failed to update cause code" });
+    }
+  });
+
+  app.delete("/api/cause-codes/:id", requireAuth, tenantMiddleware(), async (req, res) => {
+    try {
+      await storage.deleteCauseCode(parseInt(req.params.id));
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting cause code:", error);
+      res.status(500).json({ error: "Failed to delete cause code" });
+    }
+  });
+
+  // ============================================================
   // VMRS AUTO-SUGGEST (tenant-scoped)
   // ============================================================
   app.post("/api/vmrs/suggest/:partId", requireAuth, tenantMiddleware(), async (req, res) => {

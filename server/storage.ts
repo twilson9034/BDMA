@@ -5,6 +5,8 @@ import {
   users,
   locations,
   vmrsCodes,
+  repairReasonCodes,
+  causeCodes,
   assets,
   vendors,
   parts,
@@ -51,6 +53,10 @@ import {
   type Location,
   type InsertVmrsCode,
   type VmrsCode,
+  type InsertRepairReasonCode,
+  type RepairReasonCode,
+  type InsertCauseCode,
+  type CauseCode,
   type InsertAsset,
   type Asset,
   type InsertAssetImage,
@@ -258,6 +264,18 @@ export interface IStorage {
   createVmrsCode(vmrsCode: InsertVmrsCode): Promise<VmrsCode>;
   updateVmrsCode(id: number, vmrsCode: Partial<InsertVmrsCode>): Promise<VmrsCode | undefined>;
   deleteVmrsCode(id: number): Promise<void>;
+  
+  // Repair Reason Codes
+  getRepairReasonCodes(orgId: number): Promise<RepairReasonCode[]>;
+  createRepairReasonCode(code: InsertRepairReasonCode): Promise<RepairReasonCode>;
+  updateRepairReasonCode(id: number, code: Partial<InsertRepairReasonCode>): Promise<RepairReasonCode | undefined>;
+  deleteRepairReasonCode(id: number): Promise<void>;
+  
+  // Cause Codes
+  getCauseCodes(orgId: number): Promise<CauseCode[]>;
+  createCauseCode(code: InsertCauseCode): Promise<CauseCode>;
+  updateCauseCode(id: number, code: Partial<InsertCauseCode>): Promise<CauseCode | undefined>;
+  deleteCauseCode(id: number): Promise<void>;
   
   // Assets
   getAssets(): Promise<Asset[]>;
@@ -947,6 +965,44 @@ export class DatabaseStorage implements IStorage {
 
   async deleteVmrsCode(id: number): Promise<void> {
     await db.update(vmrsCodes).set({ isActive: false, updatedAt: new Date() }).where(eq(vmrsCodes.id, id));
+  }
+
+  // Repair Reason Codes
+  async getRepairReasonCodes(orgId: number): Promise<RepairReasonCode[]> {
+    return db.select().from(repairReasonCodes).where(and(eq(repairReasonCodes.orgId, orgId), eq(repairReasonCodes.isActive, true))).orderBy(repairReasonCodes.code);
+  }
+
+  async createRepairReasonCode(code: InsertRepairReasonCode): Promise<RepairReasonCode> {
+    const [created] = await db.insert(repairReasonCodes).values(code).returning();
+    return created;
+  }
+
+  async updateRepairReasonCode(id: number, code: Partial<InsertRepairReasonCode>): Promise<RepairReasonCode | undefined> {
+    const [updated] = await db.update(repairReasonCodes).set({ ...code, updatedAt: new Date() }).where(eq(repairReasonCodes.id, id)).returning();
+    return updated;
+  }
+
+  async deleteRepairReasonCode(id: number): Promise<void> {
+    await db.update(repairReasonCodes).set({ isActive: false, updatedAt: new Date() }).where(eq(repairReasonCodes.id, id));
+  }
+
+  // Cause Codes
+  async getCauseCodes(orgId: number): Promise<CauseCode[]> {
+    return db.select().from(causeCodes).where(and(eq(causeCodes.orgId, orgId), eq(causeCodes.isActive, true))).orderBy(causeCodes.code);
+  }
+
+  async createCauseCode(code: InsertCauseCode): Promise<CauseCode> {
+    const [created] = await db.insert(causeCodes).values(code).returning();
+    return created;
+  }
+
+  async updateCauseCode(id: number, code: Partial<InsertCauseCode>): Promise<CauseCode | undefined> {
+    const [updated] = await db.update(causeCodes).set({ ...code, updatedAt: new Date() }).where(eq(causeCodes.id, id)).returning();
+    return updated;
+  }
+
+  async deleteCauseCode(id: number): Promise<void> {
+    await db.update(causeCodes).set({ isActive: false, updatedAt: new Date() }).where(eq(causeCodes.id, id));
   }
 
   // Assets

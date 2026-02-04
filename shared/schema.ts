@@ -435,6 +435,44 @@ export type InsertVmrsCode = z.infer<typeof insertVmrsCodeSchema>;
 export type VmrsCode = typeof vmrsCodes.$inferSelect;
 
 // ============================================================
+// REPAIR REASON CODES
+// ============================================================
+export const repairReasonCodes = pgTable("repair_reason_codes", {
+  id: serial("id").primaryKey(),
+  orgId: integer("org_id").references(() => organizations.id),
+  code: text("code").notNull(),
+  description: text("description").notNull(),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_repair_reason_codes_org").on(table.orgId),
+]);
+
+export const insertRepairReasonCodeSchema = createInsertSchema(repairReasonCodes).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertRepairReasonCode = z.infer<typeof insertRepairReasonCodeSchema>;
+export type RepairReasonCode = typeof repairReasonCodes.$inferSelect;
+
+// ============================================================
+// CAUSE CODES
+// ============================================================
+export const causeCodes = pgTable("cause_codes", {
+  id: serial("id").primaryKey(),
+  orgId: integer("org_id").references(() => organizations.id),
+  code: text("code").notNull(),
+  description: text("description").notNull(),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_cause_codes_org").on(table.orgId),
+]);
+
+export const insertCauseCodeSchema = createInsertSchema(causeCodes).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertCauseCode = z.infer<typeof insertCauseCodeSchema>;
+export type CauseCode = typeof causeCodes.$inferSelect;
+
+// ============================================================
 // VMRS DICTIONARY (for auto-assign suggestions)
 // ============================================================
 export const vmrsDictionary = pgTable("vmrs_dictionary", {
@@ -1351,6 +1389,10 @@ export const workOrderLines = pgTable("work_order_lines", {
   vmrsTitle: text("vmrs_title"),
   repairCode: text("repair_code"),
   repairDescription: text("repair_description"),
+  repairReasonCode: text("repair_reason_code"),
+  repairReasonDescription: text("repair_reason_description"),
+  causeCode: text("cause_code"),
+  causeCodeDescription: text("cause_code_description"),
   complaint: text("complaint"),
   cause: text("cause"),
   correction: text("correction"),
