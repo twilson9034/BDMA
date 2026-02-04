@@ -134,11 +134,7 @@ const tirePredictionData = [
   { tireId: 3, position: "Front Right", asset: "Truck #1025", predictedReplacement: "30 days", confidence: 78, treadDepth: 6.0 },
 ];
 
-const assetStatusData = [
-  { name: "Operational", value: stats?.operationalAssets || 0, color: "#22c55e" },
-  { name: "In Maintenance", value: stats?.inMaintenanceAssets || 0, color: "#f59e0b" },
-  { name: "Down", value: stats?.downAssets || 0, color: "#ef4444" },
-];
+// `assetStatusData` depends on runtime `stats`, so it's computed inside the component below.
 
 interface Location {
   id: number;
@@ -216,6 +212,12 @@ export default function Dashboard() {
   const { data: stats, isLoading: statsLoading } = useQuery<DashboardStats>({
     queryKey: [buildUrl("/api/dashboard/stats")],
   });
+
+  const assetStatusData = useMemo(() => [
+    { name: "Operational", value: stats?.operationalAssets || 0, color: "#22c55e" },
+    { name: "In Maintenance", value: stats?.inMaintenanceAssets || 0, color: "#f59e0b" },
+    { name: "Down", value: stats?.downAssets || 0, color: "#ef4444" },
+  ], [stats]);
 
   const { data: recentWorkOrders, isLoading: workOrdersLoading } = useQuery<RecentWorkOrder[]>({
     queryKey: [buildUrl("/api/work-orders/recent")],
