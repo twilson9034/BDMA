@@ -12,6 +12,7 @@ import { PageLoader } from "@/components/LoadingSpinner";
 import { BarcodeScanner } from "@/components/BarcodeScanner";
 
 import LandingPage from "@/pages/landing";
+import DemoPage from "@/pages/demo";
 import Dashboard from "@/pages/dashboard";
 import WorkOrders from "@/pages/work-orders";
 import WorkOrderNew from "@/pages/work-order-new";
@@ -131,13 +132,17 @@ function AuthenticatedLayout() {
 function AppContent() {
   const { isAuthenticated, isLoading } = useAuth();
   const [location] = useLocation();
-
   if (isLoading) {
     return (
       <div className="h-screen w-screen flex items-center justify-center">
         <PageLoader />
       </div>
     );
+  }
+
+  // Make `/demo` publicly available without authentication so prospects can explore features.
+  if (location === "/demo") {
+    return <DemoPage />;
   }
 
   if (!isAuthenticated) {

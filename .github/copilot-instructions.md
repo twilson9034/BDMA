@@ -1,7 +1,7 @@
-# FleetMaster CMMS - AI Coding Agent Instructions
+# BDMA CMMS - AI Coding Agent Instructions
 
 ## Project Overview
-FleetMaster is a full-stack TypeScript CMMS (Computerized Maintenance Management System) for fleet and asset management. It's a React + Express + PostgreSQL application designed for organizations to track assets, manage work orders, handle maintenance schedules, and leverage AI-driven predictive maintenance insights.
+BDMA is a full-stack TypeScript CMMS (Computerized Maintenance Management System) for fleet and asset management. It's a React + Express + PostgreSQL application designed for organizations to track assets, manage work orders, handle maintenance schedules, and leverage AI-driven predictive maintenance insights.
 
 ## Architecture Patterns
 
@@ -173,6 +173,13 @@ Pages in `client/src/pages/` follow consistent patterns:
 - `POST /api/assets/:id/telematics` ingests data
 - `GET /api/assets/:id/telematics/latest` for dashboard display
 - Fault codes status workflow: `active → pending → cleared/resolved`
+
+### Additional Server Behaviors
+
+- **Unfulfilled Parts Widget**: Endpoint `GET /api/estimates/unfulfilled-parts` returns estimate lines with unfulfilled parts for dashboard widgets and inventory planning.
+- **PO Line Receiving**: `POST /api/po-lines/:id/receive` updates `quantityReceived`, increments part inventory when a `partId` is present, and updates PO status (`partial` / `received`) and `receivedDate` accordingly.
+- **Import Jobs Background Processing**: `POST /api/import-jobs` creates an import job which is processed asynchronously. The processor performs duplicate detection (asset number, part number, barcode), cleans numeric fields, records row-level errors, updates job progress periodically, and stores an error summary with sample errors.
+- **AI Checklist & Part-Suggestions Handling**: AI endpoints (`/api/ai/generate-checklist`, `/api/smart-part-suggestions/ai`) fetch manuals but cap manual content (preview snippet limits and section caps) to avoid prompt/token overflow; the code uses `gpt-4o` by default for these calls.
 
 ## Data Conventions
 

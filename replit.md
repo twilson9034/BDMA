@@ -1,8 +1,8 @@
-# FleetMaster CMMS
+# BDMA CMMS
 
 ## Overview
 
-FleetMaster is a comprehensive Computerized Maintenance Management System (CMMS) designed for fleet and asset management. The application enables organizations to track physical assets (vehicles, machinery, facilities), manage work orders and maintenance schedules, handle parts inventory with automated reordering, process complete procurement workflows, and leverage AI-driven predictive maintenance insights.
+BDMA is a comprehensive Computerized Maintenance Management System (CMMS) designed for fleet and asset management. The application enables organizations to track physical assets (vehicles, machinery, facilities), manage work orders and maintenance schedules, handle parts inventory with automated reordering, process complete procurement workflows, and leverage AI-driven predictive maintenance insights.
 
 The system is built as a full-stack TypeScript application with a React frontend and Express backend, using PostgreSQL for data persistence.
 
