@@ -135,9 +135,9 @@ const tirePredictionData = [
 ];
 
 const assetStatusData = [
-  { name: "Operational", value: 47, color: "#22c55e" },
-  { name: "In Maintenance", value: 8, color: "#f59e0b" },
-  { name: "Down", value: 3, color: "#ef4444" },
+  { name: "Operational", value: stats?.operationalAssets || 0, color: "#22c55e" },
+  { name: "In Maintenance", value: stats?.inMaintenanceAssets || 0, color: "#f59e0b" },
+  { name: "Down", value: stats?.downAssets || 0, color: "#ef4444" },
 ];
 
 interface Location {
