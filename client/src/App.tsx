@@ -182,19 +182,21 @@ function AuthenticatedLayout() {
 function AppContent() {
   const { isAuthenticated, isLoading } = useAuth();
   const [location] = useLocation();
-<<<<<<< HEAD
-=======
 
   // Public routes that don't require authentication
   if (location.startsWith("/dvir/")) {
     return <PublicDvir />;
   }
-  
+
   if (location.startsWith("/public/dashboard/")) {
     return <PublicDashboardView />;
   }
 
->>>>>>> 53a290ef7c4012e41845d036061039a2fa276e75
+  // Public demo route
+  if (location === "/demo") {
+    return <DemoPage />;
+  }
+
   if (isLoading) {
     return (
       <div className="h-screen w-screen flex items-center justify-center">
